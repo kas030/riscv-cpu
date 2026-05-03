@@ -30,7 +30,7 @@ module MuxKeyInternal #(NR_KEY = 2, KEY_LEN = 1, DATA_LEN = 1, HAS_DEFAULT = 0) 
   reg                hit_flag;                           // 是否至少命中一项
   integer            ii;
   always @(*) begin
-    match_val = '0;
+    match_val = {DATA_LEN{1'b0}};                        // .v 文件，避免 SystemVerilog 的 '0 字面量
     hit_flag  = 1'b0;
     // 对每一项做一次相等比较，命中则把 data 或入 match_val
     for (ii = 0; ii < NR_KEY; ii = ii + 1) begin
