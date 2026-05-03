@@ -1,48 +1,37 @@
-`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 2024/04/18 11:22:17
-// Design Name: 
-// Module Name: IMMGEN
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+// =============================================================================
+// IMMGEN.sv —— 立即数生成器
+//   位于 ID 级，从 32 位指令中按指令格式抽取并符号扩展立即数：
+//     I 型（含 load / jalr） : imm[11:0]   = instr[31:20]
+//     S 型                   : imm[11:0]   = {instr[31:25], instr[11:7]}
+//     B 型                   : imm[12:1]   = {instr[31], instr[7], instr[30:25], instr[11:8]}
+//     U 型（含 auipc）       : imm[31:12]  = instr[31:12]，低 12 位补 0
+//     J 型                   : imm[20:1]   = {instr[31], instr[19:12], instr[20], instr[30:21]}
+//   全部使用一热标志 + 按位与 + 或合并，便于综合到并行 LUT。
+// =============================================================================
 `include "defines.sv"
 
-module IMMGEN#(
-    parameter   DATAWIDTH = 32	
+module IMMGEN #(
+    parameter   DATAWIDTH = 32
 )(
-    input  logic [DATAWIDTH-1:0]   instr   ,
-    output logic [DATAWIDTH - 1:0] imm       
+    input  logic [DATAWIDTH-1:0]   instr ,                  // 当前 ID 级指令
+    output logic [DATAWIDTH-1:0]   imm                      // 符号扩展后的立即数
 );
-    logic op_itype, op_stype, op_btype, op_utype, op_jtype;
+    // 从 instr 中先取 opcode，再判断指令格式
     logic [6:0] opcode;
-
     assign opcode = instr[6:0];
 
-    assign op_itype = (opcode == `I_TYPE) 
-        || (opcode == `IL_TYPE) 
-        || (opcode == `IJ_TYPE);
-    assign op_stype = opcode == `S_TYPE;
-    assign op_btype = opcode == `B_TYPE;
-    assign op_utype = (opcode == `U_TYPE) || (opcode == `UA_TYPE);
-    assign op_jtype = opcode == `J_TYPE;
+    // 按 RV32I 把指令分成 5 组立即数格式
+    logic fmt_i, fmt_s, fmt_b, fmt_u, fmt_j;
+    assign fmt_i = (opcode == `I_TYPE) || (opcode == `IL_TYPE) || (opcode == `IJ_TYPE);
+    assign fmt_s = (opcode == `S_TYPE);
+    assign fmt_b = (opcode == `B_TYPE);
+    assign fmt_u = (opcode == `U_TYPE) || (opcode == `UA_TYPE);
+    assign fmt_j = (opcode == `J_TYPE);
 
-    assign imm = {32{op_itype}} & {{20{instr[31]}}, instr[31:20]} |
-                {32{op_stype}} & {{20{instr[31]}}, instr[31:25], instr[11:7]} |
-                {32{op_btype}} & {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0} |
-                {32{op_utype}} & {instr[31:12], 12'b0} |
-                {32{op_jtype}} & {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
-
+    // 按格式拼出符号扩展后的 32 位立即数；未命中位为 0
+    assign imm = {32{fmt_i}} & {{20{instr[31]}}, instr[31:20]}                                       |
+                 {32{fmt_s}} & {{20{instr[31]}}, instr[31:25], instr[11:7]}                          |
+                 {32{fmt_b}} & {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0}          |
+                 {32{fmt_u}} & {instr[31:12], 12'b0}                                                 |
+                 {32{fmt_j}} & {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
 endmodule
