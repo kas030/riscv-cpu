@@ -11,15 +11,15 @@
       </db_ref>
    </db_ref_list>
    <zoom_setting>
-      <ZoomStartTime time="86,061.666 ns"></ZoomStartTime>
-      <ZoomEndTime time="86,512.667 ns"></ZoomEndTime>
-      <Cursor1Time time="86,393.166 ns"></Cursor1Time>
+      <ZoomStartTime time="0.000 ns"></ZoomStartTime>
+      <ZoomEndTime time="5,809.098 ns"></ZoomEndTime>
+      <Cursor1Time time="10,000.000 ns"></Cursor1Time>
    </zoom_setting>
    <column_width_setting>
       <NameColumnWidth column_width="398"></NameColumnWidth>
-      <ValueColumnWidth column_width="191"></ValueColumnWidth>
+      <ValueColumnWidth column_width="175"></ValueColumnWidth>
    </column_width_setting>
-   <WVObjectSize size="20" />
+   <WVObjectSize size="23" />
    <wvobject fp_name="/tb_myCPU/uut/w_clk_50Mhz" type="logic">
       <obj_property name="ElementShortName">w_clk_50Mhz</obj_property>
       <obj_property name="ObjectShortName">w_clk_50Mhz</obj_property>
@@ -107,18 +107,6 @@
       <obj_property name="ElementShortName">cnt_1ms[15:0]</obj_property>
       <obj_property name="ObjectShortName">cnt_1ms[15:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/counter_inst/cnt_ms" type="array">
-      <obj_property name="ElementShortName">cnt_ms[31:0]</obj_property>
-      <obj_property name="ObjectShortName">cnt_ms[31:0]</obj_property>
-      <obj_property name="CustomSignalColor">#FAAFBE</obj_property>
-      <obj_property name="UseCustomSignalColor">true</obj_property>
-   </wvobject>
-   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/counter_inst/start" type="logic">
-      <obj_property name="ElementShortName">start</obj_property>
-      <obj_property name="ObjectShortName">start</obj_property>
-      <obj_property name="CustomSignalColor">#FF0080</obj_property>
-      <obj_property name="UseCustomSignalColor">true</obj_property>
-   </wvobject>
    <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/mmio_rdata" type="array">
       <obj_property name="ElementShortName">mmio_rdata[31:0]</obj_property>
       <obj_property name="ObjectShortName">mmio_rdata[31:0]</obj_property>
@@ -126,5 +114,25 @@
    <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_rdata" type="array">
       <obj_property name="ElementShortName">dram_rdata[31:0]</obj_property>
       <obj_property name="ObjectShortName">dram_rdata[31:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/seg_wdata" type="array">
+      <obj_property name="ElementShortName">seg_wdata[31:0]</obj_property>
+      <obj_property name="ObjectShortName">seg_wdata[31:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/LED" type="array">
+      <obj_property name="ElementShortName">LED[31:0]</obj_property>
+      <obj_property name="ObjectShortName">LED[31:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/Core_cpu/rf_inst/reg_bank[5]" type="array">
+      <obj_property name="ElementShortName">[5][31:0]</obj_property>
+      <obj_property name="ObjectShortName">[5][31:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/Core_cpu/rf_inst/reg_bank[7]" type="array">
+      <obj_property name="ElementShortName">[7][31:0]</obj_property>
+      <obj_property name="ObjectShortName">[7][31:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/Core_cpu/rf_inst/wen" type="logic">
+      <obj_property name="ElementShortName">wen</obj_property>
+      <obj_property name="ObjectShortName">wen</obj_property>
    </wvobject>
 </wave_config>

@@ -27,9 +27,11 @@ module Control(
     output logic        RegWrite    ,
     output logic [2:0]  MemToReg    ,
     output logic        MemWrite    ,
+    output logic        MemRead     ,
     output logic [1:0]  OffsetOrigin,
     output logic        ALUSrcA     ,
-    output logic        ALUSrcB
+    output logic        ALUSrcB     ,
+    output logic        isCSR
 );
     logic op_jalr, op_branch, op_jal, op_store, op_rtype, op_itype, op_load, op_auipc, op_lui, op_csr, op_call_ret;
 
@@ -61,6 +63,7 @@ module Control(
                 {2{op_call_ret}} & 2'b10;
     assign ALUSrcA = op_auipc;
     assign ALUSrcB = ~(op_rtype | op_branch);
-
+    assign MemRead = op_load;
+    assign isCSR   = op_csr | op_call_ret;
 
 endmodule

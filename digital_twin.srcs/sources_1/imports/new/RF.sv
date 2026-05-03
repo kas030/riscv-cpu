@@ -49,12 +49,7 @@ module RF #(
         end
     end
 
-    always_comb begin
-        rR1_data = reg_bank[rR1];
-    end
-
-    always_comb begin
-        rR2_data = reg_bank[rR2];
-    end
+    assign rR1_data = (wen && (waddr == rR1) && (rR1 != 0)) ? wdata : reg_bank[rR1];
+    assign rR2_data = (wen && (waddr == rR2) && (rR2 != 0)) ? wdata : reg_bank[rR2];
 
 endmodule
