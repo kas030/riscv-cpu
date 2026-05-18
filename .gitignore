@@ -6,6 +6,7 @@
 *.runs/
 *.sim/
 *.xpr
+*.dcp
 
 # Vivado logs
 *.log
