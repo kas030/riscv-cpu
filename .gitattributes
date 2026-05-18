@@ -1,0 +1,27 @@
+# HDL
+*.sv     text eol=lf
+*.svh    text eol=lf
+*.v      text eol=lf
+*.vh     text eol=lf
+
+# Scripts
+*.tcl    text eol=lf
+*.sh     text eol=lf
+*.py     text eol=lf
+
+# Config / docs
+*.xdc    text eol=lf
+*.coe    text eol=lf
+*.mem    text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+
+# Windows scripts
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+
+# Binary
+*.dcp    binary
+*.bit    binary
+*.wdb    binary
+*.png    binary
