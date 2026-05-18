@@ -64,6 +64,15 @@
 
 - 延续现有 SystemVerilog 风格，优先使用 `logic`、`always_comb`、
   `always_ff`。
+- CPU 核心修改边界：`rtl/core/myCPU.sv` 的对外端口列表视为固定接口，
+  不允许增删端口、改名、改宽度、改方向或改变接口时序语义。功能实现必须
+  接入 `myCPU` 已定义的 IROM 与外设/DRAM 访问接口。
+- 除非任务明确要求改 SoC、外设地址映射、板级集成、testbench 或 Vivado
+  IP，否则只能修改隶属于 `myCPU` 的 CPU 核心实现模块，例如
+  `rtl/core/myCPU.sv` 的内部连线、流水级、流水寄存器、控制、数据通路、
+  冒险/前递以及 CPU 内存访问辅助逻辑。不要为了适配 CPU 功能去修改
+  `rtl/soc/student_top.sv`、`rtl/top/top.sv`、`rtl/bus/perip_bridge.sv`、
+  `tb/`、`constraints/`、`ip/` 或 Vivado 生成目录。
 - 流水信号命名保持 `IF_`、`ID_`、`EX_`、`MEM_`、`WB_` 前缀。
 - 保持被 testbench 依赖的层次名稳定。例如 `myCPU.sv` 中寄存器堆实例名
   为 `rf_inst`，`tb/tb_myCPU.sv` 会层次化引用它。
