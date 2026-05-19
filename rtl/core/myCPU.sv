@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
+`include "../common/defines.sv"
 // =============================================================================
-// myCPU.sv —— RV32I CPU 顶层
+// myCPU.sv —— RV32I/RV32M CPU 顶层
 //   将 5 级流水线的各 stage 模块、4 个流水寄存器、HazardUnit、ForwardingUnit、
 //   寄存器堆按数据流方向连接起来。对外暴露的接口仅保留：
 //     - cpu_clk / cpu_rst                     时钟与复位
@@ -39,6 +40,7 @@ module myCPU (
     // Hazard / Forwarding 控制信号
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
+    logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken;
 
@@ -60,7 +62,7 @@ module myCPU (
     logic        ID_ALUSrcA, ID_ALUSrcB;
     logic [2:0]  ID_MemToReg;
     logic [1:0]  ID_NpcOp, ID_OffsetOrigin;
-    logic [13:0] ID_ALUControl;
+    logic [`ALU_OP_WIDTH - 1:0] ID_ALUControl;
     logic [11:0] ID_csr_idx;
     logic [3:0]  ID_CSRControll;
     logic [2:0]  ID_funct3;
@@ -74,7 +76,7 @@ module myCPU (
     logic        EX_RegWrite, EX_MemWrite, EX_MemRead, EX_isCSR;
     logic [2:0]  EX_MemToReg, EX_funct3;
     logic        EX_ALUSrcA, EX_ALUSrcB;
-    logic [13:0] EX_ALUControl;
+    logic [`ALU_OP_WIDTH - 1:0] EX_ALUControl;
     logic [1:0]  EX_NpcOp, EX_OffsetOrigin;
     logic [11:0] EX_csr_idx;
     logic [3:0]  EX_CSRControll;
@@ -123,10 +125,18 @@ module myCPU (
         .ID_EX_rd      (EX_rd          ),
         .ID_EX_MemRead (EX_MemRead     ),
         .BranchTaken   (BranchTaken    ),
-        .Stall         (Stall          ),
+        .Stall         (Stall_Hazard   ),
         .Flush_IF_ID   (Flush_IF_ID    ),
         .Flush_ID_EX   (Flush_ID_EX    )
     );
+
+    // 前半段统一停顿条件：
+    //   1) 原有 load-use 冒险
+    //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
+    assign Stall_Front     = Stall_Hazard | EX_busy;
+    // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
+    assign Flush_ID_EX_comb = Flush_ID_EX & ~EX_busy;
+    assign Stall           = Stall_Front;
 
     ForwardingUnit u_forward (
         .ID_EX_rs1       (EX_rs1      ),
@@ -145,7 +155,7 @@ module myCPU (
         .IF_npc_redirect (IF_npc_redirect),
         .clk             (clk            ),
         .rst             (rst            ),
-        .Stall           (Stall          ),
+        .Stall           (Stall_Front    ),
         .BranchTaken     (BranchTaken    ),
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
@@ -157,7 +167,7 @@ module myCPU (
         .clk         (clk        ),
         .rst         (rst        ),
         .Flush_IF_ID (Flush_IF_ID),
-        .Stall       (Stall      ),
+        .Stall       (Stall_Front),
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
         .ID_pc       (ID_pc      ),
@@ -226,7 +236,8 @@ module myCPU (
         .ID_CSRControll  (ID_CSRControll ),
         .clk             (clk            ),
         .rst             (rst            ),
-        .Flush_ID_EX     (Flush_ID_EX    ),
+        .Flush_ID_EX     (Flush_ID_EX_comb),
+        .Stall_ID_EX     (EX_busy        ),
         .EX_pc           (EX_pc          ),
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
@@ -251,7 +262,8 @@ module myCPU (
 
     // =========================================================================
     // STAGE 3：EX（执行）
-    //   双路前递选择 → ALU + CSR + NPC 一起在 EX 级算完
+    //   双路前递选择 → RV32I 轻量 ALU / RV32M 多周期单元 + CSR + NPC
+    //   其中 RV32M 执行期间会拉高 EX_busy，冻结前半段流水并阻止 EX/MEM 更新
     // =========================================================================
     myCPU_ex_stage #(DATAWIDTH) u_ex_stage (
         .MEM_forward_data (MEM_forward_data),
@@ -275,7 +287,8 @@ module myCPU (
         .EX_alu_result    (EX_alu_result   ),
         .EX_forward_B_out (EX_forward_B_out),
         .EX_csr_wb        (EX_csr_wb       ),
-        .BranchTaken      (BranchTaken     )
+        .BranchTaken      (BranchTaken     ),
+        .EX_busy          (EX_busy         )
     );
 
     // ---- EX/MEM 流水寄存器 ----
@@ -294,6 +307,7 @@ module myCPU (
         .EX_funct3        (EX_funct3       ),
         .clk              (clk             ),
         .rst              (rst             ),
+        .en               (~EX_busy        ),
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
         .MEM_perip_addr   (MEM_perip_addr  ),

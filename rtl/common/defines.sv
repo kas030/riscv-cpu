@@ -1,8 +1,10 @@
 // =============================================================================
-// defines.sv —— RV32I 各类型指令 opcode 宏定义
+// defines.sv —— RV32I/RV32M 各类型指令 opcode 与公共宽度宏定义
 //   被 Control / ACTL / IMMGEN 等译码模块通过 `include "defines.sv"` 引入，
-//   宏值与 RV32I 手册保持一致，调整时务必同步修改各使用处。
+//   宏值与 RISC-V 手册保持一致，调整时务必同步修改各使用处。
 // =============================================================================
+`ifndef DEFINES_SV
+`define DEFINES_SV
 
 //`define RUN_TRACE                       // 仿真追踪开关，默认关闭
 
@@ -19,3 +21,6 @@
 `define CSR_TYPE 7'b111_0011             // CSR / ecall / mret
 
 `define OPCODE_LEN 7                     // opcode 字段宽度
+`define ALU_OP_WIDTH 22                  // ALU 独热操作码宽度
+
+`endif

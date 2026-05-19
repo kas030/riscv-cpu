@@ -26,6 +26,7 @@ module myCPU_ex_mem_reg #(
     input  logic [2:0]              EX_funct3        ,
     input  logic                    clk              ,
     input  logic                    rst              ,
+    input  logic                    en               ,
     // ---- 输出：送往 MEM 级 ----
     output logic [DATAWIDTH - 1:0]  MEM_pcadd4       ,
     output logic [DATAWIDTH - 1:0]  MEM_alu_result   ,
@@ -58,7 +59,7 @@ module myCPU_ex_mem_reg #(
             MEM_MemToReg <= '0;
             MEM_funct3   <= '0;
             MEM_rd_oh    <= 32'b0;
-        end else begin
+        end else if (en) begin
             MEM_pcadd4     <= EX_pcadd4;                    // 顺手算 PC+4 给 jal/jalr 写回用
             MEM_alu_result <= EX_alu_result;
             MEM_perip_addr <= EX_alu_result;                // 独立访存地址副本，避免内部 ALU 结果承担外部高扇出
@@ -77,6 +78,8 @@ module myCPU_ex_mem_reg #(
                                 (EX_MemToReg == 3'b011) ? EX_imm       :
                                 (EX_MemToReg == 3'b000) ? EX_pcadd4    :
                                                            EX_alu_result;
+        end else begin
+            // EX 级多周期指令未完成时保持 EX/MEM，不让半成品结果进入 MEM。
         end
     end
 endmodule

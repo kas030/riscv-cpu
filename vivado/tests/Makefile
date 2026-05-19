@@ -26,7 +26,7 @@ LD      = $(CROSS)ld
 OBJCOPY = $(CROSS)objcopy
 OBJDUMP = $(CROSS)objdump
 
-CFLAGS  = -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles \
+CFLAGS  = -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
           -ffreestanding -fno-builtin -O1 -g
 LDFLAGS = -T linker/link.ld -Map=$(@:.elf=.map)
 

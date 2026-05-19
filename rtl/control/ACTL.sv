@@ -1,95 +1,121 @@
 // =============================================================================
 // ACTL.sv —— ALU 控制译码
-//   位于 ID 级，根据 opcode + funct[3:0] 译码出 14 位独热 ALUControl，
-//   每一位对应 ALU 的一种运算（add/sub/and/or/xor/sll/srl/sra/各类比较）。
+//   位于 ID 级，根据 opcode + funct7/funct3 译码出独热 ALUControl，
+//   每一位对应 ALU 的一种运算（RV32I 算术逻辑/比较 + RV32M 乘除余）。
 //   一热编码使得 ALU 内部可以用按位与 + 或汇总，避免使用 case，
 //   有利于布局布线时分散到多 LUT 上从而缩短关键路径。
 // =============================================================================
 `include "../common/defines.sv"
 
 module ACTL(
-    input  logic [6:0]  opcode    ,                         // 指令 opcode
-    input  logic [3:0]  funct     ,                         // {instr[30], funct3}
-    output logic [13:0] ALUControl                          // 独热 ALU 操作码
+    input  logic [6:0]                    opcode    ,      // 指令 opcode
+    input  logic [9:0]                    funct     ,      // {funct7, funct3}
+    output logic [`ALU_OP_WIDTH - 1:0]   ALUControl        // 独热 ALU 操作码
 );
-    // 14 个一热常量，与 ALU.sv 中 ALUControl 各 bit 一一对应
-    localparam OP_ADD  = 14'h0001;
-    localparam OP_SUB  = 14'h0002;
-    localparam OP_AND  = 14'h0004;
-    localparam OP_OR   = 14'h0008;
-    localparam OP_XOR  = 14'h0010;
-    localparam OP_SLL  = 14'h0020;
-    localparam OP_SRL  = 14'h0040;
-    localparam OP_SRA  = 14'h0080;
-    localparam OP_BEQ  = 14'h0100;
-    localparam OP_BNE  = 14'h0200;
-    localparam OP_BLT  = 14'h0400;
-    localparam OP_BGE  = 14'h0800;
-    localparam OP_BGEU = 14'h1000;
-    localparam OP_BLTU = 14'h2000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_ADD    = 22'h000001;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SUB    = 22'h000002;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_AND    = 22'h000004;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_OR     = 22'h000008;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_XOR    = 22'h000010;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SLL    = 22'h000020;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SRL    = 22'h000040;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SRA    = 22'h000080;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BEQ    = 22'h000100;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BNE    = 22'h000200;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BLT    = 22'h000400;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BGE    = 22'h000800;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BGEU   = 22'h001000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BLTU   = 22'h002000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MUL    = 22'h004000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULH   = 22'h008000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULHSU = 22'h010000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULHU  = 22'h020000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIV    = 22'h040000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIVU   = 22'h080000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_REM    = 22'h100000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_REMU   = 22'h200000;
 
-    // 各运算独热标志
     logic do_add , do_sub , do_and , do_or  , do_xor , do_sll , do_srl;
     logic do_sra , do_beq , do_bne , do_blt , do_bge , do_bgeu, do_bltu;
+    logic do_mul , do_mulh, do_mulhsu, do_mulhu, do_div, do_divu, do_rem, do_remu;
 
-    // 按一热标志聚合输出
-    assign ALUControl = {14{do_add }} & OP_ADD  |
-                        {14{do_sub }} & OP_SUB  |
-                        {14{do_and }} & OP_AND  |
-                        {14{do_or  }} & OP_OR   |
-                        {14{do_xor }} & OP_XOR  |
-                        {14{do_sll }} & OP_SLL  |
-                        {14{do_srl }} & OP_SRL  |
-                        {14{do_sra }} & OP_SRA  |
-                        {14{do_beq }} & OP_BEQ  |
-                        {14{do_bne }} & OP_BNE  |
-                        {14{do_blt }} & OP_BLT  |
-                        {14{do_bge }} & OP_BGE  |
-                        {14{do_bgeu}} & OP_BGEU |
-                        {14{do_bltu}} & OP_BLTU;
+    assign ALUControl = {`ALU_OP_WIDTH{do_add   }} & OP_ADD    |
+                        {`ALU_OP_WIDTH{do_sub   }} & OP_SUB    |
+                        {`ALU_OP_WIDTH{do_and   }} & OP_AND    |
+                        {`ALU_OP_WIDTH{do_or    }} & OP_OR     |
+                        {`ALU_OP_WIDTH{do_xor   }} & OP_XOR    |
+                        {`ALU_OP_WIDTH{do_sll   }} & OP_SLL    |
+                        {`ALU_OP_WIDTH{do_srl   }} & OP_SRL    |
+                        {`ALU_OP_WIDTH{do_sra   }} & OP_SRA    |
+                        {`ALU_OP_WIDTH{do_beq   }} & OP_BEQ    |
+                        {`ALU_OP_WIDTH{do_bne   }} & OP_BNE    |
+                        {`ALU_OP_WIDTH{do_blt   }} & OP_BLT    |
+                        {`ALU_OP_WIDTH{do_bge   }} & OP_BGE    |
+                        {`ALU_OP_WIDTH{do_bgeu  }} & OP_BGEU   |
+                        {`ALU_OP_WIDTH{do_bltu  }} & OP_BLTU   |
+                        {`ALU_OP_WIDTH{do_mul   }} & OP_MUL    |
+                        {`ALU_OP_WIDTH{do_mulh  }} & OP_MULH   |
+                        {`ALU_OP_WIDTH{do_mulhsu}} & OP_MULHSU |
+                        {`ALU_OP_WIDTH{do_mulhu }} & OP_MULHU  |
+                        {`ALU_OP_WIDTH{do_div   }} & OP_DIV    |
+                        {`ALU_OP_WIDTH{do_divu  }} & OP_DIVU   |
+                        {`ALU_OP_WIDTH{do_rem   }} & OP_REM    |
+                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU;
 
-    // 指令类型独热（仅在本模块内部使用）
     logic kind_r, kind_i, kind_load, kind_store, kind_jalr, kind_auipc, kind_branch;
-    assign kind_r      = (opcode == `R_TYPE );
-    assign kind_i      = (opcode == `I_TYPE );
-    assign kind_load   = (opcode == `IL_TYPE);
-    assign kind_store  = (opcode == `S_TYPE );
-    assign kind_jalr   = (opcode == `IJ_TYPE);
-    assign kind_auipc  = (opcode == `UA_TYPE);
-    assign kind_branch = (opcode == `B_TYPE );
+    logic [6:0] funct7;
+    logic [2:0] funct3;
+    logic       r_base, r_mext, i_shift_base;
 
-    // ADD：R/I 型 ADD、各种 load/store 地址计算、auipc 偏移、jalr 目标地址
-    assign do_add = (kind_r      && funct       == 4'b0000) ||
-                    (kind_i      && funct[2:0]  == 3'b000 ) ||
-                    (kind_load   && funct[2:0]  == 3'b000 ) ||
-                    (kind_load   && funct[2:0]  == 3'b001 ) ||
-                    (kind_load   && funct[2:0]  == 3'b010 ) ||
-                    (kind_load   && funct[2:0]  == 3'b100 ) ||
-                    (kind_load   && funct[2:0]  == 3'b101 ) ||
-                    (kind_store  && funct[2:0]  == 3'b000 ) ||
-                    (kind_store  && funct[2:0]  == 3'b001 ) ||
-                    (kind_store  && funct[2:0]  == 3'b010 ) ||
+    assign kind_r       = (opcode == `R_TYPE );
+    assign kind_i       = (opcode == `I_TYPE );
+    assign kind_load    = (opcode == `IL_TYPE);
+    assign kind_store   = (opcode == `S_TYPE );
+    assign kind_jalr    = (opcode == `IJ_TYPE);
+    assign kind_auipc   = (opcode == `UA_TYPE);
+    assign kind_branch  = (opcode == `B_TYPE );
+    assign funct7       = funct[9:3];
+    assign funct3       = funct[2:0];
+    assign r_base       = kind_r && (funct7 == 7'b0000000 || funct7 == 7'b0100000);
+    assign r_mext       = kind_r && (funct7 == 7'b0000001);
+    assign i_shift_base = kind_i && (funct7 == 7'b0000000 || funct7 == 7'b0100000);
+
+    assign do_add = (r_base      && funct7 == 7'b0000000 && funct3 == 3'b000) ||
+                    (kind_i      && funct3 == 3'b000 ) ||
+                    (kind_load   && funct3 == 3'b000 ) ||
+                    (kind_load   && funct3 == 3'b001 ) ||
+                    (kind_load   && funct3 == 3'b010 ) ||
+                    (kind_load   && funct3 == 3'b100 ) ||
+                    (kind_load   && funct3 == 3'b101 ) ||
+                    (kind_store  && funct3 == 3'b000 ) ||
+                    (kind_store  && funct3 == 3'b001 ) ||
+                    (kind_store  && funct3 == 3'b010 ) ||
                      kind_auipc                              ||
-                    (kind_jalr   && funct[2:0]  == 3'b000 );
+                    (kind_jalr   && funct3 == 3'b000 );
 
-    // SUB：仅 R 型 sub
-    assign do_sub  = (kind_r && funct == 4'b1000);
+    assign do_sub  = r_base && funct7 == 7'b0100000 && funct3 == 3'b000;
 
-    // 位逻辑：AND/OR/XOR
-    assign do_and  = (kind_r && funct == 4'b0111) || (kind_i && funct[2:0] == 3'b111);
-    assign do_or   = (kind_r && funct == 4'b0110) || (kind_i && funct[2:0] == 3'b110);
-    assign do_xor  = (kind_r && funct == 4'b0100) || (kind_i && funct[2:0] == 3'b100);
+    assign do_and  = (r_base && funct7 == 7'b0000000 && funct3 == 3'b111) || (kind_i && funct3 == 3'b111);
+    assign do_or   = (r_base && funct7 == 7'b0000000 && funct3 == 3'b110) || (kind_i && funct3 == 3'b110);
+    assign do_xor  = (r_base && funct7 == 7'b0000000 && funct3 == 3'b100) || (kind_i && funct3 == 3'b100);
 
-    // 移位：SLL / SRL / SRA，funct 同时覆盖 R/I 型
-    assign do_sll  = (kind_r || kind_i) && funct == 4'b0001;
-    assign do_srl  = (kind_r || kind_i) && funct == 4'b0101;
-    assign do_sra  = (kind_r || kind_i) && funct == 4'b1101;
+    assign do_sll  = ((r_base && funct7 == 7'b0000000) || (i_shift_base && funct7 == 7'b0000000)) && funct3 == 3'b001;
+    assign do_srl  = ((r_base && funct7 == 7'b0000000) || (i_shift_base && funct7 == 7'b0000000)) && funct3 == 3'b101;
+    assign do_sra  = ((r_base && funct7 == 7'b0100000) || (i_shift_base && funct7 == 7'b0100000)) && funct3 == 3'b101;
 
-    // 比较类：sltu / slt / beq / bne / bge / bgeu，分支指令复用 BLT/BGE 等比较
-    assign do_bltu = (kind_r && funct == 4'b0011) || (kind_branch && funct[2:0] == 3'b110) || (kind_i && funct[2:0] == 3'b011);
-    assign do_blt  = (kind_r && funct == 4'b0010) || (kind_branch && funct[2:0] == 3'b100) || (kind_i && funct[2:0] == 3'b010);
-    assign do_beq  = kind_branch && funct[2:0] == 3'b000;
-    assign do_bne  = kind_branch && funct[2:0] == 3'b001;
-    assign do_bge  = kind_branch && funct[2:0] == 3'b101;
-    assign do_bgeu = kind_branch && funct[2:0] == 3'b111;
+    assign do_bltu = (r_base && funct7 == 7'b0000000 && funct3 == 3'b011) || (kind_branch && funct3 == 3'b110) || (kind_i && funct3 == 3'b011);
+    assign do_blt  = (r_base && funct7 == 7'b0000000 && funct3 == 3'b010) || (kind_branch && funct3 == 3'b100) || (kind_i && funct3 == 3'b010);
+    assign do_beq  = kind_branch && funct3 == 3'b000;
+    assign do_bne  = kind_branch && funct3 == 3'b001;
+    assign do_bge  = kind_branch && funct3 == 3'b101;
+    assign do_bgeu = kind_branch && funct3 == 3'b111;
+
+    assign do_mul    = r_mext && funct3 == 3'b000;
+    assign do_mulh   = r_mext && funct3 == 3'b001;
+    assign do_mulhsu = r_mext && funct3 == 3'b010;
+    assign do_mulhu  = r_mext && funct3 == 3'b011;
+    assign do_div    = r_mext && funct3 == 3'b100;
+    assign do_divu   = r_mext && funct3 == 3'b101;
+    assign do_rem    = r_mext && funct3 == 3'b110;
+    assign do_remu   = r_mext && funct3 == 3'b111;
 endmodule

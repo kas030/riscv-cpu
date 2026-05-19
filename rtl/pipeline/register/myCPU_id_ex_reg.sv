@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+`include "../../common/defines.sv"
 // =============================================================================
 // myCPU_id_ex_reg.sv —— ID/EX 流水线寄存器
 //   - 把 ID 级译出的所有数据通路与控制信号锁存到 EX 级
@@ -25,7 +26,7 @@ module myCPU_id_ex_reg #(
     input  logic [2:0]              ID_funct3       ,
     input  logic                    ID_ALUSrcA      ,
     input  logic                    ID_ALUSrcB      ,
-    input  logic [13:0]             ID_ALUControl   ,
+    input  logic [`ALU_OP_WIDTH - 1:0] ID_ALUControl,
     input  logic [1:0]              ID_NpcOp        ,
     input  logic [1:0]              ID_OffsetOrigin ,
     input  logic [11:0]             ID_csr_idx      ,
@@ -33,6 +34,7 @@ module myCPU_id_ex_reg #(
     input  logic                    clk             ,
     input  logic                    rst             ,
     input  logic                    Flush_ID_EX     ,
+    input  logic                    Stall_ID_EX     ,
     // ---- 输出：送往 EX 级 ----
     output logic [DATAWIDTH - 1:0]  EX_pc           ,
     output logic [DATAWIDTH - 1:0]  EX_imm          ,
@@ -49,7 +51,7 @@ module myCPU_id_ex_reg #(
     output logic [2:0]              EX_funct3       ,
     output logic                    EX_ALUSrcA      ,
     output logic                    EX_ALUSrcB      ,
-    output logic [13:0]             EX_ALUControl   ,
+    output logic [`ALU_OP_WIDTH - 1:0] EX_ALUControl,
     output logic [1:0]              EX_NpcOp        ,
     output logic [1:0]              EX_OffsetOrigin ,
     output logic [11:0]             EX_csr_idx      ,
@@ -78,6 +80,8 @@ module myCPU_id_ex_reg #(
             EX_rs2          <= '0;
             EX_rd           <= '0;
             EX_csr_idx      <= '0;
+        end else if (Stall_ID_EX) begin
+            // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
         end else begin
             // 正常推进：把 ID 级所有信号锁存进 EX 级
             EX_pc           <= ID_pc;
