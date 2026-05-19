@@ -10,18 +10,16 @@
 module ForwardingUnit (
     input  logic [4:0] ID_EX_rs1       ,                    // EX 级源寄存器 1
     input  logic [4:0] ID_EX_rs2       ,                    // EX 级源寄存器 2
-    input  logic [4:0] EX_MEM_rd       ,                    // EX/MEM 写回目标
-    input  logic       EX_MEM_RegWrite ,                    // EX/MEM 是否写回
-    input  logic [4:0] MEM_WB_rd       ,                    // MEM/WB 写回目标
-    input  logic       MEM_WB_RegWrite ,                    // MEM/WB 是否写回
+    input  logic [31:0] EX_MEM_rd_oh   ,                    // EX/MEM 写回目标 one-hot
+    input  logic [31:0] MEM_WB_rd_oh   ,                    // MEM/WB 写回目标 one-hot
     output logic [1:0] ForwardA        ,                    // ALU A 端前递选择
     output logic [1:0] ForwardB                             // ALU B 端前递选择
 );
     // A 端前递：EX/MEM 优先，其次 MEM/WB
     always_comb begin
-        if      (EX_MEM_RegWrite && (EX_MEM_rd != 5'd0) && (EX_MEM_rd == ID_EX_rs1))
+        if      (EX_MEM_rd_oh[ID_EX_rs1])
             ForwardA = 2'b10;
-        else if (MEM_WB_RegWrite && (MEM_WB_rd != 5'd0) && (MEM_WB_rd == ID_EX_rs1))
+        else if (MEM_WB_rd_oh[ID_EX_rs1])
             ForwardA = 2'b01;
         else
             ForwardA = 2'b00;
@@ -29,9 +27,9 @@ module ForwardingUnit (
 
     // B 端前递：同上
     always_comb begin
-        if      (EX_MEM_RegWrite && (EX_MEM_rd != 5'd0) && (EX_MEM_rd == ID_EX_rs2))
+        if      (EX_MEM_rd_oh[ID_EX_rs2])
             ForwardB = 2'b10;
-        else if (MEM_WB_RegWrite && (MEM_WB_rd != 5'd0) && (MEM_WB_rd == ID_EX_rs2))
+        else if (MEM_WB_rd_oh[ID_EX_rs2])
             ForwardB = 2'b01;
         else
             ForwardB = 2'b00;

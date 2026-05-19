@@ -18,13 +18,23 @@ module myCPU_wb_stage #(
     input  logic [DATAWIDTH - 1:0] WB_imm        ,
     input  logic [DATAWIDTH - 1:0] WB_csr_wb     ,
     input  logic [2:0]             WB_MemToReg   ,
+    input  logic [2:0]             WB_funct3     ,
     output logic [DATAWIDTH - 1:0] WB_wdata
 );
+    logic [DATAWIDTH - 1:0] WB_load_data;
+
+    // load 的符号扩展放到 WB 级，切断 MEM 级 perip_rdata 到 MEM/WB 锁存端的组合逻辑
+    Mask #(DATAWIDTH) u_mask_wb (
+        .mask  (WB_funct3    ),
+        .dout  (WB_mdata     ),
+        .mdata (WB_load_data )
+    );
+
     // 5 路 key-value 多路选择，按 WB_MemToReg 选择对应候选
     MuxKey #(5, 3, DATAWIDTH) u_mux_wb (WB_wdata, WB_MemToReg, {
         3'b000, WB_pcadd4    ,
         3'b001, WB_alu_result,
-        3'b010, WB_mdata     ,
+        3'b010, WB_load_data ,
         3'b011, WB_imm       ,
         3'b100, WB_csr_wb
     });

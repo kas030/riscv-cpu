@@ -29,10 +29,14 @@ module myCPU_ex_mem_reg #(
     // ---- 输出：送往 MEM 级 ----
     output logic [DATAWIDTH - 1:0]  MEM_pcadd4       ,
     output logic [DATAWIDTH - 1:0]  MEM_alu_result   ,
+    (* keep = "true", max_fanout = 64 *)
+    output logic [DATAWIDTH - 1:0]  MEM_perip_addr   ,
     output logic [DATAWIDTH - 1:0]  MEM_rR2_data     ,
     output logic [DATAWIDTH - 1:0]  MEM_imm          ,
     output logic [DATAWIDTH - 1:0]  MEM_csr_wb       ,
+    output logic [DATAWIDTH - 1:0]  MEM_forward_data ,
     output logic [ADDR_WIDTH - 1:0] MEM_rd           ,
+    output logic [31:0]             MEM_rd_oh        ,
     output logic                    MEM_RegWrite     ,
     output logic                    MEM_MemWrite     ,
     output logic                    MEM_MemRead      ,
@@ -40,6 +44,10 @@ module myCPU_ex_mem_reg #(
     output logic [2:0]              MEM_MemToReg     ,
     output logic [2:0]              MEM_funct3
 );
+    logic [DATAWIDTH - 1:0] EX_pcadd4;
+
+    assign EX_pcadd4 = EX_pc + 4;
+
     always_ff @(posedge clk) begin
         if (rst) begin
             // 控制信号清零即可，数据通路下一拍会被覆盖
@@ -49,12 +57,15 @@ module myCPU_ex_mem_reg #(
             MEM_isCSR    <= 1'b0;
             MEM_MemToReg <= '0;
             MEM_funct3   <= '0;
+            MEM_rd_oh    <= 32'b0;
         end else begin
-            MEM_pcadd4     <= EX_pc + 4;                    // 顺手算 PC+4 给 jal/jalr 写回用
+            MEM_pcadd4     <= EX_pcadd4;                    // 顺手算 PC+4 给 jal/jalr 写回用
             MEM_alu_result <= EX_alu_result;
+            MEM_perip_addr <= EX_alu_result;                // 独立访存地址副本，避免内部 ALU 结果承担外部高扇出
             MEM_rR2_data   <= EX_forward_B_out;             // 注意是前递后的值
             MEM_imm        <= EX_imm;
             MEM_rd         <= EX_rd;
+            MEM_rd_oh      <= (EX_RegWrite && (EX_rd != '0)) ? (32'b1 << EX_rd) : 32'b0;
             MEM_RegWrite   <= EX_RegWrite;
             MEM_MemWrite   <= EX_MemWrite;
             MEM_MemRead    <= EX_MemRead;
@@ -62,6 +73,10 @@ module myCPU_ex_mem_reg #(
             MEM_MemToReg   <= EX_MemToReg;
             MEM_funct3     <= EX_funct3;
             MEM_csr_wb     <= EX_csr_wb;
+            MEM_forward_data <= (EX_MemToReg == 3'b100) ? EX_csr_wb    :
+                                (EX_MemToReg == 3'b011) ? EX_imm       :
+                                (EX_MemToReg == 3'b000) ? EX_pcadd4    :
+                                                           EX_alu_result;
         end
     end
 endmodule

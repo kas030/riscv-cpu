@@ -16,8 +16,10 @@ module myCPU_mem_wb_reg #(
     input  logic [DATAWIDTH - 1:0]  MEM_imm        ,
     input  logic [DATAWIDTH - 1:0]  MEM_csr_wb     ,
     input  logic [ADDR_WIDTH - 1:0] MEM_rd         ,
+    input  logic [31:0]             MEM_rd_oh      ,
     input  logic                    MEM_RegWrite   ,
     input  logic [2:0]              MEM_MemToReg   ,
+    input  logic [2:0]              MEM_funct3     ,
     input  logic                    clk            ,
     input  logic                    rst            ,
     // ---- 输出：送往 WB 级 ----
@@ -27,22 +29,28 @@ module myCPU_mem_wb_reg #(
     output logic [DATAWIDTH - 1:0]  WB_imm         ,
     output logic [DATAWIDTH - 1:0]  WB_csr_wb      ,
     output logic [ADDR_WIDTH - 1:0] WB_rd          ,
+    output logic [31:0]             WB_rd_oh       ,
     output logic                    WB_RegWrite    ,
-    output logic [2:0]              WB_MemToReg
+    output logic [2:0]              WB_MemToReg    ,
+    output logic [2:0]              WB_funct3
 );
     always_ff @(posedge clk) begin
         if (rst) begin
             WB_RegWrite <= 1'b0;
             WB_MemToReg <= '0;
+            WB_rd_oh    <= 32'b0;
+            WB_funct3   <= '0;
         end else begin
             WB_pcadd4     <= MEM_pcadd4;
             WB_alu_result <= MEM_alu_result;
             WB_mdata      <= MEM_mdata;
             WB_imm        <= MEM_imm;
             WB_rd         <= MEM_rd;
+            WB_rd_oh      <= MEM_rd_oh;
             WB_RegWrite   <= MEM_RegWrite;
             WB_MemToReg   <= MEM_MemToReg;
             WB_csr_wb     <= MEM_csr_wb;
+            WB_funct3     <= MEM_funct3;
         end
     end
 endmodule

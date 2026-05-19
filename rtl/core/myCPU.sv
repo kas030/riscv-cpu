@@ -88,13 +88,14 @@ module myCPU (
     // -------------------------------------------------------------------------
     // EX/MEM 寄存器输出（即 MEM 级输入）
     // -------------------------------------------------------------------------
-    logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_rR2_data, MEM_imm;
+    logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_perip_addr, MEM_rR2_data, MEM_imm;
     logic [4:0]  MEM_rd;
+    logic [31:0] MEM_rd_oh;
     logic        MEM_RegWrite, MEM_MemWrite, MEM_MemRead, MEM_isCSR;
     logic [2:0]  MEM_MemToReg, MEM_funct3;
     logic [31:0] MEM_csr_wb;
 
-    // MEM 级中转给 EX 级前递的候选数据 / load 子字结果
+    // MEM 级中转给 EX 级前递的候选数据 / 外设原始读数
     logic [31:0] MEM_mdata;
     logic [31:0] MEM_forward_data;
 
@@ -103,8 +104,9 @@ module myCPU (
     // -------------------------------------------------------------------------
     logic [31:0] WB_pcadd4, WB_alu_result, WB_mdata, WB_imm;
     logic [4:0]  WB_rd;
+    logic [31:0] WB_rd_oh;
     logic        WB_RegWrite;
-    logic [2:0]  WB_MemToReg;
+    logic [2:0]  WB_MemToReg, WB_funct3;
     logic [31:0] WB_csr_wb;
 
     // -------------------------------------------------------------------------
@@ -129,10 +131,8 @@ module myCPU (
     ForwardingUnit u_forward (
         .ID_EX_rs1       (EX_rs1      ),
         .ID_EX_rs2       (EX_rs2      ),
-        .EX_MEM_rd       (MEM_rd      ),
-        .EX_MEM_RegWrite (MEM_RegWrite),
-        .MEM_WB_rd       (WB_rd       ),
-        .MEM_WB_RegWrite (WB_RegWrite ),
+        .EX_MEM_rd_oh    (MEM_rd_oh   ),
+        .MEM_WB_rd_oh    (WB_rd_oh    ),
         .ForwardA        (ForwardA    ),
         .ForwardB        (ForwardB    )
     );
@@ -296,10 +296,13 @@ module myCPU (
         .rst              (rst             ),
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
+        .MEM_perip_addr   (MEM_perip_addr  ),
         .MEM_rR2_data     (MEM_rR2_data    ),
         .MEM_imm           (MEM_imm        ),
         .MEM_csr_wb       (MEM_csr_wb      ),
+        .MEM_forward_data (MEM_forward_data),
         .MEM_rd           (MEM_rd          ),
+        .MEM_rd_oh        (MEM_rd_oh       ),
         .MEM_RegWrite     (MEM_RegWrite    ),
         .MEM_MemWrite     (MEM_MemWrite    ),
         .MEM_MemRead      (MEM_MemRead     ),
@@ -310,22 +313,17 @@ module myCPU (
 
     // =========================================================================
     // STAGE 4：MEM（访存）
-    //   外设/DRAM 直连；同时把 EX-EX 前递候选 MEM_forward_data 算好回传 EX 级
+    //   外设/DRAM 直连；前递候选已在 EX/MEM 寄存器内锁存好
     // =========================================================================
     myCPU_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
-        .MEM_pcadd4       (MEM_pcadd4      ),
-        .MEM_alu_result   (MEM_alu_result  ),
+        .MEM_perip_addr   (MEM_perip_addr  ),
         .MEM_rR2_data     (MEM_rR2_data    ),
-        .MEM_imm          (MEM_imm         ),
-        .MEM_csr_wb       (MEM_csr_wb      ),
-        .MEM_MemToReg     (MEM_MemToReg    ),
         .MEM_funct3       (MEM_funct3      ),
         .MEM_MemWrite     (MEM_MemWrite    ),
         .perip_addr       (perip_addr      ),
         .perip_wdata      (perip_wdata     ),
         .MEM_mdata        (MEM_mdata       ),
-        .MEM_forward_data (MEM_forward_data),
         .perip_wen        (perip_wen       ),
         .perip_mask       (perip_mask      )
     );
@@ -338,8 +336,10 @@ module myCPU (
         .MEM_imm        (MEM_imm       ),
         .MEM_csr_wb     (MEM_csr_wb    ),
         .MEM_rd         (MEM_rd        ),
+        .MEM_rd_oh      (MEM_rd_oh     ),
         .MEM_RegWrite   (MEM_RegWrite  ),
         .MEM_MemToReg   (MEM_MemToReg  ),
+        .MEM_funct3     (MEM_funct3    ),
         .clk            (clk           ),
         .rst            (rst           ),
         .WB_pcadd4      (WB_pcadd4     ),
@@ -348,8 +348,10 @@ module myCPU (
         .WB_imm         (WB_imm        ),
         .WB_csr_wb      (WB_csr_wb     ),
         .WB_rd          (WB_rd         ),
+        .WB_rd_oh       (WB_rd_oh      ),
         .WB_RegWrite    (WB_RegWrite   ),
-        .WB_MemToReg    (WB_MemToReg   )
+        .WB_MemToReg    (WB_MemToReg   ),
+        .WB_funct3      (WB_funct3     )
     );
 
     // =========================================================================
@@ -363,6 +365,7 @@ module myCPU (
         .WB_imm        (WB_imm       ),
         .WB_csr_wb     (WB_csr_wb    ),
         .WB_MemToReg   (WB_MemToReg  ),
+        .WB_funct3     (WB_funct3    ),
         .WB_wdata      (WB_wdata     )
     );
 
