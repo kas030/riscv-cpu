@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+`include "../../common/defines.sv"
 // =============================================================================
 // myCPU_id_stage.sv —— ID（译码）级
 //   - 抽取 instr 中的 rs1/rs2/rd/funct3 等寄存器号
@@ -21,7 +22,7 @@ module myCPU_id_stage #(
     output logic [2:0]             ID_MemToReg      ,
     output logic [1:0]             ID_NpcOp         ,
     output logic [1:0]             ID_OffsetOrigin  ,
-    output logic [13:0]            ID_ALUControl    ,
+    output logic [`ALU_OP_WIDTH - 1:0] ID_ALUControl,
     output logic [11:0]            ID_csr_idx       ,
     output logic [3:0]             ID_CSRControll   ,
     output logic [2:0]             ID_funct3        ,
@@ -56,10 +57,10 @@ module myCPU_id_stage #(
         .imm   (ID_imm  )
     );
 
-    // ALU 操作码译码（独热 14 位）
+    // ALU 操作码译码（独热编码）
     ACTL u_actl (
         .opcode     (ID_instr[6:0]              ),
-        .funct      ({ID_instr[30], ID_funct3}  ),
+        .funct      ({ID_instr[31:25], ID_funct3}),
         .ALUControl (ID_ALUControl              )
     );
 
