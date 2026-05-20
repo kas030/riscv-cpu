@@ -1,12 +1,12 @@
 `timescale 1ns / 1ps
 `include "../../common/defines.sv"
 // =============================================================================
-// myCPU_id_ex_reg.sv —— ID/EX 流水线寄存器
+// mycpu_id_ex_reg.sv —— ID/EX 流水线寄存器
 //   - 把 ID 级译出的所有数据通路与控制信号锁存到 EX 级
 //   - rst 或 Flush_ID_EX（load-use 注气泡 / 跳转冲刷）时把所有控制信号清零，
 //     等价于注入一条无副作用的空指令；数据通路同时清零，便于波形观察
 // =============================================================================
-module myCPU_id_ex_reg #(
+module mycpu_id_ex_reg #(
     parameter DATAWIDTH  = 32  ,
     parameter ADDR_WIDTH = 5
 ) (

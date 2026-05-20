@@ -5,7 +5,7 @@
 // 在原版基础上新增：
 //   - virtual_led / virtual_seg 引出 wire，便于波形与脚本访问
 //   - cnt_cycles      : cpu_clk 周期数
-//   - cnt_writeback   : RF 写回数（≈ 写寄存器的指令数，含 ALU/load/jal）
+//   - cnt_writeback   : reg_file 写回数（≈ 写寄存器的指令数，含 alu/load/jal）
 //   - cnt_store       : 存储指令数 (SW/SH/SB)
 //   - cnt_branch      : 已 taken 的分支/跳转数
 //   - 程序写 0xC0DEC0DE 或 0xDEADBEEF 到 LED 后自动 $finish 并打印性能指标
@@ -46,7 +46,7 @@ module tb_myCPU;
     always @(posedge cpu_clk) begin
         cnt_cycles <= cnt_cycles + 1;
 
-        // 写 RF 的指令（ALU / load / lui / auipc / jal-with-rd / csrrw 等）
+        // 写 reg_file 的指令（alu / load / lui / auipc / jal-with-rd / csrrw 等）
         if (uut.student_top_inst.Core_cpu.rf_inst.wen &&
             uut.student_top_inst.Core_cpu.rf_inst.waddr != 5'd0)
             cnt_writeback <= cnt_writeback + 1;
@@ -81,7 +81,7 @@ module tb_myCPU;
             $display(">>> [FAIL] virtual_led = 0x%08X", led);
         $display("--------------------------------------------------");
         $display(" cycles            : %0d", cnt_cycles);
-        $display(" writeback (RF)    : %0d", cnt_writeback);
+        $display(" writeback (reg_file)    : %0d", cnt_writeback);
         $display(" stores            : %0d", cnt_store);
         $display(" taken branches    : %0d", cnt_branch);
         $display(" approx total inst : %0d", approx_inst);

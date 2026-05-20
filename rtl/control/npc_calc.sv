@@ -1,20 +1,20 @@
 // =============================================================================
-// NPC.sv —— 下一 PC 计算
-//   位于 EX 级，根据 npc_op 选择四种 PC 重定向方式：
+// npc_calc.sv —— 下一 pc_reg 计算
+//   位于 EX 级，根据 npc_op 选择四种 pc_reg 重定向方式：
 //     2'b00  顺序执行（pc + 4）
 //     2'b01  条件分支：isTrue 决定 (pc+offset) 还是 (pc+4)
 //     2'b10  jalr / mret 等（offset 即目标地址，强制最低位清零）
 //     2'b11  jal（pc + offset）
 //   pcadd4 单独引出供 EX/MEM 寄存器锁存，避免后级再次重算。
 // =============================================================================
-module NPC #(
+module npc_calc #(
     parameter   DATAWIDTH = 32
 )(
     input  logic                   isTrue ,                // 分支条件成立
-    input  logic [1:0]             npc_op ,                // PC 重定向类型
-    input  logic [DATAWIDTH - 1:0] pc     ,                // 当前 PC
+    input  logic [1:0]             npc_op ,                // pc_reg 重定向类型
+    input  logic [DATAWIDTH - 1:0] pc     ,                // 当前 pc_reg
     input  logic [DATAWIDTH - 1:0] offset ,                // 立即数 / 目标地址
-    output logic [DATAWIDTH - 1:0] npc    ,                // 下一 PC
+    output logic [DATAWIDTH - 1:0] npc    ,                // 下一 pc_reg
     output logic [DATAWIDTH - 1:0] pcadd4                  // pc + 4，单独输出
 );
     // 一热标志，对应四种重定向类型
@@ -36,5 +36,5 @@ module NPC #(
                  {32{sel_jalr  }} & addr_jalr   |
                  {32{sel_jal   }} & addr_jal;
 
-    assign pcadd4 = pc + 4;                                                // 顺序 PC，供后级使用
+    assign pcadd4 = pc + 4;                                                // 顺序 pc_reg，供后级使用
 endmodule

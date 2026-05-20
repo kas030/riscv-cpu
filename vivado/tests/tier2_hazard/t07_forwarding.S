@@ -2,7 +2,7 @@
  * t07_forwarding.S —— 数据前递（Forwarding）专项测试
  *
  * 目的：构造连续的 RAW（read-after-write）依赖序列，强制
- *       ForwardingUnit 在 EX→EX、MEM→EX 之间进行数据前递。
+ *       forwarding_unit 在 EX→EX、MEM→EX 之间进行数据前递。
  *       如果前递实现错误，结果将与黄金参考不符。
  *
  * 性能期望：所有依赖均可被前递解决，无气泡，CPI ≈ 1.0。

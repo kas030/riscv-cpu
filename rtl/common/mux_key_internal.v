@@ -1,10 +1,10 @@
 // =============================================================================
-// MuxKeyInternal.v —— MuxKey 的实际查表实现
+// mux_key_internal.v —— mux_key 的实际查表实现
 //   将 lut 拆分成 NR_KEY 个 (key, data) 对，逐对与输入 key 比较；
 //   命中则把对应 data 或上 lut_out，最终用 hit 决定走 lut_out 还是 default。
 //   全部使用组合逻辑，可被综合为并行 LUT 网络。
 // =============================================================================
-module MuxKeyInternal #(NR_KEY = 2, KEY_LEN = 1, DATA_LEN = 1, HAS_DEFAULT = 0) (
+module mux_key_internal #(NR_KEY = 2, KEY_LEN = 1, DATA_LEN = 1, HAS_DEFAULT = 0) (
   output reg [DATA_LEN-1:0]                   out,
   input      [KEY_LEN-1:0]                    key,
   input      [DATA_LEN-1:0]                   default_out,

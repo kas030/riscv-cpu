@@ -1,6 +1,6 @@
 // =============================================================================
-// ALU.sv —— 32 位算术逻辑单元
-//   位于 EX 级，根据 ACTL 译码出的独热 ALUControl 选择本次运算：
+// alu.sv —— 32 位算术逻辑单元
+//   位于 EX 级，根据 alu_ctrl 译码出的独热 ALUControl 选择本次运算：
 //     [0] add  [1] sub  [2] and [3] or  [4] xor [5] sll [6] srl [7] sra
 //     [8] beq  [9] bne [10] blt [11] bge [12] bgeu [13] bltu
 //   设计要点：
@@ -8,11 +8,11 @@
 //       B 端取反 + cin=1 实现 A - B。
 //     - 比较类结果只关心 bit0，isTrue 由比较通路单独生成，避免分支时序
 //       依赖整张 Result 汇总网络。
-//     - RV32M 在 EX 级由独立多周期单元处理，不再放在本 ALU 的组合路径里。
+//     - RV32M 在 EX 级由独立多周期单元处理，不再放在本 alu 的组合路径里。
 // =============================================================================
 `include "../common/defines.sv"
 
-module ALU #(
+module alu #(
     parameter DATAWIDTH = 32
 )(
     input  logic [DATAWIDTH - 1:0]         A          ,

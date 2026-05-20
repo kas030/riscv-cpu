@@ -34,31 +34,31 @@ VERILATOR_OBJ_DIR := $(if $(filter 1,$(TRACE)),obj_dir_trace,obj_dir)
 INC_DIRS := -I$(SRC_COMMON) -I$(SRC_CONTROL) -I$(SRC_CORE) -I$(SRC_DATAPATH) -I$(SRC_HAZARD) -I$(SRC_MEMORY) -I$(SRC_PIPE_REG) -I$(SRC_PIPE_STAGE) -I$(BUILD)
 
 CPU_SRCS := \
-  $(SRC_COMMON)/MuxKeyInternal.v \
-  $(SRC_COMMON)/MuxKey.v \
+  $(SRC_COMMON)/mux_key_internal.v \
+  $(SRC_COMMON)/mux_key.v \
   $(SRC_COMMON)/defines.sv \
-  $(SRC_CONTROL)/ACTL.sv \
-  $(SRC_CONTROL)/CCTL.sv \
-  $(SRC_CONTROL)/CSR.sv \
-  $(SRC_CONTROL)/Control.sv \
-  $(SRC_CONTROL)/IMMGEN.sv \
-  $(SRC_CONTROL)/NPC.sv \
-  $(SRC_CORE)/myCPU.sv \
-  $(SRC_DATAPATH)/ALU.sv \
-  $(SRC_DATAPATH)/PC.sv \
-  $(SRC_DATAPATH)/RF.sv \
-  $(SRC_HAZARD)/ForwardingUnit.sv \
-  $(SRC_HAZARD)/HazardUnit.sv \
-  $(SRC_MEMORY)/Mask.sv \
-  $(SRC_PIPE_REG)/myCPU_if_id_reg.sv \
-  $(SRC_PIPE_REG)/myCPU_id_ex_reg.sv \
-  $(SRC_PIPE_REG)/myCPU_ex_mem_reg.sv \
-  $(SRC_PIPE_REG)/myCPU_mem_wb_reg.sv \
-  $(SRC_PIPE_STAGE)/myCPU_if_stage.sv \
-  $(SRC_PIPE_STAGE)/myCPU_id_stage.sv \
-  $(SRC_PIPE_STAGE)/myCPU_ex_stage.sv \
-  $(SRC_PIPE_STAGE)/myCPU_mem_stage.sv \
-  $(SRC_PIPE_STAGE)/myCPU_wb_stage.sv
+  $(SRC_CONTROL)/alu_ctrl.sv \
+  $(SRC_CONTROL)/csr_ctrl_decode.sv \
+  $(SRC_CONTROL)/csr_file.sv \
+  $(SRC_CONTROL)/main_ctrl.sv \
+  $(SRC_CONTROL)/imm_gen.sv \
+  $(SRC_CONTROL)/npc_calc.sv \
+  $(SRC_CORE)/mycpu.sv \
+  $(SRC_DATAPATH)/alu.sv \
+  $(SRC_DATAPATH)/pc_reg.sv \
+  $(SRC_DATAPATH)/reg_file.sv \
+  $(SRC_HAZARD)/forwarding_unit.sv \
+  $(SRC_HAZARD)/hazard_unit.sv \
+  $(SRC_MEMORY)/load_mask.sv \
+  $(SRC_PIPE_REG)/mycpu_if_id_reg.sv \
+  $(SRC_PIPE_REG)/mycpu_id_ex_reg.sv \
+  $(SRC_PIPE_REG)/mycpu_ex_mem_reg.sv \
+  $(SRC_PIPE_REG)/mycpu_mem_wb_reg.sv \
+  $(SRC_PIPE_STAGE)/mycpu_if_stage.sv \
+  $(SRC_PIPE_STAGE)/mycpu_id_stage.sv \
+  $(SRC_PIPE_STAGE)/mycpu_ex_stage.sv \
+  $(SRC_PIPE_STAGE)/mycpu_mem_stage.sv \
+  $(SRC_PIPE_STAGE)/mycpu_wb_stage.sv
 
 .PHONY: all sim sim-iverilog sim-verilator clean check-tools check-verilator FORCE
 

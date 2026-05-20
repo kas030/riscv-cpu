@@ -54,7 +54,7 @@ module tb_cpu_only;
     always #3.333 clk = ~clk;
     always #10 cnt_clk = ~cnt_clk;
 
-    myCPU dut (
+    mycpu dut (
         .cpu_rst     (rst),
         .cpu_clk     (clk),
         .irom_addr   (irom_addr),
@@ -268,7 +268,7 @@ module tb_cpu_only;
                 $display(" cnt_ms            : %0d", cnt_ms);
                 $display(" cnt_start_ns      : %0d", cnt_start_time);
                 $display(" cycles            : %0d", cycles);
-                $display(" writeback (RF)    : %0d", cnt_writeback);
+                $display(" writeback (reg_file)    : %0d", cnt_writeback);
                 $display(" stores            : %0d", cnt_store);
                 $display(" taken branches    : %0d", cnt_branch);
                 $display(" approx total inst : %0d", approx_inst);

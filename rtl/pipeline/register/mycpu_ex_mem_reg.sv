@@ -1,13 +1,13 @@
 `timescale 1ns / 1ps
 // =============================================================================
-// myCPU_ex_mem_reg.sv —— EX/MEM 流水线寄存器
+// mycpu_ex_mem_reg.sv —— EX/MEM 流水线寄存器
 //   - 把 EX 级算出的 alu_result / 前递后的 rR2 / pc+4 / csr_wb 等通路数据
 //     以及 RegWrite / MemWrite / MemRead / MemToReg / funct3 等控制信号
 //     锁存到 MEM 级
 //   - 顺手把 pc+4 在这里算出锁存（MEM_pcadd4 = EX_pc + 4），避免后级再算
 //   - 复位时控制信号清零，数据通路保持原值（不需要清，下次写入即覆盖）
 // =============================================================================
-module myCPU_ex_mem_reg #(
+module mycpu_ex_mem_reg #(
     parameter DATAWIDTH  = 32 ,
     parameter ADDR_WIDTH = 5
 ) (
@@ -60,9 +60,9 @@ module myCPU_ex_mem_reg #(
             MEM_funct3   <= '0;
             MEM_rd_oh    <= 32'b0;
         end else if (en) begin
-            MEM_pcadd4     <= EX_pcadd4;                    // 顺手算 PC+4 给 jal/jalr 写回用
+            MEM_pcadd4     <= EX_pcadd4;                    // 顺手算 pc_reg+4 给 jal/jalr 写回用
             MEM_alu_result <= EX_alu_result;
-            MEM_perip_addr <= EX_alu_result;                // 独立访存地址副本，避免内部 ALU 结果承担外部高扇出
+            MEM_perip_addr <= EX_alu_result;                // 独立访存地址副本，避免内部 alu 结果承担外部高扇出
             MEM_rR2_data   <= EX_forward_B_out;             // 注意是前递后的值
             MEM_imm        <= EX_imm;
             MEM_rd         <= EX_rd;
