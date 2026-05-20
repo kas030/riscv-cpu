@@ -7,7 +7,7 @@
 //   - RV32M 指令交给独立多周期单元，EX 级等待完成后再向后推进
 //   - 例化 csr_file 完成 csr_file 读写（包含 ecall/mret 重定向地址 csr_npc）
 //   - 选择 npc_calc offset 来源（imm / jalr_target / csr_npc），并例化 npc_calc 算出
-//     IF_npc_redirect 与 BranchTaken 反馈给 IF 级
+//     IF_npc_redirect、BranchTaken 与 BranchRedirect 反馈给前级
 // =============================================================================
 module mycpu_ex_stage #(
     parameter DATAWIDTH = 32
@@ -27,6 +27,8 @@ module mycpu_ex_stage #(
     input  logic [1:0]             ForwardB         ,       // alu B 端前递选择
     input  logic                   EX_ALUSrcA       ,
     input  logic                   EX_ALUSrcB       ,
+    input  logic                   EX_pred_taken    ,
+    input  logic [DATAWIDTH - 1:0] EX_pred_next_pc  ,
     input  logic                   clk              ,
     input  logic                   rst              ,
     output logic [DATAWIDTH - 1:0] IF_npc_redirect  ,       // 给 IF 级的跳转目标
@@ -34,6 +36,7 @@ module mycpu_ex_stage #(
     output logic [DATAWIDTH - 1:0] EX_forward_B_out ,       // B 端前递结果，给 EX/MEM
     output logic [DATAWIDTH - 1:0] EX_csr_wb        ,
     output logic                   BranchTaken      ,       // EX 级判跳成立
+    output logic                   BranchRedirect   ,       // 预测错误或未预测跳转，需要修正前级
     output logic                   EX_busy                  // EX 多周期执行中
 );
     logic [DATAWIDTH - 1:0] alu_in_a, alu_in_b;
@@ -46,6 +49,10 @@ module mycpu_ex_stage #(
     logic                   alu_isTrue;
     logic                   is_m_op;
     logic                   m_busy, m_done, m_start;
+    logic                   EX_is_control;
+    logic                   EX_actual_taken;
+    logic                   EX_branch_mispredict;
+    logic                   EX_jump_redirect;
 
     // 双路前递：根据 ForwardA/B 在 EX/MEM、MEM/WB、寄存器堆三者间选
     assign EX_forward_A_out = (ForwardA == 2'b10) ? MEM_forward_data :
@@ -119,10 +126,20 @@ module mycpu_ex_stage #(
     );
 
     // 跳转判定：分支条件成立 / jalr·mret / jal
-    assign BranchTaken = !EX_busy && (
-                         (EX_NpcOp == 2'b01 && alu_isTrue) ||
-                         (EX_NpcOp == 2'b10              ) ||
-                         (EX_NpcOp == 2'b11              ));
+    assign EX_is_control   = (EX_NpcOp != 2'b00);
+    assign EX_actual_taken = (EX_NpcOp == 2'b01 && alu_isTrue) ||
+                             (EX_NpcOp == 2'b10              ) ||
+                             (EX_NpcOp == 2'b11              );
+    assign BranchTaken     = !EX_busy && EX_actual_taken;
+
+    // IF 级已对条件分支做 BTFNT 预测；EX 级只在预测方向/目标不一致时冲刷修正。
+    assign EX_branch_mispredict = (EX_NpcOp == 2'b01) &&
+                                  ((alu_isTrue != EX_pred_taken) ||
+                                   (IF_npc_redirect != EX_pred_next_pc));
+    assign EX_jump_redirect     = (EX_NpcOp == 2'b10 || EX_NpcOp == 2'b11) &&
+                                  (IF_npc_redirect != EX_pred_next_pc);
+    assign BranchRedirect       = !EX_busy && EX_is_control &&
+                                  (EX_branch_mispredict || EX_jump_redirect);
 endmodule
 
 module rv32m_unit #(

@@ -43,16 +43,21 @@ module mycpu (
     logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken;
+    logic        BranchRedirect;
 
     // -------------------------------------------------------------------------
     // IF 级信号
     // -------------------------------------------------------------------------
     logic [31:0] IF_pc, IF_npc_redirect, IF_instr;
+    logic        IF_pred_taken;
+    logic [31:0] IF_pred_next_pc;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
     // -------------------------------------------------------------------------
     logic [31:0] ID_pc, ID_instr;
+    logic        ID_pred_taken;
+    logic [31:0] ID_pred_next_pc;
 
     // -------------------------------------------------------------------------
     // ID 级信号
@@ -80,6 +85,8 @@ module mycpu (
     logic [1:0]  EX_NpcOp, EX_OffsetOrigin;
     logic [11:0] EX_csr_idx;
     logic [3:0]  EX_CSRControll;
+    logic        EX_pred_taken;
+    logic [31:0] EX_pred_next_pc;
 
     // -------------------------------------------------------------------------
     // EX 级输出
@@ -124,7 +131,7 @@ module mycpu (
         .IF_ID_rs2     (ID_instr[24:20]),
         .ID_EX_rd      (EX_rd          ),
         .ID_EX_MemRead (EX_MemRead     ),
-        .BranchTaken   (BranchTaken    ),
+        .BranchRedirect(BranchRedirect ),
         .Stall         (Stall_Hazard   ),
         .Flush_IF_ID   (Flush_IF_ID    ),
         .Flush_ID_EX   (Flush_ID_EX    )
@@ -156,10 +163,12 @@ module mycpu (
         .clk             (clk            ),
         .rst             (rst            ),
         .Stall           (Stall_Front    ),
-        .BranchTaken     (BranchTaken    ),
+        .BranchRedirect  (BranchRedirect ),
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
-        .IF_instr        (IF_instr       )
+        .IF_instr        (IF_instr       ),
+        .IF_pred_taken   (IF_pred_taken  ),
+        .IF_pred_next_pc (IF_pred_next_pc)
     );
 
     // ---- IF/ID 流水寄存器 ----
@@ -170,8 +179,12 @@ module mycpu (
         .Stall       (Stall_Front),
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
+        .IF_pred_taken   (IF_pred_taken  ),
+        .IF_pred_next_pc (IF_pred_next_pc),
         .ID_pc       (ID_pc      ),
-        .ID_instr    (ID_instr   )
+        .ID_instr    (ID_instr   ),
+        .ID_pred_taken   (ID_pred_taken  ),
+        .ID_pred_next_pc (ID_pred_next_pc)
     );
 
     // =========================================================================
@@ -234,6 +247,8 @@ module mycpu (
         .ID_OffsetOrigin (ID_OffsetOrigin),
         .ID_csr_idx      (ID_csr_idx     ),
         .ID_CSRControll  (ID_CSRControll ),
+        .ID_pred_taken   (ID_pred_taken  ),
+        .ID_pred_next_pc (ID_pred_next_pc),
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
@@ -257,7 +272,9 @@ module mycpu (
         .EX_NpcOp        (EX_NpcOp       ),
         .EX_OffsetOrigin (EX_OffsetOrigin),
         .EX_csr_idx      (EX_csr_idx     ),
-        .EX_CSRControll  (EX_CSRControll )
+        .EX_CSRControll  (EX_CSRControll ),
+        .EX_pred_taken   (EX_pred_taken  ),
+        .EX_pred_next_pc (EX_pred_next_pc)
     );
 
     // =========================================================================
@@ -281,6 +298,8 @@ module mycpu (
         .ForwardB         (ForwardB        ),
         .EX_ALUSrcA       (EX_ALUSrcA      ),
         .EX_ALUSrcB       (EX_ALUSrcB      ),
+        .EX_pred_taken    (EX_pred_taken   ),
+        .EX_pred_next_pc  (EX_pred_next_pc ),
         .clk              (clk             ),
         .rst              (rst             ),
         .IF_npc_redirect  (IF_npc_redirect ),
@@ -288,6 +307,7 @@ module mycpu (
         .EX_forward_B_out (EX_forward_B_out),
         .EX_csr_wb        (EX_csr_wb       ),
         .BranchTaken      (BranchTaken     ),
+        .BranchRedirect   (BranchRedirect  ),
         .EX_busy          (EX_busy         )
     );
 
