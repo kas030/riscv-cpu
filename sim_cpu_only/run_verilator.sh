@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-ENV_BIN=/home/mph/.local/micromamba/envs/hdl/bin
 
 cd "$SCRIPT_DIR"
 
@@ -26,7 +25,7 @@ fi
 exec 3>&1 4>&2
 TIMEFORMAT='%3R %3U %3S'
 time_output=$({
-    time "$ENV_BIN/make" sim-verilator "$@" 1>&3 2>&4
+    time make sim-verilator "$@" 1>&3 2>&4
 } 2>&1)
 exec 3>&- 4>&-
 
