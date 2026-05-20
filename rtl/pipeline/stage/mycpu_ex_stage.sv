@@ -1,15 +1,15 @@
 `timescale 1ns / 1ps
 `include "../../common/defines.sv"
 // =============================================================================
-// myCPU_ex_stage.sv —— EX（执行）级
-//   - 在 ALU 输入端实现 EX-EX / MEM-EX 双路前递（ForwardA/B 选择）
-//   - 例化 ALU 进行 RV32I 算术/逻辑/比较运算
+// mycpu_ex_stage.sv —— EX（执行）级
+//   - 在 alu 输入端实现 EX-EX / MEM-EX 双路前递（ForwardA/B 选择）
+//   - 例化 alu 进行 RV32I 算术/逻辑/比较运算
 //   - RV32M 指令交给独立多周期单元，EX 级等待完成后再向后推进
-//   - 例化 CSR 完成 CSR 读写（包含 ecall/mret 重定向地址 csr_npc）
-//   - 选择 NPC offset 来源（imm / jalr_target / csr_npc），并例化 NPC 算出
+//   - 例化 csr_file 完成 csr_file 读写（包含 ecall/mret 重定向地址 csr_npc）
+//   - 选择 npc_calc offset 来源（imm / jalr_target / csr_npc），并例化 npc_calc 算出
 //     IF_npc_redirect 与 BranchTaken 反馈给 IF 级
 // =============================================================================
-module myCPU_ex_stage #(
+module mycpu_ex_stage #(
     parameter DATAWIDTH = 32
 ) (
     input  logic [DATAWIDTH - 1:0] MEM_forward_data ,       // 来自 MEM 级的前递候选
@@ -23,8 +23,8 @@ module myCPU_ex_stage #(
     input  logic [1:0]             EX_OffsetOrigin  ,
     input  logic [11:0]            EX_csr_idx       ,
     input  logic [3:0]             EX_CSRControll   ,
-    input  logic [1:0]             ForwardA         ,       // ALU A 端前递选择
-    input  logic [1:0]             ForwardB         ,       // ALU B 端前递选择
+    input  logic [1:0]             ForwardA         ,       // alu A 端前递选择
+    input  logic [1:0]             ForwardB         ,       // alu B 端前递选择
     input  logic                   EX_ALUSrcA       ,
     input  logic                   EX_ALUSrcB       ,
     input  logic                   clk              ,
@@ -55,13 +55,13 @@ module myCPU_ex_stage #(
                               (ForwardB == 2'b01) ? WB_wdata         :
                                                     EX_rR2_data      ;
 
-    // ALU 输入选择：A 端 pc/rs1，B 端 imm/rs2
+    // alu 输入选择：A 端 pc/rs1，B 端 imm/rs2
     assign alu_in_a = EX_ALUSrcA ? EX_pc  : EX_forward_A_out;
     assign alu_in_b = EX_ALUSrcB ? EX_imm : EX_forward_B_out;
     assign is_m_op  = |EX_ALUControl[21:14];
 
-    // RV32I 轻量 ALU：只保留加减/逻辑/比较等短路径运算。
-    ALU #(DATAWIDTH) u_alu (
+    // RV32I 轻量 alu：只保留加减/逻辑/比较等短路径运算。
+    alu #(DATAWIDTH) u_alu (
         .A          (alu_in_a       ),
         .B          (alu_in_b       ),
         .ALUControl (EX_ALUControl  ),
@@ -73,7 +73,7 @@ module myCPU_ex_stage #(
     // done 会在结果提交后保持一拍，所以这里要额外屏蔽 !m_done，避免同一条指令重复启动。
     assign m_start = is_m_op && !m_busy && !m_done;
 
-    RV32MUnit #(DATAWIDTH) u_rv32m (
+    rv32m_unit #(DATAWIDTH) u_rv32m_unit (
         .clk         (clk           ),
         .rst         (rst           ),
         .start       (m_start       ),
@@ -88,8 +88,8 @@ module myCPU_ex_stage #(
     assign EX_busy       = is_m_op && !m_done;
     assign EX_alu_result = is_m_op ? m_result : alu_result_i;
 
-    // CSR 模块：rs1 用前递后的 A 端数据
-    CSR #(DATAWIDTH) u_csr (
+    // csr_file 模块：rs1 用前递后的 A 端数据
+    csr_file #(DATAWIDTH) u_csr_file (
         .clk         (clk             ),
         .rst         (rst             ),
         .pc          (EX_pc           ),
@@ -100,16 +100,16 @@ module myCPU_ex_stage #(
         .csr_wb      (EX_csr_wb       )
     );
 
-    // JALR 目标地址单独旁路计算，避免把完整 ALU 结果网络挂到 PC 重定向时序上。
+    // JALR 目标地址单独旁路计算，避免把完整 alu 结果网络挂到 pc_reg 重定向时序上。
     assign jalr_target = (EX_forward_A_out + EX_imm) & {{DATAWIDTH - 1{1'b1}}, 1'b0};
 
-    // NPC 偏移量来源选择：imm（branch/jal）/ jalr_target / csr_npc（ecall·mret）
+    // npc_calc 偏移量来源选择：imm（branch/jal）/ jalr_target / csr_npc（ecall·mret）
     assign npc_offset = {DATAWIDTH{EX_OffsetOrigin == 2'b00}} & EX_imm        |
                         {DATAWIDTH{EX_OffsetOrigin == 2'b01}} & jalr_target   |
                         {DATAWIDTH{EX_OffsetOrigin == 2'b10}} & csr_npc       ;
 
-    // 计算下一 PC（仅用于跳转重定向，pcadd4 已在 EX/MEM 寄存器里单独算）
-    NPC #(DATAWIDTH) u_npc (
+    // 计算下一 pc_reg（仅用于跳转重定向，pcadd4 已在 EX/MEM 寄存器里单独算）
+    npc_calc #(DATAWIDTH) u_npc_calc (
         .isTrue (alu_isTrue      ),
         .npc_op (EX_NpcOp        ),
         .pc     (EX_pc           ),
@@ -125,7 +125,7 @@ module myCPU_ex_stage #(
                          (EX_NpcOp == 2'b11              ));
 endmodule
 
-module RV32MUnit #(
+module rv32m_unit #(
     parameter DATAWIDTH = 32,
     parameter DIV_LATENCY = 32
 ) (

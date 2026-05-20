@@ -1,6 +1,6 @@
 // =============================================================================
 // defines.sv —— RV32I/RV32M 各类型指令 opcode 与公共宽度宏定义
-//   被 Control / ACTL / IMMGEN 等译码模块通过 `include "defines.sv"` 引入，
+//   被 main_ctrl / alu_ctrl / imm_gen 等译码模块通过 `include "defines.sv"` 引入，
 //   宏值与 RISC-V 手册保持一致，调整时务必同步修改各使用处。
 // =============================================================================
 `ifndef DEFINES_SV
@@ -18,9 +18,9 @@
 `define U_TYPE   7'b011_0111             // U 型 lui
 `define UA_TYPE  7'b001_0111             // U 型 auipc
 `define J_TYPE   7'b110_1111             // J 型 jal
-`define CSR_TYPE 7'b111_0011             // CSR / ecall / mret
+`define CSR_TYPE 7'b111_0011             // csr_file / ecall / mret
 
 `define OPCODE_LEN 7                     // opcode 字段宽度
-`define ALU_OP_WIDTH 22                  // ALU 独热操作码宽度
+`define ALU_OP_WIDTH 22                  // alu 独热操作码宽度
 
 `endif

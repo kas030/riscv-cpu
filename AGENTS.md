@@ -5,21 +5,21 @@
 
 ## 项目结构
 
-- `rtl/core/myCPU.sv`：CPU 核心顶层，串接 `IF -> ID -> EX -> MEM -> WB`
+- `rtl/core/mycpu.sv`：CPU 核心顶层，串接 `IF -> ID -> EX -> MEM -> WB`
   五级流水、流水寄存器、冒险检测、前递和寄存器堆。
 - `rtl/pipeline/stage/`：五个流水级实现：
-  `myCPU_if_stage`、`myCPU_id_stage`、`myCPU_ex_stage`、
-  `myCPU_mem_stage`、`myCPU_wb_stage`。
+  `mycpu_if_stage`、`mycpu_id_stage`、`mycpu_ex_stage`、
+  `mycpu_mem_stage`、`mycpu_wb_stage`。
 - `rtl/pipeline/register/`：级间流水寄存器：
-  `myCPU_if_id_reg`、`myCPU_id_ex_reg`、`myCPU_ex_mem_reg`、
-  `myCPU_mem_wb_reg`。
-- `rtl/control/`：译码与控制逻辑，包括 `Control.sv`、`ACTL.sv`、
-  `IMMGEN.sv`、`CCTL.sv`、`CSR.sv`、`NPC.sv`。
-- `rtl/datapath/`：`ALU`、`PC`、`RF` 等数据通路基础模块。
-- `rtl/hazard/`：`HazardUnit.sv` 与 `ForwardingUnit.sv`。
+  `mycpu_if_id_reg`、`mycpu_id_ex_reg`、`mycpu_ex_mem_reg`、
+  `mycpu_mem_wb_reg`。
+- `rtl/control/`：译码与控制逻辑，包括 `main_ctrl.sv`、`alu_ctrl.sv`、
+  `imm_gen.sv`、`csr_ctrl_decode.sv`、`csr_file.sv`、`npc_calc.sv`。
+- `rtl/datapath/`：`alu.sv`、`pc_reg.sv`、`reg_file.sv` 等数据通路基础模块。
+- `rtl/hazard/`：`hazard_unit.sv` 与 `forwarding_unit.sv`。
 - `rtl/memory/`：DRAM 访问与 load 数据 mask/扩展相关模块。
 - `rtl/bus/perip_bridge.sv`：当前 RTL 的 DRAM/MMIO 地址译码权威来源。
-- `rtl/soc/student_top.sv`：实例化 `myCPU`、IROM 和 `perip_bridge`。
+- `rtl/soc/student_top.sv`：实例化 `mycpu`、IROM 和 `perip_bridge`。
 - `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 与
   `student_top`。
 - `tb/`：CPU/top/UART 的 SystemVerilog testbench。
@@ -29,18 +29,18 @@
 
 ## 架构要点
 
-- CPU 复位入口 PC 在 `rtl/core/myCPU.sv` 中定义为 `32'h8000_0000`。
+- CPU 复位入口 PC 在 `rtl/core/mycpu.sv` 中定义为 `32'h8000_0000`。
 - `student_top.sv` 使用 `inst_addr = pc[13:2]` 访问 IROM，高位 PC 被有意
   忽略，用于把 `0x8000_0000` 附近的取指映射到 IROM 索引。
 - 分支、`jal`、`jalr`、`ecall`、`mret` 均在 EX 级解析。跳转成立时，
-  `HazardUnit` 同时冲刷 IF/ID 与 ID/EX。
+  `hazard_unit` 同时冲刷 IF/ID 与 ID/EX。
 - load-use 冒险会停顿 PC 与 IF/ID 一拍，并冲刷 ID/EX 注入气泡。
-- `ForwardingUnit` 产生 EX/MEM 与 MEM/WB 两路前递选择，优先级为
+- `forwarding_unit` 产生 EX/MEM 与 MEM/WB 两路前递选择，优先级为
   EX/MEM 高于 MEM/WB。
-- `myCPU_mem_stage.sv` 根据 `MemToReg` 预先生成 `MEM_forward_data`，使
-  `lui`、`jal`、`jalr`、CSR 等非普通 ALU 写回值也能走前递路径。
-- `RF.sv` 内置 WB 到 ID 的同周期旁路，并屏蔽对 `x0` 的写入。
-- ALU 使用 14 位一热 `ALUControl`，由 `ACTL.sv` 译码生成。
+- `mycpu_mem_stage.sv` 根据 `MemToReg` 预先生成 `MEM_forward_data`，使
+  `lui`、`jal`、`jalr`、csr_file 等非普通 ALU 写回值也能走前递路径。
+- `reg_file.sv` 内置 WB 到 ID 的同周期旁路，并屏蔽对 `x0` 的写入。
+- ALU 使用 14 位一热 `ALUControl`，由 `alu_ctrl.sv` 译码生成。
 - 流水寄存器在 reset/flush 时注入 NOP 或清零控制信号。修改冒险、冲刷
   或控制逻辑时必须保持该无副作用气泡语义。
 
@@ -64,17 +64,17 @@
 
 - 延续现有 SystemVerilog 风格，优先使用 `logic`、`always_comb`、
   `always_ff`。
-- CPU 核心修改边界：`rtl/core/myCPU.sv` 的对外端口列表视为固定接口，
+- CPU 核心修改边界：`rtl/core/mycpu.sv` 的对外端口列表视为固定接口，
   不允许增删端口、改名、改宽度、改方向或改变接口时序语义。功能实现必须
-  接入 `myCPU` 已定义的 IROM 与外设/DRAM 访问接口。
+  接入 `mycpu` 已定义的 IROM 与外设/DRAM 访问接口。
 - 除非任务明确要求改 SoC、外设地址映射、板级集成、testbench 或 Vivado
-  IP，否则只能修改隶属于 `myCPU` 的 CPU 核心实现模块，例如
-  `rtl/core/myCPU.sv` 的内部连线、流水级、流水寄存器、控制、数据通路、
+  IP，否则只能修改隶属于 `mycpu` 的 CPU 核心实现模块，例如
+  `rtl/core/mycpu.sv` 的内部连线、流水级、流水寄存器、控制、数据通路、
   冒险/前递以及 CPU 内存访问辅助逻辑。不要为了适配 CPU 功能去修改
   `rtl/soc/student_top.sv`、`rtl/top/top.sv`、`rtl/bus/perip_bridge.sv`、
   `tb/`、`constraints/`、`ip/` 或 Vivado 生成目录。
 - 流水信号命名保持 `IF_`、`ID_`、`EX_`、`MEM_`、`WB_` 前缀。
-- 保持被 testbench 依赖的层次名稳定。例如 `myCPU.sv` 中寄存器堆实例名
+- 保持被 testbench 依赖的层次名稳定。例如 `mycpu.sv` 中寄存器堆实例名
   为 `rf_inst`，`tb/tb_myCPU.sv` 会层次化引用它。
 - 不要随意把现有一热译码/一热 mux 风格改成大规模无关重构。
 - 中文注释较多，文件应保持 UTF-8。新增注释要简洁，解释设计意图或
@@ -123,16 +123,16 @@ Vivado 仿真入口：
 
 ## 修改检查清单
 
-- 改指令译码：同步检查 `defines.sv`、`Control.sv`、`ACTL.sv`、
-  `IMMGEN.sv`、`CCTL.sv` 与相关汇编测试。
+- 改指令译码：同步检查 `defines.sv`、`main_ctrl.sv`、`alu_ctrl.sv`、
+  `imm_gen.sv`、`csr_ctrl_decode.sv` 与相关汇编测试。
 - 新增写回来源：同步更新 `MemToReg` 编码、ID/EX、EX/MEM、MEM/WB、
-  `myCPU_mem_stage.sv`、`myCPU_wb_stage.sv`。
+  `mycpu_mem_stage.sv`、`mycpu_wb_stage.sv`。
 - 改冒险/前递：重点验证 `t07_forwarding.S`、`t08_load_use.S`、
   `t09_branch_hazard.S`。
-- 改分支/CSR：检查 `NPC.sv`、`CSR.sv`、`CCTL.sv`、`Control.sv`，以及
+- 改分支/csr_file：检查 `npc_calc.sv`、`csr_file.sv`、`csr_ctrl_decode.sv`、`main_ctrl.sv`，以及
   IF/ID 与 ID/EX 的冲刷行为。
-- 改 load/store：同时核对 `Mask.sv`、`dram_driver.sv`、
-  `myCPU_mem_stage.sv`、`perip_bridge.sv` 的宽度、符号扩展、字节偏移和
+- 改 load/store：同时核对 `load_mask.sv`、`dram_driver.sv`、
+  `mycpu_mem_stage.sv`、`perip_bridge.sv` 的宽度、符号扩展、字节偏移和
   地址译码。
 - 改顶层：保持 `top.sv`、`student_top.sv`、约束、testbench、Vivado IP 的
   时钟/复位极性一致。
@@ -145,7 +145,7 @@ Vivado 仿真入口：
   不要擅自修改全局 Git 配置。
 - 地址映射、链接脚本和旧测试注释之间存在不一致迹象。以当前 RTL 为准，
   再有意识地修正测试侧。
-- `Mask.sv` 与 `dram_driver.sv` 分担了字节/半字选择、符号扩展和读写拼接
+- `load_mask.sv` 与 `dram_driver.sv` 分担了字节/半字选择、符号扩展和读写拼接
   责任；不要只改其中一侧。
 - IROM 测试镜像的完成约定必须和 testbench 匹配，否则会出现“CPU 正常跑、
   仿真不结束”的假失败。

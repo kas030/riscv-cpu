@@ -2,7 +2,6 @@
 `include "sim_config.svh"
 
 module tb_cpu_only;
-    localparam IROM_BASE = 32'h8000_0000;
     localparam DRAM_BASE = 32'h8010_0000;
     localparam DRAM_END  = 32'h8013_FFFF;
     localparam SW0_ADDR  = 32'h8020_0000;
@@ -43,6 +42,8 @@ module tb_cpu_only;
     longint unsigned approx_inst;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
     localparam [31:0]         EXPECTED_LED     = `SIM_EXPECTED_LED;
+    localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
+    localparam [31:0]         FAIL_LED         = `SIM_FAIL_LED;
     localparam bit            TRACE_ENABLED    = `SIM_TRACE;
     localparam time           STOP_NS          = `SIM_STOP_NS;
     localparam time           PROGRESS_NS      = `SIM_PROGRESS_NS;
@@ -50,11 +51,12 @@ module tb_cpu_only;
     string trace_file = `SIM_TRACE_FILE;
     bit sim_done = 1'b0;
     string stop_reason;
+    integer init_idx;
 
     always #3.333 clk = ~clk;
     always #10 cnt_clk = ~cnt_clk;
 
-    myCPU dut (
+    mycpu dut (
         .cpu_rst     (rst),
         .cpu_clk     (clk),
         .irom_addr   (irom_addr),
@@ -72,6 +74,10 @@ module tb_cpu_only;
             $dumpvars(0, tb_cpu_only);
             $display(" trace             : %s", trace_file);
         end
+        for (init_idx = 0; init_idx < 4096; init_idx = init_idx + 1)
+            irom[init_idx] = 32'd0;
+        for (init_idx = 0; init_idx < 65536; init_idx = init_idx + 1)
+            dram[init_idx] = 32'd0;
         $readmemh("build/irom.mem", irom);
         $readmemh("build/dram.mem", dram);
         repeat (5) @(posedge clk);
@@ -79,7 +85,8 @@ module tb_cpu_only;
     end
 
     always_comb begin
-        irom_data = irom[(irom_addr - IROM_BASE) >> 2];
+        // student_top.sv 使用 pc[13:2] 访问 IROM，这里保持同样的高位忽略语义。
+        irom_data = irom[irom_addr[13:2]];
     end
 
     function automatic [31:0] select_load_word(input [31:0] word, input [1:0] mask, input [1:0] offset);
@@ -136,7 +143,7 @@ module tb_cpu_only;
                     KEY_ADDR: perip_rdata = 32'd0;
                     SEG_ADDR: perip_rdata = seg_wdata;
                     CNT_ADDR: perip_rdata = cnt_ms;
-                    default: perip_rdata = 32'hDEAD_BEEF;
+                    default: perip_rdata = 32'd0;
                 endcase
             end
         end
@@ -248,7 +255,9 @@ module tb_cpu_only;
                 sim_done = 1'b1;
                 stop_reason = reason;
                 approx_inst = cnt_writeback + cnt_store + cnt_branch;
-                led_ok = (!HAS_EXPECTED_LED || virtual_led == EXPECTED_LED);
+                led_ok = (virtual_led != FAIL_LED) &&
+                         ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
+                          (!HAS_EXPECTED_LED && virtual_led == PASS_LED));
                 clear_progress_line();
                 if (led_ok)
                     $display(">>> [PASS] final state matches enabled checks");
@@ -256,6 +265,8 @@ module tb_cpu_only;
                     $display(">>> [FAIL] final state mismatch");
                 if (HAS_EXPECTED_LED)
                     $display(" expected_led      : 0x%08X (%s)", EXPECTED_LED, led_ok ? "match" : "mismatch");
+                $display(" pass_led          : 0x%08X", PASS_LED);
+                $display(" fail_led          : 0x%08X", FAIL_LED);
                 $display(" stop_reason       : %s", stop_reason);
                 if (HAS_EXPECTED_LED)
                     $display(" virtual_led       : 0x%08X", virtual_led);
@@ -268,7 +279,7 @@ module tb_cpu_only;
                 $display(" cnt_ms            : %0d", cnt_ms);
                 $display(" cnt_start_ns      : %0d", cnt_start_time);
                 $display(" cycles            : %0d", cycles);
-                $display(" writeback (RF)    : %0d", cnt_writeback);
+                $display(" writeback (reg_file)    : %0d", cnt_writeback);
                 $display(" stores            : %0d", cnt_store);
                 $display(" taken branches    : %0d", cnt_branch);
                 $display(" approx total inst : %0d", approx_inst);
@@ -291,6 +302,15 @@ module tb_cpu_only;
                 cnt_store <= cnt_store + 1;
             if (dut.BranchTaken)
                 cnt_branch <= cnt_branch + 1;
+        end
+    end
+
+    always @(negedge clk) begin
+        if (!rst && led_written &&
+            ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
+             virtual_led == PASS_LED ||
+             virtual_led == FAIL_LED)) begin
+            finish_sim("led");
         end
     end
 

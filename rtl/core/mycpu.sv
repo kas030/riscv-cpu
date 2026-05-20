@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 `include "../common/defines.sv"
 // =============================================================================
-// myCPU.sv —— RV32I/RV32M CPU 顶层
-//   将 5 级流水线的各 stage 模块、4 个流水寄存器、HazardUnit、ForwardingUnit、
+// mycpu.sv —— RV32I/RV32M CPU 顶层
+//   将 5 级流水线的各 stage 模块、4 个流水寄存器、hazard_unit、forwarding_unit、
 //   寄存器堆按数据流方向连接起来。对外暴露的接口仅保留：
 //     - cpu_clk / cpu_rst                     时钟与复位
 //     - irom_addr / irom_data                 IROM 取指接口（同步只读）
@@ -11,7 +11,7 @@
 //   内部信号按 IF→ID→EX→MEM→WB 五级分组，每一组对应一个流水寄存器输出端，
 //   命名沿用 `<stage>_<信号>` 以便与教材中的经典 5 级流水线对齐。
 // =============================================================================
-module myCPU (
+module mycpu (
     input  logic         cpu_rst   ,
     input  logic         cpu_clk   ,
 
@@ -28,7 +28,7 @@ module myCPU (
 );
     // ---- 通用参数 ----
     parameter DATAWIDTH  = 32;
-    parameter RESET_VAL  = 32'h8000_0000;                   // PC 复位入口
+    parameter RESET_VAL  = 32'h8000_0000;                   // pc_reg 复位入口
     parameter ADDR_WIDTH = 5;                                // 寄存器堆地址宽度
 
     // 时钟/复位别名（保持与子模块端口命名一致）
@@ -112,14 +112,14 @@ module myCPU (
     logic [31:0] WB_csr_wb;
 
     // -------------------------------------------------------------------------
-    // WB 级输出（同时也是 RF 写口数据）
+    // WB 级输出（同时也是 reg_file 写口数据）
     // -------------------------------------------------------------------------
     logic [31:0] WB_wdata;
 
     // =========================================================================
     // 冒险检测 / 前递选择
     // =========================================================================
-    HazardUnit u_hazard (
+    hazard_unit u_hazard_unit (
         .IF_ID_rs1     (ID_instr[19:15]),
         .IF_ID_rs2     (ID_instr[24:20]),
         .ID_EX_rd      (EX_rd          ),
@@ -138,7 +138,7 @@ module myCPU (
     assign Flush_ID_EX_comb = Flush_ID_EX & ~EX_busy;
     assign Stall           = Stall_Front;
 
-    ForwardingUnit u_forward (
+    forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),
         .ID_EX_rs2       (EX_rs2      ),
         .EX_MEM_rd_oh    (MEM_rd_oh   ),
@@ -150,7 +150,7 @@ module myCPU (
     // =========================================================================
     // STAGE 1：IF（取指）
     // =========================================================================
-    myCPU_if_stage #(DATAWIDTH, RESET_VAL) u_if_stage (
+    mycpu_if_stage #(DATAWIDTH, RESET_VAL) u_if_stage (
         .irom_data       (irom_data      ),
         .IF_npc_redirect (IF_npc_redirect),
         .clk             (clk            ),
@@ -163,7 +163,7 @@ module myCPU (
     );
 
     // ---- IF/ID 流水寄存器 ----
-    myCPU_if_id_reg #(DATAWIDTH) u_if_id_reg (
+    mycpu_if_id_reg #(DATAWIDTH) u_if_id_reg (
         .clk         (clk        ),
         .rst         (rst        ),
         .Flush_IF_ID (Flush_IF_ID),
@@ -176,10 +176,10 @@ module myCPU (
 
     // =========================================================================
     // STAGE 2：ID（译码）
-    //   寄存器堆 RF 单独例化在顶层，写口取自 WB 级，读口直接出给 ID 级，
+    //   寄存器堆 reg_file 单独例化在顶层，写口取自 WB 级，读口直接出给 ID 级，
     //   形成 WB-ID 内部前递路径
     // =========================================================================
-    myCPU_id_stage #(DATAWIDTH) u_id_stage (
+    mycpu_id_stage #(DATAWIDTH) u_id_stage (
         .ID_instr        (ID_instr       ),
         .ID_imm          (ID_imm         ),
         .ID_RegWrite     (ID_RegWrite    ),
@@ -200,7 +200,7 @@ module myCPU (
         .ID_rd           (ID_rd          )
     );
 
-    RF #(ADDR_WIDTH, DATAWIDTH) rf_inst (                  // 实例名沿用 rf_inst，testbench 层级引用依赖此名
+    reg_file #(ADDR_WIDTH, DATAWIDTH) rf_inst (                  // 实例名沿用 rf_inst，testbench 层级引用依赖此名
         .clk      (clk        ),
         .rst      (rst        ),
         .wen      (WB_RegWrite),                            // 来自 WB 级
@@ -213,7 +213,7 @@ module myCPU (
     );
 
     // ---- ID/EX 流水寄存器 ----
-    myCPU_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg (
+    mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg (
         .ID_pc           (ID_pc          ),
         .ID_imm          (ID_imm         ),
         .ID_rR1_data     (ID_rR1_data    ),
@@ -262,10 +262,10 @@ module myCPU (
 
     // =========================================================================
     // STAGE 3：EX（执行）
-    //   双路前递选择 → RV32I 轻量 ALU / RV32M 多周期单元 + CSR + NPC
+    //   双路前递选择 → RV32I 轻量 alu / RV32M 多周期单元 + csr_file + npc_calc
     //   其中 RV32M 执行期间会拉高 EX_busy，冻结前半段流水并阻止 EX/MEM 更新
     // =========================================================================
-    myCPU_ex_stage #(DATAWIDTH) u_ex_stage (
+    mycpu_ex_stage #(DATAWIDTH) u_ex_stage (
         .MEM_forward_data (MEM_forward_data),
         .WB_wdata         (WB_wdata        ),
         .EX_pc            (EX_pc           ),
@@ -292,7 +292,7 @@ module myCPU (
     );
 
     // ---- EX/MEM 流水寄存器 ----
-    myCPU_ex_mem_reg #(DATAWIDTH, ADDR_WIDTH) u_ex_mem_reg (
+    mycpu_ex_mem_reg #(DATAWIDTH, ADDR_WIDTH) u_ex_mem_reg (
         .EX_pc            (EX_pc           ),
         .EX_alu_result    (EX_alu_result   ),
         .EX_forward_B_out (EX_forward_B_out),
@@ -329,7 +329,7 @@ module myCPU (
     // STAGE 4：MEM（访存）
     //   外设/DRAM 直连；前递候选已在 EX/MEM 寄存器内锁存好
     // =========================================================================
-    myCPU_mem_stage #(DATAWIDTH) u_mem_stage (
+    mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
         .MEM_perip_addr   (MEM_perip_addr  ),
         .MEM_rR2_data     (MEM_rR2_data    ),
@@ -343,7 +343,7 @@ module myCPU (
     );
 
     // ---- MEM/WB 流水寄存器 ----
-    myCPU_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (
+    mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (
         .MEM_pcadd4     (MEM_pcadd4    ),
         .MEM_alu_result (MEM_alu_result),
         .MEM_mdata      (MEM_mdata     ),
@@ -370,9 +370,9 @@ module myCPU (
 
     // =========================================================================
     // STAGE 5：WB（写回）
-    //   5 路 MemToReg 选择；输出直接接到 RF 写口与 ForwardingUnit 的候选源
+    //   5 路 MemToReg 选择；输出直接接到 reg_file 写口与 forwarding_unit 的候选源
     // =========================================================================
-    myCPU_wb_stage #(DATAWIDTH) u_wb_stage (
+    mycpu_wb_stage #(DATAWIDTH) u_wb_stage (
         .WB_pcadd4     (WB_pcadd4    ),
         .WB_alu_result (WB_alu_result),
         .WB_mdata      (WB_mdata     ),

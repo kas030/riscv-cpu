@@ -3,8 +3,10 @@
 IROM_COE := ../sim/coe/irom.coe
 DRAM_COE := ../sim/coe/dram.coe
 
-# 留空则不比较 LED。示例：EXPECTED_LED := C0DEC0DE
+# 留空则按 PASS_LED / FAIL_LED 判定；非空时额外要求最终 LED 等于 EXPECTED_LED。
 EXPECTED_LED :=
+PASS_LED := 01221C08
+FAIL_LED := 24181824
 
 # TRACE := 1 时生成 FST 波形：sim_cpu_only/build/wave.fst。
 TRACE := 0

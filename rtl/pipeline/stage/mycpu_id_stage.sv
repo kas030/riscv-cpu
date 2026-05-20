@@ -1,19 +1,19 @@
 `timescale 1ns / 1ps
 `include "../../common/defines.sv"
 // =============================================================================
-// myCPU_id_stage.sv —— ID（译码）级
+// mycpu_id_stage.sv —— ID（译码）级
 //   - 抽取 instr 中的 rs1/rs2/rd/funct3 等寄存器号
-//   - 例化 Control / IMMGEN / ACTL / CCTL，在同一拍内并行算出所有控制信号、
-//     立即数、ALU 操作码以及 CSR 控制
-//   - 寄存器堆 RF 在 myCPU.sv 顶层例化（不在本 stage 内部），原因是它需要
+//   - 例化 main_ctrl / imm_gen / alu_ctrl / csr_ctrl_decode，在同一拍内并行算出所有控制信号、
+//     立即数、alu 操作码以及 csr_file 控制
+//   - 寄存器堆 reg_file 在 mycpu.sv 顶层例化（不在本 stage 内部），原因是它需要
 //     接收 WB 级的写口同时给 ID 提供读口，逻辑上跨级
 // =============================================================================
-module myCPU_id_stage #(
+module mycpu_id_stage #(
     parameter DATAWIDTH = 32
 ) (
     input  logic [DATAWIDTH - 1:0] ID_instr         ,       // 当前 ID 级指令
     output logic [DATAWIDTH - 1:0] ID_imm           ,       // 立即数
-    output logic                   ID_RegWrite      ,       // 控制信号（详见 Control）
+    output logic                   ID_RegWrite      ,       // 控制信号（详见 main_ctrl）
     output logic                   ID_MemWrite      ,
     output logic                   ID_MemRead       ,
     output logic                   ID_isCSR         ,
@@ -37,7 +37,7 @@ module myCPU_id_stage #(
     assign ID_funct3 = ID_instr[14:12];
 
     // 主控制译码 → 各种控制信号
-    Control u_ctrl (
+    main_ctrl u_main_ctrl (
         .opcode       (ID_instr[6:0]   ),
         .funct        (ID_funct3       ),
         .NpcOp        (ID_NpcOp        ),
@@ -52,20 +52,20 @@ module myCPU_id_stage #(
     );
 
     // 立即数生成
-    IMMGEN #(DATAWIDTH) u_imm (
+    imm_gen #(DATAWIDTH) u_imm_gen (
         .instr (ID_instr),
         .imm   (ID_imm  )
     );
 
-    // ALU 操作码译码（独热编码）
-    ACTL u_actl (
+    // alu 操作码译码（独热编码）
+    alu_ctrl u_alu_ctrl (
         .opcode     (ID_instr[6:0]              ),
         .funct      ({ID_instr[31:25], ID_funct3}),
         .ALUControl (ID_ALUControl              )
     );
 
-    // CSR 控制译码
-    CCTL u_cctl (
+    // csr_file 控制译码
+    csr_ctrl_decode u_csr_ctrl_decode (
         .instr       (ID_instr      ),
         .csr_idx     (ID_csr_idx    ),
         .CSRControll (ID_CSRControll)

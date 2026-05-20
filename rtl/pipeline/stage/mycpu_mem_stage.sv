@@ -1,11 +1,11 @@
 `timescale 1ns / 1ps
 // =============================================================================
-// myCPU_mem_stage.sv —— MEM（访存）级
+// mycpu_mem_stage.sv —— MEM（访存）级
 //   - 把 EX/MEM 锁存出的专用访存地址副本送给外设/DRAM
 //   - rs2 数据作为写数据送给外设；funct3 低 2 位作为字节使能 mask
 //   - MEM_mdata 保留外设原始读数，符号扩展后移到 WB 级完成
 // =============================================================================
-module myCPU_mem_stage #(
+module mycpu_mem_stage #(
     parameter DATAWIDTH = 32
 ) (
     input  logic [DATAWIDTH - 1:0] perip_rdata     ,        // 外设/DRAM 读返回数据

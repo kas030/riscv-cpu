@@ -1,11 +1,11 @@
 `timescale 1ns / 1ps
 // =============================================================================
-// myCPU_mem_wb_reg.sv —— MEM/WB 流水线寄存器
+// mycpu_mem_wb_reg.sv —— MEM/WB 流水线寄存器
 //   - 把 MEM 级所有可能被写回的候选 (pcadd4 / alu_result / mdata / imm /
 //     csr_wb) 以及目标寄存器号、RegWrite/MemToReg 控制信号锁存到 WB 级
 //   - 复位时控制信号清零，数据通路无需清零
 // =============================================================================
-module myCPU_mem_wb_reg #(
+module mycpu_mem_wb_reg #(
     parameter DATAWIDTH  = 32 ,
     parameter ADDR_WIDTH = 5
 ) (

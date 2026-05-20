@@ -1,5 +1,5 @@
 // =============================================================================
-// IMMGEN.sv —— 立即数生成器
+// imm_gen.sv —— 立即数生成器
 //   位于 ID 级，从 32 位指令中按指令格式抽取并符号扩展立即数：
 //     I 型（含 load / jalr） : imm[11:0]   = instr[31:20]
 //     S 型                   : imm[11:0]   = {instr[31:25], instr[11:7]}
@@ -10,7 +10,7 @@
 // =============================================================================
 `include "../common/defines.sv"
 
-module IMMGEN #(
+module imm_gen #(
     parameter   DATAWIDTH = 32
 )(
     input  logic [DATAWIDTH-1:0]   instr ,                  // 当前 ID 级指令

@@ -1,11 +1,11 @@
 `timescale 1ns / 1ps
 // =============================================================================
-// myCPU_if_id_reg.sv —— IF/ID 流水线寄存器
+// mycpu_if_id_reg.sv —— IF/ID 流水线寄存器
 //   - 在每个时钟上升沿把 IF 级的 (pc, instr) 锁存给 ID 级
 //   - rst 或 Flush_IF_ID（跳转命中冲刷）时把 ID_instr 注入 NOP，把 ID_pc 清零
-//   - Stall（load-use 等）时整体保持，配合 PC 冻结一拍
+//   - Stall（load-use 等）时整体保持，配合 pc_reg 冻结一拍
 // =============================================================================
-module myCPU_if_id_reg #(
+module mycpu_if_id_reg #(
     parameter DATAWIDTH = 32                ,
     parameter NOP_INSTR = 32'h0000_0013                     // addi x0, x0, 0
 ) (

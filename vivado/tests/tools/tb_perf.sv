@@ -5,7 +5,7 @@
 // 在原 tb_myCPU 基础上扩展：
 //   1. 周期计数器（cycle_count）
 //   2. 指令计数器（inst_count，依据 IF→ID 有效信号）
-//   3. 停顿计数器（stall_count，HazardUnit 拉高时）
+//   3. 停顿计数器（stall_count，hazard_unit 拉高时）
 //   4. 分支刷新计数器（flush_count，控制冒险时）
 //   5. 测试完成探测：扫描 DRAM 0x80200F00 处的结果字
 //      - 0xC0DEC0DE → PASS
@@ -19,9 +19,9 @@
 //
 // 注意：
 //   - 假设 top.uut 实例化路径下存在层次：
-//       u_myCPU.if_id_valid     —— IF 输出有效信号
-//       u_myCPU.hazard_stall    —— HazardUnit 停顿信号
-//       u_myCPU.npc_flush       —— 分支/跳转触发的冲刷
+//       Core_cpu.if_id_valid     —— IF 输出有效信号
+//       Core_cpu.hazard_stall    —— hazard_unit 停顿信号
+//       Core_cpu.npc_flush       —— 分支/跳转触发的冲刷
 //     如果你的命名不同，请改下面的 hierarchical reference。
 //==============================================================
 
@@ -57,12 +57,12 @@ module tb_perf;
     // 这里给出占位用的 wire，并通过 force/cross-module-ref 接入。
     // 如果命名不同，请同步修改下面三条 assign。
 `ifdef CPU_HAS_PERF_HOOKS
-    wire if_valid    = uut.u_myCPU.if_id_valid;
-    wire stall       = uut.u_myCPU.hazard_stall;
-    wire flush       = uut.u_myCPU.npc_flush;
-    wire is_load     = uut.u_myCPU.id_is_load;
-    wire is_store    = uut.u_myCPU.id_is_store;
-    wire br_taken    = uut.u_myCPU.ex_branch_taken;
+    wire if_valid    = uut.student_top_inst.Core_cpu.if_id_valid;
+    wire stall       = uut.student_top_inst.Core_cpu.hazard_stall;
+    wire flush       = uut.student_top_inst.Core_cpu.npc_flush;
+    wire is_load     = uut.student_top_inst.Core_cpu.id_is_load;
+    wire is_store    = uut.student_top_inst.Core_cpu.id_is_store;
+    wire br_taken    = uut.student_top_inst.Core_cpu.ex_branch_taken;
 `else
     // 默认占位：不接钩子时所有计数仅有 cycle_count 有效。
     wire if_valid    = 1'b0;
@@ -103,7 +103,7 @@ module tb_perf;
 
     // -------- 简化方案：监控 virtual_led + 超时机制 --------
     // 当测试程序写完最终结果，会停在 1: j 1b 死循环。
-    // 我们以"100k 周期内 PC 不再前进"或者"运行 5M 周期"作为停机条件。
+    // 我们以"100k 周期内 pc_reg 不再前进"或者"运行 5M 周期"作为停机条件。
     integer timeout_cycles = 5_000_000;
 
     initial begin

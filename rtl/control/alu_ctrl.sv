@@ -1,16 +1,16 @@
 // =============================================================================
-// ACTL.sv —— ALU 控制译码
+// alu_ctrl.sv —— alu 控制译码
 //   位于 ID 级，根据 opcode + funct7/funct3 译码出独热 ALUControl，
-//   每一位对应 ALU 的一种运算（RV32I 算术逻辑/比较 + RV32M 乘除余）。
-//   一热编码使得 ALU 内部可以用按位与 + 或汇总，避免使用 case，
+//   每一位对应 alu 的一种运算（RV32I 算术逻辑/比较 + RV32M 乘除余）。
+//   一热编码使得 alu 内部可以用按位与 + 或汇总，避免使用 case，
 //   有利于布局布线时分散到多 LUT 上从而缩短关键路径。
 // =============================================================================
 `include "../common/defines.sv"
 
-module ACTL(
+module alu_ctrl(
     input  logic [6:0]                    opcode    ,      // 指令 opcode
     input  logic [9:0]                    funct     ,      // {funct7, funct3}
-    output logic [`ALU_OP_WIDTH - 1:0]   ALUControl        // 独热 ALU 操作码
+    output logic [`ALU_OP_WIDTH - 1:0]   ALUControl        // 独热 alu 操作码
 );
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_ADD    = 22'h000001;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_SUB    = 22'h000002;
