@@ -39,7 +39,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // Hazard / Forwarding 控制信号
     // -------------------------------------------------------------------------
-    logic        Stall, Flush_IF_ID, Flush_ID_EX;
+    logic        Stall, Flush_IF_ID, Flush_IF_ID_comb, Flush_ID_EX;
     logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken;
@@ -49,22 +49,21 @@ module mycpu (
     // IF 级信号
     // -------------------------------------------------------------------------
     logic [31:0] IF_pc, IF_npc_redirect, IF_instr;
-    logic        IF_pred_taken;
-    logic [31:0] IF_pred_next_pc;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
     // -------------------------------------------------------------------------
     logic [31:0] ID_pc, ID_instr;
-    logic        ID_pred_taken;
-    logic [31:0] ID_pred_next_pc;
 
     // -------------------------------------------------------------------------
     // ID 级信号
     // -------------------------------------------------------------------------
     logic [31:0] ID_imm, ID_rR1_data, ID_rR2_data;
+    logic [31:0] ID_pred_next_pc;
+    logic [31:0] ID_pred_b_imm;
     logic        ID_RegWrite, ID_MemWrite, ID_MemRead, ID_isCSR;
     logic        ID_ALUSrcA, ID_ALUSrcB;
+    logic        ID_is_branch, ID_pred_taken, ID_pred_redirect;
     logic [2:0]  ID_MemToReg;
     logic [1:0]  ID_NpcOp, ID_OffsetOrigin;
     logic [`ALU_OP_WIDTH - 1:0] ID_ALUControl;
@@ -141,6 +140,9 @@ module mycpu (
     //   1) 原有 load-use 冒险
     //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
     assign Stall_Front     = Stall_Hazard | EX_busy;
+    // ID 级后向分支预测 taken 时，顺序取到的 IF/ID 指令属于错路，需要冲刷。
+    assign ID_pred_redirect = ID_pred_taken & ~Stall_Front & ~BranchRedirect;
+    assign Flush_IF_ID_comb = Flush_IF_ID | ID_pred_redirect;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
     assign Flush_ID_EX_comb = Flush_ID_EX & ~EX_busy;
     assign Stall           = Stall_Front;
@@ -164,27 +166,23 @@ module mycpu (
         .rst             (rst            ),
         .Stall           (Stall_Front    ),
         .BranchRedirect  (BranchRedirect ),
+        .ID_pred_redirect(ID_pred_redirect),
+        .ID_pred_next_pc (ID_pred_next_pc),
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
-        .IF_instr        (IF_instr       ),
-        .IF_pred_taken   (IF_pred_taken  ),
-        .IF_pred_next_pc (IF_pred_next_pc)
+        .IF_instr        (IF_instr       )
     );
 
     // ---- IF/ID 流水寄存器 ----
     mycpu_if_id_reg #(DATAWIDTH) u_if_id_reg (
         .clk         (clk        ),
         .rst         (rst        ),
-        .Flush_IF_ID (Flush_IF_ID),
+        .Flush_IF_ID (Flush_IF_ID_comb),
         .Stall       (Stall_Front),
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
-        .IF_pred_taken   (IF_pred_taken  ),
-        .IF_pred_next_pc (IF_pred_next_pc),
         .ID_pc       (ID_pc      ),
-        .ID_instr    (ID_instr   ),
-        .ID_pred_taken   (ID_pred_taken  ),
-        .ID_pred_next_pc (ID_pred_next_pc)
+        .ID_instr    (ID_instr   )
     );
 
     // =========================================================================
@@ -212,6 +210,12 @@ module mycpu (
         .ID_rs2          (ID_rs2         ),
         .ID_rd           (ID_rd          )
     );
+
+    // ID 级 BTFNT 预测：后向条件分支预测 taken，避免 IF 级 IROM→PC 长组合路径。
+    assign ID_is_branch    = (ID_instr[6:0] == `B_TYPE);
+    assign ID_pred_b_imm   = {{20{ID_instr[31]}}, ID_instr[7], ID_instr[30:25], ID_instr[11:8], 1'b0};
+    assign ID_pred_taken   = ID_is_branch && ID_instr[31];
+    assign ID_pred_next_pc = ID_pred_taken ? (ID_pc + ID_pred_b_imm) : (ID_pc + 4);
 
     reg_file #(ADDR_WIDTH, DATAWIDTH) rf_inst (                  // 实例名沿用 rf_inst，testbench 层级引用依赖此名
         .clk      (clk        ),
