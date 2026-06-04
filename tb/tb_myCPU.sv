@@ -8,6 +8,7 @@
 //   - cnt_writeback   : reg_file 写回数（≈ 写寄存器的指令数，含 alu/load/jal）
 //   - cnt_store       : 存储指令数 (SW/SH/SB)
 //   - cnt_branch      : 已 taken 的分支/跳转数
+//   - 分支预测统计：条件分支解析数、预测 taken 数、预测错误数、冲刷次数
 //   - 程序写 0xC0DEC0DE 或 0xDEADBEEF 到 LED 后自动 $finish 并打印性能指标
 //   - 200µs 兜底超时
 //////////////////////////////////////////////////////////////////////////////////
@@ -41,6 +42,13 @@ module tb_myCPU;
     integer cnt_writeback = 0;
     integer cnt_store     = 0;
     integer cnt_branch    = 0;
+    integer cnt_cond_branch      = 0;
+    integer cnt_pred_taken       = 0;
+    integer cnt_pred_correct     = 0;
+    integer cnt_cond_mispredict  = 0;
+    integer cnt_mispredict       = 0;
+    integer cnt_flush_if_id      = 0;
+    integer cnt_flush_id_ex      = 0;
     integer approx_inst;
 
     always @(posedge cpu_clk) begin
@@ -58,6 +66,25 @@ module tb_myCPU;
         // 已 taken 分支或跳转（J / JAL / JALR / 满足条件的 B 类）
         if (uut.student_top_inst.Core_cpu.BranchTaken)
             cnt_branch <= cnt_branch + 1;
+
+        // 动态预测统计：只统计 EX 级已经解析的条件分支（EX_NpcOp == 2'b01）。
+        if (!uut.student_top_inst.Core_cpu.EX_busy &&
+            uut.student_top_inst.Core_cpu.EX_NpcOp == 2'b01) begin
+            cnt_cond_branch <= cnt_cond_branch + 1;
+            if (uut.student_top_inst.Core_cpu.EX_pred_taken)
+                cnt_pred_taken <= cnt_pred_taken + 1;
+            if (!uut.student_top_inst.Core_cpu.BranchMispredict)
+                cnt_pred_correct <= cnt_pred_correct + 1;
+            if (uut.student_top_inst.Core_cpu.BranchMispredict)
+                cnt_cond_mispredict <= cnt_cond_mispredict + 1;
+        end
+
+        if (uut.student_top_inst.Core_cpu.BranchMispredict)
+            cnt_mispredict <= cnt_mispredict + 1;
+        if (uut.student_top_inst.Core_cpu.Flush_IF_ID)
+            cnt_flush_if_id <= cnt_flush_if_id + 1;
+        if (uut.student_top_inst.Core_cpu.Flush_ID_EX)
+            cnt_flush_id_ex <= cnt_flush_id_ex + 1;
     end
 
     // ===================================================================
@@ -84,6 +111,13 @@ module tb_myCPU;
         $display(" writeback (reg_file)    : %0d", cnt_writeback);
         $display(" stores            : %0d", cnt_store);
         $display(" taken branches    : %0d", cnt_branch);
+        $display(" cond branches     : %0d", cnt_cond_branch);
+        $display(" pred taken        : %0d", cnt_pred_taken);
+        $display(" pred correct      : %0d", cnt_pred_correct);
+        $display(" cond mispredicts  : %0d", cnt_cond_mispredict);
+        $display(" mispredicts       : %0d", cnt_mispredict);
+        $display(" flush IF/ID       : %0d", cnt_flush_if_id);
+        $display(" flush ID/EX       : %0d", cnt_flush_id_ex);
         $display(" approx total inst : %0d", approx_inst);
         if (approx_inst > 0)
             $display(" CPI (approx)      : %0.3f", cnt_cycles*1.0 / approx_inst);

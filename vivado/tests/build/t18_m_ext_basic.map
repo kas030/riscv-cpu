@@ -1,0 +1,61 @@
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+IROM             0x0000000000000000 0x0000000000004000 xr
+DRAM             0x0000000080200000 0x0000000000004000 rw
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+
+.text           0x0000000000000000      0x100
+ *(.text.init)
+ .text.init     0x0000000000000000      0x100 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+                0x0000000000000000                _start
+ *(.text)
+ .text          0x0000000000000100        0x0 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+ *(.text.*)
+
+.rodata
+ *(.rodata)
+ *(.rodata.*)
+
+.data           0x0000000080200000        0x0
+                0x0000000080200000                _data_start = .
+ *(.data)
+ .data          0x0000000080200000        0x0 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+ *(.data.*)
+                0x0000000080200000                _data_end = .
+
+.bss            0x0000000080200000        0x0
+                0x0000000080200000                _bss_start = .
+ *(.bss)
+ .bss           0x0000000080200000        0x0 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+ *(.bss.*)
+                0x0000000080200000                _bss_end = .
+                0x0000000080204000                _stack_top = (ORIGIN (DRAM) + LENGTH (DRAM))
+                0x0000000080203f00                _result_addr = ((ORIGIN (DRAM) + LENGTH (DRAM)) - 0x100)
+OUTPUT(vivado\tests\build\t18_m_ext_basic.elf elf32-littleriscv)
+
+.riscv.attributes
+                0x0000000000000000       0x1f
+ .riscv.attributes
+                0x0000000000000000       0x1f C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+
+.debug_line     0x0000000000000000      0x1c9
+ .debug_line    0x0000000000000000      0x1c9 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+
+.debug_info     0x0000000000000000       0x26
+ .debug_info    0x0000000000000000       0x26 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+
+.debug_abbrev   0x0000000000000000       0x14
+ .debug_abbrev  0x0000000000000000       0x14 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+
+.debug_aranges  0x0000000000000000       0x20
+ .debug_aranges
+                0x0000000000000000       0x20 C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o
+
+.debug_str      0x0000000000000000       0x6b
+ .debug_str     0x0000000000000000       0x6b C:\Users\ASUS\AppData\Local\Temp\ccUcWdVm.o

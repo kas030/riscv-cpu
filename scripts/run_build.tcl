@@ -8,6 +8,15 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
+
+if {![file exists [file join $repo_root AGENTS.md]]} {
+    set fallback_root "C:/Users/ASUS/Desktop/riscv-cpu-main/riscv-cpu-main"
+    if {[file exists [file join $fallback_root AGENTS.md]]} {
+        set repo_root $fallback_root
+        set script_dir [file join $repo_root scripts]
+    }
+}
+
 set project_path [file join $repo_root vivado digital_twin.xpr]
 
 foreach tclstore_root {

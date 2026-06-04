@@ -1,0 +1,61 @@
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+IROM             0x0000000000000000 0x0000000000004000 xr
+DRAM             0x0000000080200000 0x0000000000004000 rw
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+
+.text           0x0000000000000000       0xa8
+ *(.text.init)
+ .text.init     0x0000000000000000       0xa8 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+                0x0000000000000000                _start
+ *(.text)
+ .text          0x00000000000000a8        0x0 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+ *(.text.*)
+
+.rodata
+ *(.rodata)
+ *(.rodata.*)
+
+.data           0x0000000080200000        0x0
+                0x0000000080200000                _data_start = .
+ *(.data)
+ .data          0x0000000080200000        0x0 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+ *(.data.*)
+                0x0000000080200000                _data_end = .
+
+.bss            0x0000000080200000        0x0
+                0x0000000080200000                _bss_start = .
+ *(.bss)
+ .bss           0x0000000080200000        0x0 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+ *(.bss.*)
+                0x0000000080200000                _bss_end = .
+                0x0000000080204000                _stack_top = (ORIGIN (DRAM) + LENGTH (DRAM))
+                0x0000000080203f00                _result_addr = ((ORIGIN (DRAM) + LENGTH (DRAM)) - 0x100)
+OUTPUT(build/t09_branch_hazard.elf elf32-littleriscv)
+
+.riscv.attributes
+                0x0000000000000000       0x1f
+ .riscv.attributes
+                0x0000000000000000       0x1f C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+
+.debug_line     0x0000000000000000      0x13b
+ .debug_line    0x0000000000000000      0x13b C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+
+.debug_info     0x0000000000000000       0x26
+ .debug_info    0x0000000000000000       0x26 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+
+.debug_abbrev   0x0000000000000000       0x14
+ .debug_abbrev  0x0000000000000000       0x14 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+
+.debug_aranges  0x0000000000000000       0x20
+ .debug_aranges
+                0x0000000000000000       0x20 C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o
+
+.debug_str      0x0000000000000000       0x6e
+ .debug_str     0x0000000000000000       0x6e C:\Users\ASUS\AppData\Local\Temp\cc4sPYmr.o

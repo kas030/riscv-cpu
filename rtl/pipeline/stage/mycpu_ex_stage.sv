@@ -7,7 +7,7 @@
 //   - RV32M 指令交给独立多周期单元，EX 级等待完成后再向后推进
 //   - 例化 csr_file 完成 csr_file 读写（包含 ecall/mret 重定向地址 csr_npc）
 //   - 选择 npc_calc offset 来源（imm / jalr_target / csr_npc），并例化 npc_calc 算出
-//     IF_npc_redirect 与 BranchTaken 反馈给 IF 级
+//     IF_npc_redirect、BranchTaken 和 BranchMispredict 反馈给前级
 // =============================================================================
 module mycpu_ex_stage #(
     parameter DATAWIDTH = 32
@@ -22,11 +22,14 @@ module mycpu_ex_stage #(
     input  logic [1:0]             EX_NpcOp         ,
     input  logic [1:0]             EX_OffsetOrigin  ,
     input  logic [11:0]            EX_csr_idx       ,
-    input  logic [3:0]             EX_CSRControll   ,
+    input  logic [4:0]             EX_csr_zimm      ,
+    input  logic [5:0]             EX_CSRControll   ,
     input  logic [1:0]             ForwardA         ,       // alu A 端前递选择
     input  logic [1:0]             ForwardB         ,       // alu B 端前递选择
     input  logic                   EX_ALUSrcA       ,
     input  logic                   EX_ALUSrcB       ,
+    input  logic                   EX_pred_taken    ,
+    input  logic [DATAWIDTH - 1:0] EX_pred_target   ,
     input  logic                   clk              ,
     input  logic                   rst              ,
     output logic [DATAWIDTH - 1:0] IF_npc_redirect  ,       // 给 IF 级的跳转目标
@@ -34,6 +37,7 @@ module mycpu_ex_stage #(
     output logic [DATAWIDTH - 1:0] EX_forward_B_out ,       // B 端前递结果，给 EX/MEM
     output logic [DATAWIDTH - 1:0] EX_csr_wb        ,
     output logic                   BranchTaken      ,       // EX 级判跳成立
+    output logic                   BranchMispredict ,
     output logic                   EX_busy                  // EX 多周期执行中
 );
     logic [DATAWIDTH - 1:0] alu_in_a, alu_in_b;
@@ -41,10 +45,13 @@ module mycpu_ex_stage #(
     logic [DATAWIDTH - 1:0] npc_offset;
     logic [DATAWIDTH - 1:0] jalr_target;
     logic [DATAWIDTH - 1:0] csr_npc;
+    logic [DATAWIDTH - 1:0] csr_wdata;
     logic [DATAWIDTH - 1:0] alu_result_i;
     logic [DATAWIDTH - 1:0] m_result;
+    logic [DATAWIDTH - 1:0] predicted_next_pc;
     logic                   alu_isTrue;
     logic                   is_m_op;
+    logic                   is_control_flow;
     logic                   m_busy, m_done, m_start;
 
     // 双路前递：根据 ForwardA/B 在 EX/MEM、MEM/WB、寄存器堆三者间选
@@ -87,13 +94,15 @@ module mycpu_ex_stage #(
 
     assign EX_busy       = is_m_op && !m_done;
     assign EX_alu_result = is_m_op ? m_result : alu_result_i;
+    assign csr_wdata     = EX_CSRControll[5] ? {{(DATAWIDTH-5){1'b0}}, EX_csr_zimm} :
+                                               EX_forward_A_out;
 
     // csr_file 模块：rs1 用前递后的 A 端数据
     csr_file #(DATAWIDTH) u_csr_file (
         .clk         (clk             ),
         .rst         (rst             ),
         .pc          (EX_pc           ),
-        .rf1         (EX_forward_A_out),
+        .csr_wdata   (csr_wdata       ),
         .csr_idx     (EX_csr_idx      ),
         .CSRControll (EX_CSRControll  ),
         .csr_npc     (csr_npc         ),
@@ -123,6 +132,10 @@ module mycpu_ex_stage #(
                          (EX_NpcOp == 2'b01 && alu_isTrue) ||
                          (EX_NpcOp == 2'b10              ) ||
                          (EX_NpcOp == 2'b11              ));
+
+    assign is_control_flow  = (EX_NpcOp != 2'b00);
+    assign predicted_next_pc = EX_pred_taken ? EX_pred_target : (EX_pc + 4);
+    assign BranchMispredict = !EX_busy && is_control_flow && (IF_npc_redirect != predicted_next_pc);
 endmodule
 
 module rv32m_unit #(
@@ -156,7 +169,10 @@ module rv32m_unit #(
     logic [5:0] cycles_left_q;
     logic [DATAWIDTH-1:0] result_q, special_result_q;
     logic [DATAWIDTH-1:0] abs_a, abs_b;
+    logic [DATAWIDTH-1:0] mul_operand_a_q, mul_operand_b_q;
     logic [63:0] product_acc_q, multiplicand_q, product_next, product_signed;
+    logic [63:0] product_uu_fast;
+    logic signed [63:0] product_ss_fast, product_su_fast;
     logic [31:0] multiplier_q;
     logic [32:0] remainder_q, rem_shift, rem_next;
     logic [31:0] quotient_q, quotient_next, quotient_final, divisor_q;
@@ -184,6 +200,11 @@ module rv32m_unit #(
 
     assign product_next   = product_acc_q + (multiplier_q[0] ? multiplicand_q : 64'd0);
     assign product_signed = negate_mul_q ? (~product_next + 64'd1) : product_next;
+    assign product_uu_fast = {32'd0, mul_operand_a_q} * {32'd0, mul_operand_b_q};
+    assign product_ss_fast = $signed({{32{mul_operand_a_q[31]}}, mul_operand_a_q}) *
+                             $signed({{32{mul_operand_b_q[31]}}, mul_operand_b_q});
+    assign product_su_fast = $signed({{32{mul_operand_a_q[31]}}, mul_operand_a_q}) *
+                             $signed({32'd0, mul_operand_b_q});
     assign rem_shift      = {remainder_q[31:0], quotient_q[31]};
     assign quotient_next  = {quotient_q[30:0], 1'b0};
     assign rem_ge_divisor = rem_shift >= {1'b0, divisor_q};
@@ -205,6 +226,8 @@ module rv32m_unit #(
             cycles_left_q    <= '0;
             result_q         <= '0;
             special_result_q <= '0;
+            mul_operand_a_q  <= '0;
+            mul_operand_b_q  <= '0;
             product_acc_q    <= '0;
             multiplicand_q   <= '0;
             multiplier_q     <= '0;
@@ -221,7 +244,9 @@ module rv32m_unit #(
                 op_sel_q       <= op_mul ? OP_MUL :
                                   op_mulh ? OP_MULH :
                                   op_mulhsu ? OP_MULHSU : OP_MULHU;
-                cycles_left_q  <= 6'd32;
+                cycles_left_q  <= 6'd1;
+                mul_operand_a_q <= operand_a;
+                mul_operand_b_q <= operand_b;
                 product_acc_q  <= 64'd0;
                 multiplicand_q <= {32'd0, (op_mul ? operand_a : abs_a)};
                 multiplier_q   <= op_mul ? operand_b : ((op_mulhsu || op_mulh || op_mulhu) ? abs_b : operand_b);
@@ -259,10 +284,10 @@ module rv32m_unit #(
                     busy_q <= 1'b0;
                     done_q <= 1'b1;
                     case (op_sel_q)
-                        OP_MUL:    result_q <= product_next[31:0];
-                        OP_MULH:   result_q <= product_signed[63:32];
-                        OP_MULHSU: result_q <= product_signed[63:32];
-                        default:   result_q <= product_next[63:32];
+                        OP_MUL:    result_q <= product_uu_fast[31:0];
+                        OP_MULH:   result_q <= product_ss_fast[63:32];
+                        OP_MULHSU: result_q <= product_su_fast[63:32];
+                        default:   result_q <= product_uu_fast[63:32];
                     endcase
                 end else begin
                     cycles_left_q  <= cycles_left_q - 6'd1;

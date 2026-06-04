@@ -6,6 +6,15 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
+
+if {![file exists [file join $repo_root AGENTS.md]]} {
+    set fallback_root "C:/Users/ASUS/Desktop/riscv-cpu-main/riscv-cpu-main"
+    if {[file exists [file join $fallback_root AGENTS.md]]} {
+        set repo_root $fallback_root
+        set script_dir [file join $repo_root scripts]
+    }
+}
+
 set project_path [file join $repo_root vivado digital_twin.xpr]
 
 foreach tclstore_root {
@@ -44,12 +53,12 @@ if {![file exists $project_path]} {
 
 set_property top $sim_top [get_filesets sim_1]
 set_property top_lib xil_defaultlib [get_filesets sim_1]
-set_property xsim.simulate.runtime 10us [get_filesets sim_1]
+set_property xsim.simulate.runtime 10ms [get_filesets sim_1]
 update_compile_order -fileset sim_1
 
 set runtime [get_property xsim.simulate.runtime [get_filesets sim_1]]
 if {$runtime eq ""} {
-    set runtime 10us
+    set runtime 10ms
 }
 
 puts "INFO: launching behavioral simulation top=$sim_top runtime=$runtime"

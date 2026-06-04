@@ -30,7 +30,10 @@ module mycpu_id_ex_reg #(
     input  logic [1:0]              ID_NpcOp        ,
     input  logic [1:0]              ID_OffsetOrigin ,
     input  logic [11:0]             ID_csr_idx      ,
-    input  logic [3:0]              ID_CSRControll  ,
+    input  logic [4:0]              ID_csr_zimm     ,
+    input  logic [5:0]              ID_CSRControll  ,
+    input  logic                    ID_pred_taken   ,
+    input  logic [DATAWIDTH - 1:0]  ID_pred_target  ,
     input  logic                    clk             ,
     input  logic                    rst             ,
     input  logic                    Flush_ID_EX     ,
@@ -55,7 +58,10 @@ module mycpu_id_ex_reg #(
     output logic [1:0]              EX_NpcOp        ,
     output logic [1:0]              EX_OffsetOrigin ,
     output logic [11:0]             EX_csr_idx      ,
-    output logic [3:0]              EX_CSRControll
+    output logic [4:0]              EX_csr_zimm     ,
+    output logic [5:0]              EX_CSRControll  ,
+    output logic                    EX_pred_taken   ,
+    output logic [DATAWIDTH - 1:0]  EX_pred_target
 );
     always_ff @(posedge clk) begin
         if (rst || Flush_ID_EX) begin
@@ -80,6 +86,9 @@ module mycpu_id_ex_reg #(
             EX_rs2          <= '0;
             EX_rd           <= '0;
             EX_csr_idx      <= '0;
+            EX_csr_zimm     <= '0;
+            EX_pred_taken   <= 1'b0;
+            EX_pred_target  <= '0;
         end else if (Stall_ID_EX) begin
             // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
         end else begin
@@ -103,7 +112,10 @@ module mycpu_id_ex_reg #(
             EX_NpcOp        <= ID_NpcOp;
             EX_OffsetOrigin <= ID_OffsetOrigin;
             EX_csr_idx      <= ID_csr_idx;
+            EX_csr_zimm     <= ID_csr_zimm;
             EX_CSRControll  <= ID_CSRControll;
+            EX_pred_taken   <= ID_pred_taken;
+            EX_pred_target  <= ID_pred_target;
         end
     end
 endmodule

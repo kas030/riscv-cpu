@@ -24,7 +24,8 @@ module mycpu_id_stage #(
     output logic [1:0]             ID_OffsetOrigin  ,
     output logic [`ALU_OP_WIDTH - 1:0] ID_ALUControl,
     output logic [11:0]            ID_csr_idx       ,
-    output logic [3:0]             ID_CSRControll   ,
+    output logic [4:0]             ID_csr_zimm      ,
+    output logic [5:0]             ID_CSRControll   ,
     output logic [2:0]             ID_funct3        ,
     output logic [4:0]             ID_rs1           ,
     output logic [4:0]             ID_rs2           ,
@@ -38,6 +39,7 @@ module mycpu_id_stage #(
 
     // 主控制译码 → 各种控制信号
     main_ctrl u_main_ctrl (
+        .instr        (ID_instr       ),
         .opcode       (ID_instr[6:0]   ),
         .funct        (ID_funct3       ),
         .NpcOp        (ID_NpcOp        ),
@@ -68,6 +70,7 @@ module mycpu_id_stage #(
     csr_ctrl_decode u_csr_ctrl_decode (
         .instr       (ID_instr      ),
         .csr_idx     (ID_csr_idx    ),
+        .csr_zimm    (ID_csr_zimm   ),
         .CSRControll (ID_CSRControll)
     );
 endmodule
