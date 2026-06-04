@@ -64,6 +64,12 @@ python3 vivado/tests/tools/gen_t18_m_ext_basic_coe.py vivado/tests/build/t18_m_e
 ./sim_cpu_only/run_verilator.sh
 ```
 
+批量运行默认镜像和当前已有的 4 个测试镜像，并生成简略报告：
+
+```sh
+./sim_cpu_only/run_regression.sh
+```
+
 也可以直接进入目录运行：
 
 ```sh
