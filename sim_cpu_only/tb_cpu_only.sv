@@ -34,6 +34,8 @@ module tb_cpu_only;
     time         cnt_start_time = 0;
     logic [31:0] irom [0:4095];
     logic [31:0] dram [0:65535];
+    logic [31:0] dram_rdata_q;
+    logic        dram_resp_valid;
 
     longint unsigned cycles = 64'd0;
     longint unsigned cnt_writeback = 64'd0;
@@ -133,19 +135,17 @@ module tb_cpu_only;
 
     always_comb begin
         perip_rdata = 32'd0;
-        if (!perip_wen) begin
-            if (perip_addr >= DRAM_BASE && perip_addr < DRAM_END) begin
-                perip_rdata = select_load_word(dram[(perip_addr - DRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
-            end else begin
-                case (perip_addr)
-                    SW0_ADDR: perip_rdata = 32'd0;
-                    SW1_ADDR: perip_rdata = 32'd0;
-                    KEY_ADDR: perip_rdata = 32'd0;
-                    SEG_ADDR: perip_rdata = seg_wdata;
-                    CNT_ADDR: perip_rdata = cnt_ms;
-                    default: perip_rdata = 32'd0;
-                endcase
-            end
+        if (dram_resp_valid) begin
+            perip_rdata = dram_rdata_q;
+        end else if (!perip_wen) begin
+            case (perip_addr)
+                SW0_ADDR: perip_rdata = 32'd0;
+                SW1_ADDR: perip_rdata = 32'd0;
+                KEY_ADDR: perip_rdata = 32'd0;
+                SEG_ADDR: perip_rdata = seg_wdata;
+                CNT_ADDR: perip_rdata = cnt_ms;
+                default: perip_rdata = 32'd0;
+            endcase
         end
     end
 
@@ -157,7 +157,13 @@ module tb_cpu_only;
             seg_written <= 1'b0;
             cnt_enable <= 1'b0;
             cnt_started <= 1'b0;
+            dram_rdata_q <= 32'd0;
+            dram_resp_valid <= 1'b0;
         end else begin
+            dram_resp_valid <= !perip_wen && (perip_addr >= DRAM_BASE && perip_addr < DRAM_END);
+            if (!perip_wen && (perip_addr >= DRAM_BASE && perip_addr < DRAM_END)) begin
+                dram_rdata_q <= select_load_word(dram[(perip_addr - DRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
+            end
             if (perip_wen) begin
                 if (perip_addr >= DRAM_BASE && perip_addr < DRAM_END) begin
                     dram[(perip_addr - DRAM_BASE) >> 2] <= merge_store_word(

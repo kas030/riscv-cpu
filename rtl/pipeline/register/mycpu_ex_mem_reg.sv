@@ -27,6 +27,7 @@ module mycpu_ex_mem_reg #(
     input  logic                    clk              ,
     input  logic                    rst              ,
     input  logic                    en               ,
+    input  logic                    Flush_EX_MEM     ,
     // ---- 输出：送往 MEM 级 ----
     output logic [DATAWIDTH - 1:0]  MEM_pcadd4       ,
     output logic [DATAWIDTH - 1:0]  MEM_alu_result   ,
@@ -50,7 +51,7 @@ module mycpu_ex_mem_reg #(
     assign EX_pcadd4 = EX_pc + 4;
 
     always_ff @(posedge clk) begin
-        if (rst) begin
+        if (rst || Flush_EX_MEM) begin
             // 控制信号清零即可，数据通路下一拍会被覆盖
             MEM_RegWrite <= 1'b0;
             MEM_MemWrite <= 1'b0;

@@ -83,6 +83,7 @@ proc run_and_wait {run_name args} {
 if {![file exists $project_path]} {
     puts "INFO: project not found; recreating it first"
     source [file join $script_dir create_project.tcl]
+    open_project $project_path
 } elseif {[llength [current_project -quiet]] == 0} {
     open_project $project_path
 }

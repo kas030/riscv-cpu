@@ -41,10 +41,23 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
     logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
+    logic        Stall_DMemConflict, Stall_DMemEarly, Flush_EX_MEM;
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken;
     logic        BranchMispredict;
     logic        BP_update_en, BP_update_taken;
+    logic        EX_dram_load_req, EX_dram_load_fire;
+    logic        MEM_dram_access, MEM_mmio_read;
+    logic [31:0] MEM_bus_addr, MEM_bus_wdata;
+    logic        MEM_bus_wen;
+    logic [1:0]  MEM_bus_mask;
+
+    localparam logic [31:0] DRAM_ADDR_START = 32'h8010_0000;
+    localparam logic [31:0] DRAM_ADDR_END   = 32'h8013_FFFF;
+
+    function automatic logic is_dram_addr(input logic [31:0] addr);
+        is_dram_addr = (addr >= DRAM_ADDR_START) && (addr < DRAM_ADDR_END);
+    endfunction
 
     // -------------------------------------------------------------------------
     // IF 级信号
@@ -140,12 +153,21 @@ module mycpu (
         .Flush_ID_EX   (Flush_ID_EX    )
     );
 
+    assign EX_dram_load_req   = EX_MemRead && is_dram_addr(EX_alu_result);
+    assign MEM_dram_access    = is_dram_addr(MEM_perip_addr);
+    assign MEM_mmio_read      = MEM_MemRead && !MEM_dram_access;
+    assign Stall_DMemEarly    = ID_MemRead && (EX_MemWrite || (EX_MemRead && !EX_dram_load_req));
+    assign Stall_DMemConflict = EX_dram_load_req && (MEM_MemWrite || MEM_mmio_read);
+    assign Flush_EX_MEM       = Stall_DMemConflict;
+    assign EX_dram_load_fire  = EX_dram_load_req && !Stall_DMemConflict;
+
     // 前半段统一停顿条件：
     //   1) 原有 load-use 冒险
     //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
-    assign Stall_Front     = Stall_Hazard | EX_busy;
+    //   3) EX 级 DRAM 提前读与 MEM 级访存占用外部总线冲突
+    assign Stall_Front     = Stall_Hazard | EX_busy | Stall_DMemEarly | Stall_DMemConflict;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
-    assign Flush_ID_EX_comb = Flush_ID_EX & ~EX_busy;
+    assign Flush_ID_EX_comb = (Flush_ID_EX | Stall_DMemEarly) & ~(EX_busy | Stall_DMemConflict);
     assign Stall           = Stall_Front;
     assign BP_update_en    = !EX_busy && (EX_NpcOp == 2'b01);
     assign BP_update_taken = BranchTaken;
@@ -262,7 +284,7 @@ module mycpu (
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
-        .Stall_ID_EX     (EX_busy        ),
+        .Stall_ID_EX     (EX_busy | Stall_DMemConflict),
         .EX_pc           (EX_pc          ),
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
@@ -340,6 +362,7 @@ module mycpu (
         .clk              (clk             ),
         .rst              (rst             ),
         .en               (~EX_busy        ),
+        .Flush_EX_MEM     (Flush_EX_MEM    ),
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
         .MEM_perip_addr   (MEM_perip_addr  ),
@@ -359,7 +382,8 @@ module mycpu (
 
     // =========================================================================
     // STAGE 4：MEM（访存）
-    //   外设/DRAM 直连；前递候选已在 EX/MEM 寄存器内锁存好
+    //   DRAM load 在 EX 级提前发起同步 BRAM 读；MEM 级只捕获上一拍返回。
+    //   store 和 MMIO load 仍使用 MEM 级地址，避免对外接口增加端口。
     // =========================================================================
     mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
@@ -367,12 +391,19 @@ module mycpu (
         .MEM_rR2_data     (MEM_rR2_data    ),
         .MEM_funct3       (MEM_funct3      ),
         .MEM_MemWrite     (MEM_MemWrite    ),
-        .perip_addr       (perip_addr      ),
-        .perip_wdata      (perip_wdata     ),
+        .perip_addr       (MEM_bus_addr    ),
+        .perip_wdata      (MEM_bus_wdata   ),
         .MEM_mdata        (MEM_mdata       ),
-        .perip_wen        (perip_wen       ),
-        .perip_mask       (perip_mask      )
+        .perip_wen        (MEM_bus_wen     ),
+        .perip_mask       (MEM_bus_mask    )
     );
+
+    assign perip_wen   = MEM_bus_wen;
+    assign perip_wdata = MEM_bus_wdata;
+    assign perip_mask  = EX_dram_load_fire ? EX_funct3[1:0] : MEM_bus_mask;
+    assign perip_addr  = (MEM_MemWrite || MEM_mmio_read) ? MEM_bus_addr :
+                         EX_dram_load_fire               ? EX_alu_result :
+                                                           32'b0;
 
     // ---- MEM/WB 流水寄存器 ----
     mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (

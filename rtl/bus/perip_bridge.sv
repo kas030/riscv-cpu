@@ -51,6 +51,11 @@ module perip_bridge(
     logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, dram_rdata;
     logic [39:0] seg_output;
     logic cnt_enable_cfg;
+    logic dram_hit, dram_ren, dram_wen, dram_resp_valid;
+
+    assign dram_hit = (perip_addr >= DRAM_ADDR_START) && (perip_addr < DRAM_ADDR_END);
+    assign dram_ren = ~perip_wen & dram_hit;
+    assign dram_wen = perip_wen & dram_hit;
 
     // we don't care perip_mask in LED, SEG, SW & KEY, only care in DRAM
     // write process
@@ -113,9 +118,18 @@ module perip_bridge(
         .perip_addr			(perip_addr[17:0]),
         .perip_wdata		(perip_wdata),
         .perip_mask			(perip_mask),
-        .dram_wen 			(perip_wen & (perip_addr >= DRAM_ADDR_START && perip_addr < DRAM_ADDR_END)),
+        .dram_ren           (dram_ren),
+        .dram_wen 			(dram_wen),
         .perip_rdata		(dram_rdata)
     );
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            dram_resp_valid <= 1'b0;
+        end else begin
+            dram_resp_valid <= dram_ren;
+        end
+    end
 
     // counter rw
     counter counter_inst (
@@ -126,12 +140,12 @@ module perip_bridge(
         .perip_rdata		(cnt_rdata)
     );
 
-    assign perip_rdata = {32{perip_addr == SW0_ADDR}} & mmio_rdata |
-                        {32{perip_addr == SW1_ADDR}} & mmio_rdata |
-                        {32{perip_addr == KEY_ADDR}} & mmio_rdata |
-                        {32{perip_addr == SEG_ADDR}} & mmio_rdata |
-                        {32{perip_addr >= DRAM_ADDR_START && perip_addr < DRAM_ADDR_END}} & dram_rdata |
-                        {32{perip_addr == CNT_ADDR}} & cnt_rdata;
+    assign perip_rdata = {32{dram_resp_valid}} & dram_rdata |
+                         {32{~dram_resp_valid && perip_addr == SW0_ADDR}} & mmio_rdata |
+                         {32{~dram_resp_valid && perip_addr == SW1_ADDR}} & mmio_rdata |
+                         {32{~dram_resp_valid && perip_addr == KEY_ADDR}} & mmio_rdata |
+                         {32{~dram_resp_valid && perip_addr == SEG_ADDR}} & mmio_rdata |
+                         {32{~dram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata;
     
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;
