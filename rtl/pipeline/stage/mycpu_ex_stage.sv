@@ -7,7 +7,7 @@
 //   - RV32M 指令交给独立多周期单元，EX 级等待完成后再向后推进
 //   - 例化 csr_file 完成 csr_file 读写（包含 ecall/mret 重定向地址 csr_npc）
 //   - 选择 npc_calc offset 来源（imm / jalr_target / csr_npc），并例化 npc_calc 算出
-//     IF_npc_redirect、BranchTaken 和 BranchMispredict 反馈给前级
+//     raw redirect target、BranchTaken 和 BranchMispredict 反馈给前级打拍提交
 // =============================================================================
 module mycpu_ex_stage #(
     parameter DATAWIDTH = 32
@@ -31,9 +31,10 @@ module mycpu_ex_stage #(
     input  logic                   EX_pred_taken    ,
     input  logic [DATAWIDTH - 1:0] EX_pred_target   ,
     input  logic                   EX_stall         ,
+    input  logic                   EX_kill          ,
     input  logic                   clk              ,
     input  logic                   rst              ,
-    output logic [DATAWIDTH - 1:0] IF_npc_redirect  ,       // 给 IF 级的跳转目标
+    output logic [DATAWIDTH - 1:0] IF_npc_redirect_raw,     // EX 级算出的原始跳转目标
     output logic [DATAWIDTH - 1:0] EX_alu_result    ,
     output logic [DATAWIDTH - 1:0] EX_forward_B_out ,       // B 端前递结果，给 EX/MEM
     output logic [DATAWIDTH - 1:0] EX_csr_wb        ,
@@ -50,6 +51,7 @@ module mycpu_ex_stage #(
     logic [DATAWIDTH - 1:0] jalr_target;
     logic [DATAWIDTH - 1:0] csr_npc;
     logic [DATAWIDTH - 1:0] csr_wdata;
+    logic [5:0]             csr_control_effective;
     logic [DATAWIDTH - 1:0] alu_result_i;
     logic [DATAWIDTH - 1:0] m_result;
     logic [DATAWIDTH - 1:0] predicted_next_pc;
@@ -95,7 +97,7 @@ module mycpu_ex_stage #(
 
     // start 只在该条 M 指令刚进入 EX 时打一拍。
     // done 会在结果提交后保持一拍，所以这里要额外屏蔽 !m_done，避免同一条指令重复启动。
-    assign m_start = is_m_op && !m_busy && !m_done;
+    assign m_start = !EX_kill && is_m_op && !m_busy && !m_done;
 
     rv32m_unit #(DATAWIDTH) u_rv32m_unit (
         .clk         (clk           ),
@@ -109,10 +111,11 @@ module mycpu_ex_stage #(
         .result      (m_result      )
     );
 
-    assign EX_busy       = is_m_op && !m_done;
+    assign EX_busy       = !EX_kill && is_m_op && !m_done;
     assign EX_alu_result = is_m_op ? m_result : alu_result_i;
     assign csr_wdata     = EX_CSRControll[5] ? {{(DATAWIDTH-5){1'b0}}, EX_csr_zimm} :
                                                EX_forward_A_out;
+    assign csr_control_effective = EX_kill ? 6'b0 : EX_CSRControll;
 
     // csr_file 模块：rs1 用前递后的 A 端数据
     csr_file #(DATAWIDTH) u_csr_file (
@@ -121,7 +124,7 @@ module mycpu_ex_stage #(
         .pc          (EX_pc           ),
         .csr_wdata   (csr_wdata       ),
         .csr_idx     (EX_csr_idx      ),
-        .CSRControll (EX_CSRControll  ),
+        .CSRControll (csr_control_effective),
         .csr_npc     (csr_npc         ),
         .csr_wb      (EX_csr_wb       )
     );
@@ -140,19 +143,20 @@ module mycpu_ex_stage #(
         .npc_op (EX_NpcOp        ),
         .pc     (EX_pc           ),
         .offset (npc_offset      ),
-        .npc    (IF_npc_redirect ),
+        .npc    (IF_npc_redirect_raw),
         .pcadd4 (                )
     );
 
     // 跳转判定：分支条件成立 / jalr·mret / jal
-    assign BranchTaken = !EX_busy && (
+    assign BranchTaken = !EX_kill && !EX_busy && (
                          (EX_NpcOp == 2'b01 && alu_isTrue) ||
                          (EX_NpcOp == 2'b10              ) ||
                          (EX_NpcOp == 2'b11              ));
 
     assign is_control_flow  = (EX_NpcOp != 2'b00);
     assign predicted_next_pc = EX_pred_taken ? EX_pred_target : (EX_pc + 4);
-    assign BranchMispredict = !EX_busy && is_control_flow && (IF_npc_redirect != predicted_next_pc);
+    assign BranchMispredict = !EX_kill && !EX_busy && is_control_flow &&
+                              (IF_npc_redirect_raw != predicted_next_pc);
 endmodule
 
 module rv32m_unit #(

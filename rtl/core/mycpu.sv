@@ -45,6 +45,11 @@ module mycpu (
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken, BranchTaken_raw;
     logic        BranchMispredict, BranchMispredict_raw;
+    logic [31:0] IF_npc_redirect_raw;
+    logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
+    logic        redirect_pending_q, redirect_pending_taken_q, redirect_pending_bp_update_q;
+    logic [31:0] redirect_target_q, redirect_bp_pc_q;
+    logic [31:0] redirect_pending_target_q, redirect_pending_bp_pc_q;
     logic        BP_update_en, BP_update_taken;
     logic        MEM_bram_access, MEM_mmio_read;
     logic        MEM_bram_load_issue, MEM_bram_pending;
@@ -156,7 +161,7 @@ module mycpu (
     assign MEM_mmio_read      = MEM_MemRead && !MEM_bram_access;
     assign MEM_bram_load_issue = MEM_MemRead && MEM_bram_access && !MEM_bram_pending;
     assign Stall_DMemLoad     = MEM_bram_load_issue || MEM_bram_pending;
-    assign Flush_EX_MEM       = MEM_bram_pending;
+    assign Flush_EX_MEM       = MEM_bram_pending | redirect_valid_q;
     assign Flush_MEM_WB       = MEM_bram_load_issue;
 
     always_ff @(posedge clk) begin
@@ -167,18 +172,75 @@ module mycpu (
         end
     end
 
+    // redirect/flush 打拍提交：
+    //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
+    //   切断 ALU/branch compare -> Flush_ID_EX 的运行期长路径。
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            redirect_valid_q     <= 1'b0;
+            redirect_target_q    <= '0;
+            redirect_taken_q     <= 1'b0;
+            redirect_bp_update_q <= 1'b0;
+            redirect_bp_pc_q     <= '0;
+            redirect_pending_q     <= 1'b0;
+            redirect_pending_target_q <= '0;
+            redirect_pending_taken_q  <= 1'b0;
+            redirect_pending_bp_update_q <= 1'b0;
+            redirect_pending_bp_pc_q     <= '0;
+        end else begin
+            redirect_bp_update_q <= 1'b0;
+
+            if (redirect_valid_q) begin
+                if (!Stall_Front) begin
+                    redirect_valid_q <= 1'b0;
+                end
+            end else if (redirect_pending_q && !Stall_DMemLoad) begin
+                redirect_valid_q  <= 1'b1;
+                redirect_target_q <= redirect_pending_target_q;
+                redirect_taken_q  <= redirect_pending_taken_q;
+
+                redirect_bp_update_q <= redirect_pending_bp_update_q;
+                redirect_bp_pc_q     <= redirect_pending_bp_pc_q;
+                redirect_pending_q   <= 1'b0;
+            end else if (BranchMispredict_raw) begin
+                if (Stall_DMemLoad) begin
+                    redirect_pending_q     <= 1'b1;
+                    redirect_pending_target_q <= IF_npc_redirect_raw;
+                    redirect_pending_taken_q  <= BranchTaken_raw;
+                    redirect_pending_bp_update_q <= (EX_NpcOp == 2'b01);
+                    redirect_pending_bp_pc_q     <= EX_pc;
+                end else begin
+                    redirect_valid_q  <= 1'b1;
+                    redirect_target_q <= IF_npc_redirect_raw;
+                    redirect_taken_q  <= BranchTaken_raw;
+
+                    redirect_bp_update_q <= (EX_NpcOp == 2'b01);
+                    redirect_bp_pc_q     <= EX_pc;
+                end
+            end else if (!EX_busy && !Stall_DMemLoad && (EX_NpcOp == 2'b01)) begin
+                redirect_taken_q     <= BranchTaken_raw;
+                redirect_bp_update_q <= 1'b1;
+                redirect_bp_pc_q     <= EX_pc;
+            end
+        end
+    end
+
+    assign IF_npc_redirect = redirect_target_q;
+
     // 前半段统一停顿条件：
     //   1) 原有 load-use 冒险
     //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
     //   3) MEM 级 BRAM 同步读发起后一拍等待返回
     assign Stall_Front     = Stall_Hazard | EX_busy | Stall_DMemLoad;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
-    assign Flush_ID_EX_comb = Flush_ID_EX & ~(EX_busy | Stall_DMemLoad);
+    assign Flush_ID_EX_comb = redirect_valid_q ? ~Stall_DMemLoad :
+                               (Flush_ID_EX & ~(EX_busy | Stall_DMemLoad));
     assign Stall           = Stall_Front;
-    assign BranchTaken     = BranchTaken_raw && !Stall_DMemLoad;
-    assign BranchMispredict = BranchMispredict_raw && !Stall_DMemLoad;
-    assign BP_update_en    = !EX_busy && !Stall_DMemLoad && (EX_NpcOp == 2'b01);
-    assign BP_update_taken = BranchTaken;
+    assign BranchTaken     = redirect_taken_q && (redirect_bp_update_q ||
+                             (redirect_valid_q && !Stall_Front));
+    assign BranchMispredict = redirect_valid_q;
+    assign BP_update_en    = redirect_bp_update_q;
+    assign BP_update_taken = redirect_taken_q;
 
     forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),
@@ -200,7 +262,7 @@ module mycpu (
         .Stall           (Stall_Front    ),
         .BranchRedirect  (BranchMispredict),
         .BP_update_en    (BP_update_en   ),
-        .BP_update_pc    (EX_pc          ),
+        .BP_update_pc    (redirect_bp_pc_q),
         .BP_update_taken (BP_update_taken),
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
@@ -343,9 +405,10 @@ module mycpu (
         .EX_pred_taken    (EX_pred_taken   ),
         .EX_pred_target   (EX_pred_target  ),
         .EX_stall         (Stall_DMemLoad  ),
+        .EX_kill          (redirect_valid_q),
         .clk              (clk             ),
         .rst              (rst             ),
-        .IF_npc_redirect  (IF_npc_redirect ),
+        .IF_npc_redirect_raw(IF_npc_redirect_raw),
         .EX_alu_result    (EX_alu_result   ),
         .EX_forward_B_out (EX_forward_B_out),
         .EX_csr_wb        (EX_csr_wb       ),
