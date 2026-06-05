@@ -11,8 +11,8 @@
     .section .text.init
     .globl _start
 _start:
-    lui     gp, 0x80200
-    addi    gp, gp, 0x100       # gp = 测试缓冲区 0x80200100
+    lui     gp, 0x80100
+    addi    gp, gp, 0x100       # gp = 测试缓冲区 0x80100100
 
     /* ---------- SW + LW ---------- */
     li      t0, 0xDEADBEEF

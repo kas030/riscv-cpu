@@ -12,7 +12,7 @@
     .section .text.init
     .globl _start
 _start:
-    lui     gp, 0x80200
+    lui     gp, 0x80100
     addi    gp, gp, 0x200       # gp 指向数据缓冲区
 
     /* 初始化 8 个连续字 */

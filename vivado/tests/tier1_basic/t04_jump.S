@@ -10,7 +10,7 @@
     .globl _start
 _start:
     /* 设置栈指针 */
-    lui     sp, 0x80201         # sp = 0x80201000 (BRAM 顶端附近)
+    lui     sp, 0x80140         # sp = 0x80140000 (BRAM 顶端)
 
     /* 调用 add5(10) → 期望 15 */
     li      a0, 10
@@ -31,7 +31,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

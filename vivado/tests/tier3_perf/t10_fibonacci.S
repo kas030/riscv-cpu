@@ -16,7 +16,7 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201         # 栈指针
+    lui     sp, 0x80140         # 栈指针
 
     /* 迭代 */
     li      a0, 20
@@ -24,7 +24,8 @@ _start:
     li      t0, 6765
     bne     a0, t0, fail
     /* 把迭代结果写入 LED 用于上板验证 */
-    lui     t0, 0x80000
+    lui     t0, 0x80200
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 
     /* 递归 */
@@ -40,7 +41,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

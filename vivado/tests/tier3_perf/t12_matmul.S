@@ -12,27 +12,27 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201
+    lui     sp, 0x80140
 
     /* 拷贝 A、B 到工作区，C 清零 */
     la      a0, mat_a
-    lui     a1, 0x80200
-    addi    a1, a1, 0x300       # workA  @ 0x80200300
+    lui     a1, 0x80100
+    addi    a1, a1, 0x300       # workA  @ 0x80100300
     li      a2, 16
     jal     ra, copy_words
     la      a0, mat_b
-    lui     a1, 0x80200
-    addi    a1, a1, 0x340       # workB  @ 0x80200340
+    lui     a1, 0x80100
+    addi    a1, a1, 0x340       # workB  @ 0x80100340
     li      a2, 16
     jal     ra, copy_words
 
     /* 调用 matmul4(A,B,C) */
-    lui     a0, 0x80200
+    lui     a0, 0x80100
     addi    a0, a0, 0x300
-    lui     a1, 0x80200
+    lui     a1, 0x80100
     addi    a1, a1, 0x340
-    lui     a2, 0x80200
-    addi    a2, a2, 0x380       # workC  @ 0x80200380
+    lui     a2, 0x80100
+    addi    a2, a2, 0x380       # workC  @ 0x80100380
     jal     ra, matmul4
 
     /* 校验 C[0][0]：与 A、B 数据相关 */
@@ -47,7 +47,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

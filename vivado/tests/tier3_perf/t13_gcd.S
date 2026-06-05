@@ -14,7 +14,7 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201
+    lui     sp, 0x80140
 
     li      a0, 1071
     li      a1, 462
@@ -51,7 +51,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

@@ -65,8 +65,8 @@ pass:
 fail:
     li      a0, 0xDEADBEEF      # 失败标记
 done:
-    /* 将结果写入 _result_addr，testbench 据此判定 */
+    /* 将结果写入 LED，testbench 据此判定 */
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00      # 0x802003F00 = _result_addr
+    addi    t0, t0, 0x40        # LED = 0x80200040
     sw      a0, 0(t0)
 1:  j       1b                  # 死循环停机

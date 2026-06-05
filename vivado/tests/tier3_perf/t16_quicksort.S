@@ -10,24 +10,24 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201
+    lui     sp, 0x80140
 
     /* 拷贝原始数组到工作区 */
     la      a0, qs_src
-    lui     a1, 0x80200
-    addi    a1, a1, 0x500       # qs_work @ 0x80200500
+    lui     a1, 0x80100
+    addi    a1, a1, 0x500       # qs_work @ 0x80100500
     li      a2, 64
     jal     ra, copy_words
 
     /* qsort(arr, 0, 63) */
-    lui     a0, 0x80200
+    lui     a0, 0x80100
     addi    a0, a0, 0x500
     li      a1, 0
     li      a2, 63
     jal     ra, quicksort
 
     /* 校验：相邻递增 */
-    lui     s0, 0x80200
+    lui     s0, 0x80100
     addi    s0, s0, 0x500
     li      s1, 0
     li      s2, 63
@@ -47,7 +47,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

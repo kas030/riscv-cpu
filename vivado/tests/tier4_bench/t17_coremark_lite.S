@@ -20,11 +20,11 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201
+    lui     sp, 0x80140
 
     /* 读取硬件 cycle 计数器（如外设支持） */
-    lui     t0, 0x80000
-    lw      s0, 0x20(t0)        # start_cycle
+    lui     t0, 0x80200
+    lw      s0, 0x50(t0)        # start_cycle
 
     /* 主循环 */
     li      s1, 0               # iter
@@ -41,13 +41,13 @@ main_loop:
     blt     s1, s2, main_loop
 
     /* 读 end cycle，将差值写到 LED */
-    lui     t0, 0x80000
-    lw      s4, 0x20(t0)
+    lui     t0, 0x80200
+    lw      s4, 0x50(t0)
     sub     s4, s4, s0
-    sw      s4, 0(t0)           # LED 显示 cycle 总数
+    sw      s4, 0x40(t0)        # LED 显示 cycle 总数
 
     /* 校验值放到数码管 */
-    sw      s3, 4(t0)
+    sw      s3, 0x20(t0)
 
     /* 校验值是否为预期常量（取决于具体输入数据） */
     /* 这里仅检查 s3 ≠ 0，作为"程序确实跑完了"的弱断言 */
@@ -60,7 +60,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

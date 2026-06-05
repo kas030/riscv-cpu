@@ -1,9 +1,9 @@
 /* RV32I CPU 链接脚本
  *
  * 内存布局（与 IROM/BRAM IP 配置一致）：
- *   - 指令存储器 IROM：0x00000000 起，大小由 IROM IP 决定
- *   - 数据存储器 BRAM：0x80200000 起（与 IROM 中 lui x15,0x80200 一致）
- *   - 外设桥（perip_bridge）：0x80000000-0x801FFFFF（UART/LED/SEG/COUNTER）
+ *   - 指令存储器 IROM：0x00000000 起，映射到 CPU 视角 0x80000000
+ *   - 数据存储器 BRAM：0x80100000 起，当前 IP 有效窗口 256KB
+ *   - 外设桥：0x80200000-0x802000FF（SW/KEY/SEG/LED/COUNTER）
  *
  * 程序入口固定在 IROM 起始处，链接时不重定位。
  */
@@ -14,7 +14,7 @@ ENTRY(_start)
 MEMORY
 {
     IROM (rx) : ORIGIN = 0x00000000, LENGTH = 16K
-    BRAM (rw) : ORIGIN = 0x80200000, LENGTH = 16K
+    BRAM (rw) : ORIGIN = 0x80100000, LENGTH = 256K
 }
 
 SECTIONS
