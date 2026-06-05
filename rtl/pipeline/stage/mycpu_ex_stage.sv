@@ -30,6 +30,7 @@ module mycpu_ex_stage #(
     input  logic                   EX_ALUSrcB       ,
     input  logic                   EX_pred_taken    ,
     input  logic [DATAWIDTH - 1:0] EX_pred_target   ,
+    input  logic                   EX_stall         ,
     input  logic                   clk              ,
     input  logic                   rst              ,
     output logic [DATAWIDTH - 1:0] IF_npc_redirect  ,       // 给 IF 级的跳转目标
@@ -42,6 +43,9 @@ module mycpu_ex_stage #(
 );
     logic [DATAWIDTH - 1:0] alu_in_a, alu_in_b;
     logic [DATAWIDTH - 1:0] EX_forward_A_out;
+    logic [DATAWIDTH - 1:0] EX_forward_A_comb, EX_forward_B_comb;
+    logic [DATAWIDTH - 1:0] EX_forward_A_hold, EX_forward_B_hold;
+    logic                   EX_forward_hold_valid;
     logic [DATAWIDTH - 1:0] npc_offset;
     logic [DATAWIDTH - 1:0] jalr_target;
     logic [DATAWIDTH - 1:0] csr_npc;
@@ -55,12 +59,25 @@ module mycpu_ex_stage #(
     logic                   m_busy, m_done, m_start;
 
     // 双路前递：根据 ForwardA/B 在 EX/MEM、MEM/WB、寄存器堆三者间选
-    assign EX_forward_A_out = (ForwardA == 2'b10) ? MEM_forward_data :
-                              (ForwardA == 2'b01) ? WB_wdata         :
-                                                    EX_rR1_data      ;
-    assign EX_forward_B_out = (ForwardB == 2'b10) ? MEM_forward_data :
-                              (ForwardB == 2'b01) ? WB_wdata         :
-                                                    EX_rR2_data      ;
+    assign EX_forward_A_comb = (ForwardA == 2'b10) ? MEM_forward_data :
+                               (ForwardA == 2'b01) ? WB_wdata         :
+                                                     EX_rR1_data      ;
+    assign EX_forward_B_comb = (ForwardB == 2'b10) ? MEM_forward_data :
+                               (ForwardB == 2'b01) ? WB_wdata         :
+                                                     EX_rR2_data      ;
+
+    always_ff @(posedge clk) begin
+        if (rst || !EX_stall) begin
+            EX_forward_hold_valid <= 1'b0;
+        end else if (!EX_forward_hold_valid) begin
+            EX_forward_A_hold     <= EX_forward_A_comb;
+            EX_forward_B_hold     <= EX_forward_B_comb;
+            EX_forward_hold_valid <= 1'b1;
+        end
+    end
+
+    assign EX_forward_A_out = EX_forward_hold_valid ? EX_forward_A_hold : EX_forward_A_comb;
+    assign EX_forward_B_out = EX_forward_hold_valid ? EX_forward_B_hold : EX_forward_B_comb;
 
     // alu 输入选择：A 端 pc/rs1，B 端 imm/rs2
     assign alu_in_a = EX_ALUSrcA ? EX_pc  : EX_forward_A_out;

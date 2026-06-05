@@ -36,8 +36,7 @@ module perip_bridge(
 	output logic [39:0]  virtual_seg_output	,
     output logic [31:0]  virtual_led_output
 );
-    localparam BRAM_ADDR_START = 32'h8010_0000;
-    localparam BRAM_ADDR_END   = 32'h8013_FFFF;
+    localparam BRAM_ADDR_TAG = 14'h2004;  // 0x8010_0000..0x8013_FFFF
     localparam SW0_ADDR  = 32'h8020_0000;  // sw[31:0]
     localparam SW1_ADDR  = 32'h8020_0004;  // sw[63:32]
     localparam KEY_ADDR  = 32'h8020_0010;  // key[7:0]
@@ -53,7 +52,7 @@ module perip_bridge(
     logic cnt_enable_cfg;
     logic bram_hit, bram_ren, bram_wen, bram_resp_valid;
 
-    assign bram_hit = (perip_addr >= BRAM_ADDR_START) && (perip_addr < BRAM_ADDR_END);
+    assign bram_hit = (perip_addr[31:18] == BRAM_ADDR_TAG);
     assign bram_ren = ~perip_wen & bram_hit;
     assign bram_wen = perip_wen & bram_hit;
 

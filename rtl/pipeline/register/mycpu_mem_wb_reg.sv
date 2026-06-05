@@ -22,6 +22,7 @@ module mycpu_mem_wb_reg #(
     input  logic [2:0]              MEM_funct3     ,
     input  logic                    clk            ,
     input  logic                    rst            ,
+    input  logic                    Flush_MEM_WB   ,
     // ---- 输出：送往 WB 级 ----
     output logic [DATAWIDTH - 1:0]  WB_pcadd4      ,
     output logic [DATAWIDTH - 1:0]  WB_alu_result  ,
@@ -35,7 +36,7 @@ module mycpu_mem_wb_reg #(
     output logic [2:0]              WB_funct3
 );
     always_ff @(posedge clk) begin
-        if (rst) begin
+        if (rst || Flush_MEM_WB) begin
             WB_RegWrite <= 1'b0;
             WB_MemToReg <= '0;
             WB_rd_oh    <= 32'b0;

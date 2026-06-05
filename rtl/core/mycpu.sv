@@ -41,22 +41,21 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
     logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
-    logic        Stall_DMemConflict, Stall_DMemEarly, Flush_EX_MEM;
+    logic        Stall_DMemLoad, Flush_EX_MEM, Flush_MEM_WB;
     logic [1:0]  ForwardA, ForwardB;
-    logic        BranchTaken;
-    logic        BranchMispredict;
+    logic        BranchTaken, BranchTaken_raw;
+    logic        BranchMispredict, BranchMispredict_raw;
     logic        BP_update_en, BP_update_taken;
-    logic        EX_bram_load_req, EX_bram_load_fire;
     logic        MEM_bram_access, MEM_mmio_read;
+    logic        MEM_bram_load_issue, MEM_bram_pending;
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
 
-    localparam logic [31:0] BRAM_ADDR_START = 32'h8010_0000;
-    localparam logic [31:0] BRAM_ADDR_END   = 32'h8013_FFFF;
+    localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
 
     function automatic logic is_bram_addr(input logic [31:0] addr);
-        is_bram_addr = (addr >= BRAM_ADDR_START) && (addr < BRAM_ADDR_END);
+        is_bram_addr = (addr[31:18] == BRAM_ADDR_TAG);
     endfunction
 
     // -------------------------------------------------------------------------
@@ -153,23 +152,32 @@ module mycpu (
         .Flush_ID_EX   (Flush_ID_EX    )
     );
 
-    assign EX_bram_load_req   = EX_MemRead && is_bram_addr(EX_alu_result);
     assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
     assign MEM_mmio_read      = MEM_MemRead && !MEM_bram_access;
-    assign Stall_DMemEarly    = ID_MemRead && (EX_MemWrite || (EX_MemRead && !EX_bram_load_req));
-    assign Stall_DMemConflict = EX_bram_load_req && (MEM_MemWrite || MEM_mmio_read);
-    assign Flush_EX_MEM       = Stall_DMemConflict;
-    assign EX_bram_load_fire  = EX_bram_load_req && !Stall_DMemConflict;
+    assign MEM_bram_load_issue = MEM_MemRead && MEM_bram_access && !MEM_bram_pending;
+    assign Stall_DMemLoad     = MEM_bram_load_issue || MEM_bram_pending;
+    assign Flush_EX_MEM       = MEM_bram_pending;
+    assign Flush_MEM_WB       = MEM_bram_load_issue;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            MEM_bram_pending <= 1'b0;
+        end else begin
+            MEM_bram_pending <= MEM_bram_load_issue;
+        end
+    end
 
     // 前半段统一停顿条件：
     //   1) 原有 load-use 冒险
     //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
-    //   3) EX 级 BRAM 提前读与 MEM 级访存占用外部总线冲突
-    assign Stall_Front     = Stall_Hazard | EX_busy | Stall_DMemEarly | Stall_DMemConflict;
+    //   3) MEM 级 BRAM 同步读发起后一拍等待返回
+    assign Stall_Front     = Stall_Hazard | EX_busy | Stall_DMemLoad;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
-    assign Flush_ID_EX_comb = (Flush_ID_EX | Stall_DMemEarly) & ~(EX_busy | Stall_DMemConflict);
+    assign Flush_ID_EX_comb = Flush_ID_EX & ~(EX_busy | Stall_DMemLoad);
     assign Stall           = Stall_Front;
-    assign BP_update_en    = !EX_busy && (EX_NpcOp == 2'b01);
+    assign BranchTaken     = BranchTaken_raw && !Stall_DMemLoad;
+    assign BranchMispredict = BranchMispredict_raw && !Stall_DMemLoad;
+    assign BP_update_en    = !EX_busy && !Stall_DMemLoad && (EX_NpcOp == 2'b01);
     assign BP_update_taken = BranchTaken;
 
     forwarding_unit u_forwarding_unit (
@@ -284,7 +292,7 @@ module mycpu (
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
-        .Stall_ID_EX     (EX_busy | Stall_DMemConflict),
+        .Stall_ID_EX     (EX_busy | Stall_DMemLoad),
         .EX_pc           (EX_pc          ),
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
@@ -334,14 +342,15 @@ module mycpu (
         .EX_ALUSrcB       (EX_ALUSrcB      ),
         .EX_pred_taken    (EX_pred_taken   ),
         .EX_pred_target   (EX_pred_target  ),
+        .EX_stall         (Stall_DMemLoad  ),
         .clk              (clk             ),
         .rst              (rst             ),
         .IF_npc_redirect  (IF_npc_redirect ),
         .EX_alu_result    (EX_alu_result   ),
         .EX_forward_B_out (EX_forward_B_out),
         .EX_csr_wb        (EX_csr_wb       ),
-        .BranchTaken      (BranchTaken     ),
-        .BranchMispredict (BranchMispredict),
+        .BranchTaken      (BranchTaken_raw ),
+        .BranchMispredict (BranchMispredict_raw),
         .EX_busy          (EX_busy         )
     );
 
@@ -361,7 +370,7 @@ module mycpu (
         .EX_funct3        (EX_funct3       ),
         .clk              (clk             ),
         .rst              (rst             ),
-        .en               (~EX_busy        ),
+        .en               (~(EX_busy | Stall_DMemLoad)),
         .Flush_EX_MEM     (Flush_EX_MEM    ),
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
@@ -382,8 +391,8 @@ module mycpu (
 
     // =========================================================================
     // STAGE 4：MEM（访存）
-    //   BRAM load 在 EX 级提前发起同步 BRAM 读；MEM 级只捕获上一拍返回。
-    //   store 和 MMIO load 仍使用 MEM 级地址，避免对外接口增加端口。
+    //   BRAM load 在 MEM 级发起同步读，等待一拍后让 MEM/WB 捕获返回数据。
+    //   所有外部访存地址均来自 EX/MEM 锁存后的 MEM_perip_addr，切断 EX 级长路径。
     // =========================================================================
     mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
@@ -400,10 +409,9 @@ module mycpu (
 
     assign perip_wen   = MEM_bus_wen;
     assign perip_wdata = MEM_bus_wdata;
-    assign perip_mask  = EX_bram_load_fire ? EX_funct3[1:0] : MEM_bus_mask;
-    assign perip_addr  = (MEM_MemWrite || MEM_mmio_read) ? MEM_bus_addr :
-                         EX_bram_load_fire               ? EX_alu_result :
-                                                           32'b0;
+    assign perip_mask  = MEM_bus_mask;
+    assign perip_addr  = (MEM_MemWrite || MEM_mmio_read || MEM_bram_load_issue) ? MEM_bus_addr :
+                                                                               32'b0;
 
     // ---- MEM/WB 流水寄存器 ----
     mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (
@@ -419,6 +427,7 @@ module mycpu (
         .MEM_funct3     (MEM_funct3    ),
         .clk            (clk           ),
         .rst            (rst           ),
+        .Flush_MEM_WB   (Flush_MEM_WB  ),
         .WB_pcadd4      (WB_pcadd4     ),
         .WB_alu_result  (WB_alu_result ),
         .WB_mdata       (WB_mdata      ),
