@@ -142,25 +142,95 @@ EX 计算 redirect_valid/raw_target/raw_taken
 
 ## 4. 阶段 2：EX 前递与 ALU 拆级
 
-### 目标
+### 当前状态
 
-切断最差路径前半段：
+阶段 1 已完成 redirect/flush 打拍，人工验证结果：
+
+- Verilator regression 全部通过：`default`、`t03_branch`、
+  `t09_branch_hazard`、`t19_zicsr_trap`、`perf_test`。
+- 新 routed timing：
+  - WNS：`-0.423 ns`
+  - TNS：`-25.843 ns`
+  - Setup failing endpoints：`82`
+  - Hold：无失败
+
+阶段 1 已明显改善 baseline `WNS -1.585 ns / TNS -494.188 ns / 398`
+个失败端点，但 150 MHz routed timing 仍未收敛。
+
+新最差路径概要：
 
 ```text
-MEM_rd_oh -> forwarding_unit -> EX_forward_A/B -> alu_in_a/b -> ALU
+Source:
+  student_top_inst/Core_cpu/u_ex_mem_reg/MEM_rd_oh_reg[11]/C
+
+Destination:
+  student_top_inst/Core_cpu/redirect_taken_q_reg/CE
+  或 redirect_target_q_reg[*]/CE / redirect_valid_q_reg/D
+
+Data Path Delay:
+  6.808 ns
+  logic 2.149 ns
+  route 4.659 ns
+
+Logic Levels:
+  22
+```
+
+路径功能归类：
+
+```text
+MEM_rd_oh
+  -> forwarding_unit
+  -> EX_forward_A/B mux/hold
+  -> alu_in_a/b
+  -> ALU/branch compare/jalr target
+  -> redirect capture registers
+```
+
+判断：
+
+- 最差路径已离开 `u_id_ex_reg/*/R` 的 flush/reset 尾部。
+- 当前瓶颈仍是 `forwarding -> EX 执行 -> redirect capture`，不是 BRAM。
+- 虽然 route delay 占比约 68%，但 logic levels 仍有 22/23，尚不宜直接转
+  阶段 3 做控制网复制。
+- 下一步应进入阶段 2，优先切断 forwarding 到 EX 执行/redirect capture 的
+  组合链。
+
+### 目标
+
+切断阶段 1 后的新最差路径：
+
+```text
+MEM_rd_oh
+  -> forwarding_unit
+  -> EX_forward_A/B
+  -> alu_in_a/b
+  -> ALU/branch compare/jalr target
+  -> redirect capture
 ```
 
 ### 实现方向
 
-将 EX 拆成 `EX1` 和 `EX2`：
+先做“阶段 2 前半步”：将 EX 拆成 `EX1` 和 `EX2`，目标是最小化改动面并
+尽快验证 timing 是否收敛：
 
 ```text
 ID/EX
-  -> EX1: forwarding compare + operand mux + operand latch
+  -> EX1: forwarding compare + operand mux + operand/store-data latch
   -> EX1/EX2 reg
   -> EX2: ALU + branch/jalr/csr redirect + RV32M handling
   -> EX/MEM
 ```
+
+推荐新增一级 `EX1/EX2` 流水寄存器：
+
+- EX1 锁存前递后的 `rs1`、`rs2`、ALU A/B operand、store data、PC、imm、
+  rd、控制信号和预测信息。
+- EX2 只使用 EX1/EX2 寄存后的 operand 做 ALU、branch compare、jalr target、
+  csr redirect 与 redirect capture。
+- redirect 仍按阶段 1 的打一拍提交方式处理，必要时保留 pending 语义。
+- EX2 产生的错误路径 flush 需要覆盖 IF/ID、ID/EX，以及新增 EX1/EX2 中的
+  错路径指令。
 
 可接受代价：
 
@@ -183,22 +253,36 @@ ID/EX
 - store data 独立于 ALU B operand 保存。
 - forwarding 优先级仍是最近结果优先。
 - load-use stall 拍数需要重新审计。
-- branch 解析阶段后移后，flush 范围要同步调整。
-- RV32M busy 要冻结正确阶段。
+- branch 解析阶段后移后，flush 范围要同步调整到 IF/ID、ID/EX、EX1/EX2。
+- RV32M busy 要冻结正确阶段，不能让 ID/EX 或 EX1/EX2 覆盖正在执行的 M 指令。
+- `EX_kill` / redirect pending 语义要保留，错误路径 CSR 写入、M 指令启动和
+  MemWrite/RegWrite 不能提交。
+- 若仅拆 operand latch 后最差路径仍终止到 redirect capture，可继续把
+  redirect capture 的 CE/D 条件简化或复制。
 
 人工验证关注点：
 
 - `t07_forwarding.S`
 - `t08_load_use.S`
 - `t09_branch_hazard.S`
+- `t19_zicsr_trap.S`
+- `t18_m_ext_basic` 或等价 M 扩展测试。
 - ALU -> ALU、ALU -> store、ALU -> jalr。
 - load -> ALU、load -> store、load -> branch。
 - 新 timing 中是否还存在完整 `forwarding -> ALU -> branch -> flush` 链。
+- 新 timing 中最差路径是否仍从 `MEM_rd_oh` 终止到 redirect capture 寄存器。
 
 进入下一阶段条件：
 
 - 人工确认功能通过。
 - 150 MHz timing 收敛，或最差路径已转移到 route/high-fanout、RV32M、IF/PC 等其他类别。
+
+若失败：
+
+- 若功能失败，优先修正 EX1/EX2 flush、stall、forwarding 与 RV32M busy 语义。
+- 若 timing 仍卡在 `MEM_rd_oh -> forwarding -> redirect capture`，继续阶段 2，
+  考虑进一步寄存 forwarding 选择或简化 redirect capture 使能。
+- 若 logic levels 已明显下降但 route delay 仍主导，再进入阶段 3。
 
 ## 5. 阶段 3：控制网和高扇出优化
 
@@ -325,12 +409,12 @@ ID/EX
 
 ## 10. 当前推荐下一步
 
-下一次 agent 实现应从阶段 1 开始：
+下一次 agent 实现应进入阶段 2：
 
 ```text
-redirect/flush 打拍
+EX 前递与 ALU 拆级
   -> agent 做 RTL 修改和语法检查
   -> 人工跑 Verilator 功能验证
   -> 人工跑综合/实现
-  -> 根据新 timing 判断是否进入 EX 拆级
+  -> 根据新 timing 判断是否继续阶段 2 或进入阶段 3
 ```
