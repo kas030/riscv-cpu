@@ -28,7 +28,7 @@ OBJDUMP = $(CROSS)objdump
 
 CFLAGS  = -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
           -ffreestanding -fno-builtin -O1 -g
-LDFLAGS = -T linker/link.ld -Map=$(@:.elf=.map)
+LDFLAGS = -T linker/link.ld -Wl,-Map=$(@:.elf=.map)
 
 BUILD   = build
 TOOLS   = tools
@@ -62,6 +62,7 @@ define find_src
 $(firstword $(wildcard tier1_basic/$(1).S tier2_hazard/$(1).S tier3_perf/$(1).S tier4_bench/$(1).S))
 endef
 
+.SECONDEXPANSION:
 .SECONDARY:  # 保留中间产物（.elf/.bin）以便调试
 
 $(BUILD)/%.elf: $$(call find_src,%) linker/link.ld
