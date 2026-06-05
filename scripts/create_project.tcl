@@ -114,7 +114,7 @@ set rtl_files [glob_existing_files [list \
 
 set ip_files [list \
     [file join $repo_root ip IROM IROM.xci] \
-    [file join $repo_root ip DRAM DRAM.xci] \
+    [file join $repo_root ip BRAM BRAM.xci] \
     [file join $repo_root ip pll pll.xci] \
 ]
 

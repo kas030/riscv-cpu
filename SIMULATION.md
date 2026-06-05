@@ -1,12 +1,12 @@
 # 仿真使用说明
 
-本文说明如何使用本仓库的 CPU-only Verilator 仿真流程。该流程不依赖 Vivado，不仿 PLL、UART、数码管扫描等板级外设，主要用于快速验证 CPU 核、IROM/DRAM 初始化和 MMIO 输出。
+本文说明如何使用本仓库的 CPU-only Verilator 仿真流程。该流程不依赖 Vivado，不仿 PLL、UART、数码管扫描等板级外设，主要用于快速验证 CPU 核、IROM/BRAM 初始化和 MMIO 输出。
 
 ## 1. 整体流程
 
 一次仿真大致分为 4 步：
 
-1. 在 `sim_cpu_only/config.mk` 中选择 IROM/DRAM 的 `.coe` 文件和可选 LED 期望值。
+1. 在 `sim_cpu_only/config.mk` 中选择 IROM/BRAM 的 `.coe` 文件和可选 LED 期望值。
 2. 运行 `./sim_cpu_only/run_verilator.sh`。
 3. 脚本将 `.coe` 转换为 `sim_cpu_only/build/*.mem`。
 4. Verilator 编译并运行 `tb_cpu_only.sv`，日志写入 `sim_cpu_only/build/verilator-sim.log`。
@@ -23,7 +23,7 @@ sim_cpu_only/config.mk
 
 ```make
 IROM_COE := ../digital_twin.srcs/sources_1/imports/test_src/irom.coe
-DRAM_COE := ../digital_twin.srcs/sources_1/imports/test_src/dram.coe
+BRAM_COE := ../digital_twin.srcs/sources_1/imports/test_src/bram.coe
 EXPECTED_LED := 01221c08
 TRACE := 0
 STOP_NS := 400000000
@@ -160,13 +160,13 @@ CPI = cycles / approx_inst
 approx_inst = writeback(RF) + stores + taken branches
 ```
 
-`cycles` 是 CPU 时钟周期数。`writeback(RF)` 统计写回寄存器且目标不是 `x0` 的指令，`stores` 统计写 MMIO/DRAM 的 store，`taken branches` 统计实际跳转或 taken 分支。该口径适合观察性能趋势，但不是严格 retire 计数。
+`cycles` 是 CPU 时钟周期数。`writeback(RF)` 统计写回寄存器且目标不是 `x0` 的指令，`stores` 统计写 MMIO/BRAM 的 store，`taken branches` 统计实际跳转或 taken 分支。该口径适合观察性能趋势，但不是严格 retire 计数。
 
 ## 8. 何时使用 Vivado
 
 CPU-only 仿真不替代完整 Vivado 仿真。需要验证以下内容时，应打开 `digital_twin.xpr` 使用 Vivado/xsim：
 
-- Xilinx IROM/DRAM IP 配置和初始化；
+- Xilinx IROM/BRAM IP 配置和初始化；
 - PLL、UART、数码管扫描等板级外设；
 - 综合后功能仿真或实现相关问题。
 
@@ -187,7 +187,7 @@ tests/tier1_basic/t18_m_ext_basic.S
 
 ### 9.1 `run_verilator.sh` 与 `tests/Makefile` 的分工
 
-`./sim_cpu_only/run_verilator.sh` 只负责读取现成的 `IROM_COE` / `DRAM_COE`，转换成 `build/*.mem` 后运行 Verilator。它本身不关心测试镜像最初是按 `rv32i` 还是 `rv32im` 编出来的。
+`./sim_cpu_only/run_verilator.sh` 只负责读取现成的 `IROM_COE` / `BRAM_COE`，转换成 `build/*.mem` 后运行 Verilator。它本身不关心测试镜像最初是按 `rv32i` 还是 `rv32im` 编出来的。
 
 真正会限制指令集的是：
 

@@ -1,19 +1,21 @@
 # Recreate the data memory IP as a Block Memory Generator.
 #
 # Usage from repository root:
-#   vivado -mode batch -source scripts/recreate_dram_bram_ip.tcl
+#   vivado -mode batch -source scripts/recreate_bram_ip.tcl
 #
-# This script intentionally keeps the IP/module name as DRAM so existing RTL
-# instantiations, hierarchy references, and project file references stay stable.
+# This script recreates the data-memory IP/module with the BRAM name used by RTL.
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
 set project_name digital_twin
 set project_dir  [file join $repo_root vivado]
 set project_path [file join $project_dir ${project_name}.xpr]
-set dram_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip DRAM]
-set dram_xci     [file join $dram_ip_dir DRAM.xci]
-set dram_coe     [file normalize [file join $repo_root sim coe dram.coe]]
+set bram_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip BRAM]
+set bram_xci     [file join $bram_ip_dir BRAM.xci]
+set bram_coe     [file normalize [file join $repo_root sim coe bram.coe]]
+set legacy_ip_name [format "%s%s" D RAM]
+set legacy_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip $legacy_ip_name]
+set legacy_xci     [file join $legacy_ip_dir ${legacy_ip_name}.xci]
 
 # Some local Vivado installs can fail to auto-discover Tcl Store support
 # packages before creating/opening a project. Add known install-side package
@@ -46,29 +48,44 @@ if {[llength [current_project -quiet]] != 0} {
 
 open_project $project_path
 
-set old_dram_ips [get_ips -quiet DRAM]
-if {[llength $old_dram_ips] != 0} {
-    set old_ip_files [get_files -quiet -all -of_objects $old_dram_ips]
+set old_legacy_ips [get_ips -quiet $legacy_ip_name]
+if {[llength $old_legacy_ips] != 0} {
+    set old_ip_files [get_files -quiet -all -of_objects $old_legacy_ips]
     if {[llength $old_ip_files] != 0} {
         remove_files -quiet $old_ip_files
     }
-    remove_files -quiet $old_dram_ips
+    remove_files -quiet $old_legacy_ips
 }
 
-set old_dram_files [get_files -quiet -all $dram_xci]
-if {[llength $old_dram_files] != 0} {
-    remove_files -quiet $old_dram_files
+set old_bram_ips [get_ips -quiet BRAM]
+if {[llength $old_bram_ips] != 0} {
+    set old_ip_files [get_files -quiet -all -of_objects $old_bram_ips]
+    if {[llength $old_ip_files] != 0} {
+        remove_files -quiet $old_ip_files
+    }
+    remove_files -quiet $old_bram_ips
 }
 
-file delete -force $dram_ip_dir
-file mkdir $dram_ip_dir
+set old_bram_files [get_files -quiet -all $bram_xci]
+if {[llength $old_bram_files] != 0} {
+    remove_files -quiet $old_bram_files
+}
+
+set old_legacy_files [get_files -quiet -all $legacy_xci]
+if {[llength $old_legacy_files] != 0} {
+    remove_files -quiet $old_legacy_files
+}
+
+file delete -force $legacy_ip_dir
+file delete -force $bram_ip_dir
+file mkdir $bram_ip_dir
 
 create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 \
-    -module_name DRAM -dir $dram_ip_dir
+    -module_name BRAM -dir $bram_ip_dir
 
-set dram_ip [get_ips DRAM]
+set bram_ip [get_ips BRAM]
 set_property -dict [list \
-    CONFIG.Component_Name {DRAM} \
+    CONFIG.Component_Name {BRAM} \
     CONFIG.Interface_Type {Native} \
     CONFIG.Memory_Type {True_Dual_Port_RAM} \
     CONFIG.Write_Width_A {32} \
@@ -87,16 +104,16 @@ set_property -dict [list \
     CONFIG.Register_PortA_Output_of_Memory_Core {false} \
     CONFIG.Register_PortB_Output_of_Memory_Core {false} \
     CONFIG.Load_Init_File {true} \
-    CONFIG.Coe_File $dram_coe \
+    CONFIG.Coe_File $bram_coe \
     CONFIG.Fill_Remaining_Memory_Locations {true} \
     CONFIG.Remaining_Memory_Locations {0} \
     CONFIG.Use_RSTA_Pin {false} \
     CONFIG.Use_RSTB_Pin {false} \
-] $dram_ip
+] $bram_ip
 
-generate_target all $dram_ip
-export_ip_user_files -of_objects $dram_ip -no_script -sync -force -quiet
+generate_target all $bram_ip
+export_ip_user_files -of_objects $bram_ip -no_script -sync -force -quiet
 update_compile_order -fileset sources_1
 
 close_project
-puts "INFO: recreated DRAM as blk_mem_gen true dual-port BRAM: $dram_xci"
+puts "INFO: recreated BRAM as blk_mem_gen true dual-port BRAM: $bram_xci"

@@ -14,7 +14,7 @@ PROGRESS_NS=${PROGRESS_NS:-0}
 PASS_LED=${PASS_LED:-C0DEC0DE}
 FAIL_LED=${FAIL_LED:-DEADBEEF}
 EXPECTED_LED=${EXPECTED_LED:-C0DEC0DE}
-DRAM_COE=${DRAM_COE:-../sim/coe/dram.coe}
+BRAM_COE=${BRAM_COE:-../sim/coe/bram.coe}
 
 mkdir -p "$REPORT_DIR"
 
@@ -107,7 +107,7 @@ for idx in "${!names[@]}"; do
     cmd=(
         "$SCRIPT_DIR/run_verilator.sh"
         "IROM_COE=$irom"
-        "DRAM_COE=$DRAM_COE"
+        "BRAM_COE=$BRAM_COE"
         "STOP_NS=$stop_ns"
         "PROGRESS_NS=$PROGRESS_NS"
     )

@@ -2,8 +2,8 @@
 `include "sim_config.svh"
 
 module tb_cpu_only;
-    localparam DRAM_BASE = 32'h8010_0000;
-    localparam DRAM_END  = 32'h8013_FFFF;
+    localparam BRAM_BASE = 32'h8010_0000;
+    localparam BRAM_END  = 32'h8013_FFFF;
     localparam SW0_ADDR  = 32'h8020_0000;
     localparam SW1_ADDR  = 32'h8020_0004;
     localparam KEY_ADDR  = 32'h8020_0010;
@@ -33,9 +33,9 @@ module tb_cpu_only;
     logic        cnt_started = 1'b0;
     time         cnt_start_time = 0;
     logic [31:0] irom [0:4095];
-    logic [31:0] dram [0:65535];
-    logic [31:0] dram_rdata_q;
-    logic        dram_resp_valid;
+    logic [31:0] bram [0:65535];
+    logic [31:0] bram_rdata_q;
+    logic        bram_resp_valid;
 
     longint unsigned cycles = 64'd0;
     longint unsigned cnt_writeback = 64'd0;
@@ -79,9 +79,9 @@ module tb_cpu_only;
         for (init_idx = 0; init_idx < 4096; init_idx = init_idx + 1)
             irom[init_idx] = 32'd0;
         for (init_idx = 0; init_idx < 65536; init_idx = init_idx + 1)
-            dram[init_idx] = 32'd0;
+            bram[init_idx] = 32'd0;
         $readmemh("build/irom.mem", irom);
-        $readmemh("build/dram.mem", dram);
+        $readmemh("build/bram.mem", bram);
         repeat (5) @(posedge clk);
         rst = 1'b0;
     end
@@ -135,8 +135,8 @@ module tb_cpu_only;
 
     always_comb begin
         perip_rdata = 32'd0;
-        if (dram_resp_valid) begin
-            perip_rdata = dram_rdata_q;
+        if (bram_resp_valid) begin
+            perip_rdata = bram_rdata_q;
         end else if (!perip_wen) begin
             case (perip_addr)
                 SW0_ADDR: perip_rdata = 32'd0;
@@ -157,17 +157,17 @@ module tb_cpu_only;
             seg_written <= 1'b0;
             cnt_enable <= 1'b0;
             cnt_started <= 1'b0;
-            dram_rdata_q <= 32'd0;
-            dram_resp_valid <= 1'b0;
+            bram_rdata_q <= 32'd0;
+            bram_resp_valid <= 1'b0;
         end else begin
-            dram_resp_valid <= !perip_wen && (perip_addr >= DRAM_BASE && perip_addr < DRAM_END);
-            if (!perip_wen && (perip_addr >= DRAM_BASE && perip_addr < DRAM_END)) begin
-                dram_rdata_q <= select_load_word(dram[(perip_addr - DRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
+            bram_resp_valid <= !perip_wen && (perip_addr >= BRAM_BASE && perip_addr < BRAM_END);
+            if (!perip_wen && (perip_addr >= BRAM_BASE && perip_addr < BRAM_END)) begin
+                bram_rdata_q <= select_load_word(bram[(perip_addr - BRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
             end
             if (perip_wen) begin
-                if (perip_addr >= DRAM_BASE && perip_addr < DRAM_END) begin
-                    dram[(perip_addr - DRAM_BASE) >> 2] <= merge_store_word(
-                        dram[(perip_addr - DRAM_BASE) >> 2],
+                if (perip_addr >= BRAM_BASE && perip_addr < BRAM_END) begin
+                    bram[(perip_addr - BRAM_BASE) >> 2] <= merge_store_word(
+                        bram[(perip_addr - BRAM_BASE) >> 2],
                         perip_wdata,
                         perip_mask,
                         perip_addr[1:0]

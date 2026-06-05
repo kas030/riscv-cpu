@@ -11,7 +11,7 @@
 | IF  | `mycpu_if_stage` | 维护pc_reg，读取IROM返回的指令 |
 | ID  | `mycpu_id_stage` + `reg_file` | `main_ctrl` / `alu_ctrl` / `csr_ctrl_decode` 译码、`imm_gen` 生成立即数、寄存器堆读 |
 | EX  | `mycpu_ex_stage` | `alu` 运算、`npc_calc` 计算下一pc_reg、`csr_file` 处理、前递选择 |
-| MEM | `mycpu_mem_stage` | 外设/DRAM读写、`load_mask` 子字加载符号扩展 |
+| MEM | `mycpu_mem_stage` | 外设/BRAM读写、`load_mask` 子字加载符号扩展 |
 | WB  | `mycpu_wb_stage` | 5路 `MemToReg` 选择写回数据并送回 `reg_file` |
 
 **流水线寄存器：** 在每两级之间例化独立的流水寄存器模块 `mycpu_if_id_reg`、`mycpu_id_ex_reg`、`mycpu_ex_mem_reg`、`mycpu_mem_wb_reg`，在每个时钟上升沿锁存上一级的数据通路与控制信号，使五级模块可以在同一时钟周期内并行工作，从而将单周期的长关键路径切分为五段较短的关键路径。

@@ -5,7 +5,7 @@
 // 
 // Create Date: 04/22/2025 11:42:01 AM
 // Design Name: 
-// Module Name: dram_driver
+// Module Name: bram_driver
 // Project Name: 
 // Target Devices: 
 // Tool Versions: 
@@ -20,14 +20,14 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module dram_driver(
+module bram_driver(
     input  logic         clk				,
 
     input  logic [17:0]  perip_addr			,
     input  logic [31:0]  perip_wdata		,
 	input  logic [1:0]	 perip_mask			,
-    input  logic         dram_ren           ,
-    input  logic         dram_wen           ,
+    input  logic         bram_ren           ,
+    input  logic         bram_wen           ,
     output logic [31:0]  perip_rdata		
 );
     logic [15:0] bram_addr;
@@ -40,15 +40,15 @@ module dram_driver(
     assign offset = perip_addr[1:0];
     assign perip_rdata = dout;
 
-    DRAM Mem_DRAM (
+    BRAM Mem_BRAM (
         .clka       (clk),
-        .ena        (dram_ren),
+        .ena        (bram_ren),
         .wea        (4'b0000),
         .addra      (bram_addr),
         .dina       (32'b0),
         .douta      (bram_rdata_raw),
         .clkb       (clk),
-        .enb        (dram_wen),
+        .enb        (bram_wen),
         .web        (bram_we),
         .addrb      (bram_addr),
         .dinb       (bram_wdata),
@@ -56,7 +56,7 @@ module dram_driver(
     );
 
     always_ff @(posedge clk) begin
-        if (dram_ren) begin
+        if (bram_ren) begin
             rmask_q   <= perip_mask;
             roffset_q <= offset;
         end

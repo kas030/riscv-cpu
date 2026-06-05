@@ -10,7 +10,7 @@
     .globl _start
 _start:
     /* 设置栈指针 */
-    lui     sp, 0x80201         # sp = 0x80201000 (DRAM 顶端附近)
+    lui     sp, 0x80201         # sp = 0x80201000 (BRAM 顶端附近)
 
     /* 调用 add5(10) → 期望 15 */
     li      a0, 10

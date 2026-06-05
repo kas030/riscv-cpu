@@ -1,13 +1,13 @@
 # CPU-only Simulation
 
 这里是轻量级 CPU-only Verilator 仿真流程。它用 `tb_cpu_only.sv` 中的行为模型替代
-Vivado IROM/DRAM IP 和板级外设，便于快速验证 CPU 核。
+Vivado IROM/BRAM IP 和板级外设，便于快速验证 CPU 核。
 
 常用输入在 `config.mk` 中配置：
 
 ```make
 IROM_COE := ../sim/coe/irom.coe
-DRAM_COE := ../sim/coe/dram.coe
+BRAM_COE := ../sim/coe/bram.coe
 EXPECTED_LED :=
 PASS_LED := 01221C08
 FAIL_LED := 24181824
@@ -23,7 +23,7 @@ QUIET := 1
   默认从 `PATH` 查找工具；如果工具不在 `PATH`，可以在命令行覆盖：
   `make VERILATOR=/path/to/verilator CXX=/path/to/g++ sim-verilator`。
 - 本流程直接编译 `rtl/` 下的 CPU 核心模块，不依赖 Vivado 工程。
-- IROM/DRAM 输入支持 Vivado `.coe`、Quartus-style `.mif`，以及每行一个
+- IROM/BRAM 输入支持 Vivado `.coe`、Quartus-style `.mif`，以及每行一个
   32 位 hex/binary word 的 `.mem` 文本。
 - 默认 LED 判定值为 `PASS_LED=01221C08`、`FAIL_LED=24181824`。程序写入
   其中任意一个值都会触发 `stop_reason: led` 并结束仿真；`EXPECTED_LED`
@@ -50,7 +50,7 @@ make sim-verilator \
 python3 vivado/tests/tools/gen_t18_m_ext_basic_coe.py vivado/tests/build/t18_m_ext_basic.coe
 ./sim_cpu_only/run_verilator.sh \
   IROM_COE=../vivado/tests/build/t18_m_ext_basic.coe \
-  DRAM_COE=../sim/coe/dram.coe \
+  BRAM_COE=../sim/coe/bram.coe \
   PASS_LED=C0DEC0DE \
   FAIL_LED=DEADBEEF \
   EXPECTED_LED=C0DEC0DE \

@@ -7,7 +7,7 @@
 //     - cpu_clk / cpu_rst                     时钟与复位
 //     - irom_addr / irom_data                 IROM 取指接口（同步只读）
 //     - perip_addr / perip_wen / perip_mask /
-//       perip_wdata / perip_rdata             外设/DRAM 访存接口
+//       perip_wdata / perip_rdata             外设/BRAM 访存接口
 //   内部信号按 IF→ID→EX→MEM→WB 五级分组，每一组对应一个流水寄存器输出端，
 //   命名沿用 `<stage>_<信号>` 以便与教材中的经典 5 级流水线对齐。
 // =============================================================================
@@ -19,7 +19,7 @@ module mycpu (
     output logic [31:0]  irom_addr ,
     input  logic [31:0]  irom_data ,
 
-    // ---- 外设/DRAM 访存接口 ----
+    // ---- 外设/BRAM 访存接口 ----
     output logic [31:0]  perip_addr  ,
     output logic         perip_wen   ,
     output logic [ 1:0]  perip_mask  ,
@@ -46,17 +46,17 @@ module mycpu (
     logic        BranchTaken;
     logic        BranchMispredict;
     logic        BP_update_en, BP_update_taken;
-    logic        EX_dram_load_req, EX_dram_load_fire;
-    logic        MEM_dram_access, MEM_mmio_read;
+    logic        EX_bram_load_req, EX_bram_load_fire;
+    logic        MEM_bram_access, MEM_mmio_read;
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
 
-    localparam logic [31:0] DRAM_ADDR_START = 32'h8010_0000;
-    localparam logic [31:0] DRAM_ADDR_END   = 32'h8013_FFFF;
+    localparam logic [31:0] BRAM_ADDR_START = 32'h8010_0000;
+    localparam logic [31:0] BRAM_ADDR_END   = 32'h8013_FFFF;
 
-    function automatic logic is_dram_addr(input logic [31:0] addr);
-        is_dram_addr = (addr >= DRAM_ADDR_START) && (addr < DRAM_ADDR_END);
+    function automatic logic is_bram_addr(input logic [31:0] addr);
+        is_bram_addr = (addr >= BRAM_ADDR_START) && (addr < BRAM_ADDR_END);
     endfunction
 
     // -------------------------------------------------------------------------
@@ -153,18 +153,18 @@ module mycpu (
         .Flush_ID_EX   (Flush_ID_EX    )
     );
 
-    assign EX_dram_load_req   = EX_MemRead && is_dram_addr(EX_alu_result);
-    assign MEM_dram_access    = is_dram_addr(MEM_perip_addr);
-    assign MEM_mmio_read      = MEM_MemRead && !MEM_dram_access;
-    assign Stall_DMemEarly    = ID_MemRead && (EX_MemWrite || (EX_MemRead && !EX_dram_load_req));
-    assign Stall_DMemConflict = EX_dram_load_req && (MEM_MemWrite || MEM_mmio_read);
+    assign EX_bram_load_req   = EX_MemRead && is_bram_addr(EX_alu_result);
+    assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
+    assign MEM_mmio_read      = MEM_MemRead && !MEM_bram_access;
+    assign Stall_DMemEarly    = ID_MemRead && (EX_MemWrite || (EX_MemRead && !EX_bram_load_req));
+    assign Stall_DMemConflict = EX_bram_load_req && (MEM_MemWrite || MEM_mmio_read);
     assign Flush_EX_MEM       = Stall_DMemConflict;
-    assign EX_dram_load_fire  = EX_dram_load_req && !Stall_DMemConflict;
+    assign EX_bram_load_fire  = EX_bram_load_req && !Stall_DMemConflict;
 
     // 前半段统一停顿条件：
     //   1) 原有 load-use 冒险
     //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
-    //   3) EX 级 DRAM 提前读与 MEM 级访存占用外部总线冲突
+    //   3) EX 级 BRAM 提前读与 MEM 级访存占用外部总线冲突
     assign Stall_Front     = Stall_Hazard | EX_busy | Stall_DMemEarly | Stall_DMemConflict;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
     assign Flush_ID_EX_comb = (Flush_ID_EX | Stall_DMemEarly) & ~(EX_busy | Stall_DMemConflict);
@@ -382,7 +382,7 @@ module mycpu (
 
     // =========================================================================
     // STAGE 4：MEM（访存）
-    //   DRAM load 在 EX 级提前发起同步 BRAM 读；MEM 级只捕获上一拍返回。
+    //   BRAM load 在 EX 级提前发起同步 BRAM 读；MEM 级只捕获上一拍返回。
     //   store 和 MMIO load 仍使用 MEM 级地址，避免对外接口增加端口。
     // =========================================================================
     mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
@@ -400,9 +400,9 @@ module mycpu (
 
     assign perip_wen   = MEM_bus_wen;
     assign perip_wdata = MEM_bus_wdata;
-    assign perip_mask  = EX_dram_load_fire ? EX_funct3[1:0] : MEM_bus_mask;
+    assign perip_mask  = EX_bram_load_fire ? EX_funct3[1:0] : MEM_bus_mask;
     assign perip_addr  = (MEM_MemWrite || MEM_mmio_read) ? MEM_bus_addr :
-                         EX_dram_load_fire               ? EX_alu_result :
+                         EX_bram_load_fire               ? EX_alu_result :
                                                            32'b0;
 
     // ---- MEM/WB 流水寄存器 ----

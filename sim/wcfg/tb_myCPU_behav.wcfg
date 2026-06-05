@@ -75,26 +75,26 @@
       <obj_property name="ObjectShortName">[19][31:0]</obj_property>
    </wvobject>
    <wvobject fp_name="group111" type="group">
-      <obj_property name="label">dram</obj_property>
+      <obj_property name="label">bram</obj_property>
       <obj_property name="DisplayName">label</obj_property>
       <obj_property name="isExpanded"></obj_property>
-      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_driver_inst/perip_addr" type="array">
+      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/bram_driver_inst/perip_addr" type="array">
          <obj_property name="ElementShortName">perip_addr[17:0]</obj_property>
          <obj_property name="ObjectShortName">perip_addr[17:0]</obj_property>
       </wvobject>
-      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_driver_inst/dram_addr" type="array">
-         <obj_property name="ElementShortName">dram_addr[15:0]</obj_property>
-         <obj_property name="ObjectShortName">dram_addr[15:0]</obj_property>
+      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/bram_driver_inst/bram_addr" type="array">
+         <obj_property name="ElementShortName">bram_addr[15:0]</obj_property>
+         <obj_property name="ObjectShortName">bram_addr[15:0]</obj_property>
       </wvobject>
-      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_driver_inst/dram_wen" type="logic">
-         <obj_property name="ElementShortName">dram_wen</obj_property>
-         <obj_property name="ObjectShortName">dram_wen</obj_property>
+      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/bram_driver_inst/bram_wen" type="logic">
+         <obj_property name="ElementShortName">bram_wen</obj_property>
+         <obj_property name="ObjectShortName">bram_wen</obj_property>
       </wvobject>
-      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_driver_inst/dram_rdata_raw" type="array">
-         <obj_property name="ElementShortName">dram_rdata_raw[31:0]</obj_property>
-         <obj_property name="ObjectShortName">dram_rdata_raw[31:0]</obj_property>
+      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/bram_driver_inst/bram_rdata_raw" type="array">
+         <obj_property name="ElementShortName">bram_rdata_raw[31:0]</obj_property>
+         <obj_property name="ObjectShortName">bram_rdata_raw[31:0]</obj_property>
       </wvobject>
-      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_driver_inst/dout" type="array">
+      <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/bram_driver_inst/dout" type="array">
          <obj_property name="ElementShortName">dout[31:0]</obj_property>
          <obj_property name="ObjectShortName">dout[31:0]</obj_property>
       </wvobject>
@@ -111,9 +111,9 @@
       <obj_property name="ElementShortName">mmio_rdata[31:0]</obj_property>
       <obj_property name="ObjectShortName">mmio_rdata[31:0]</obj_property>
    </wvobject>
-   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/dram_rdata" type="array">
-      <obj_property name="ElementShortName">dram_rdata[31:0]</obj_property>
-      <obj_property name="ObjectShortName">dram_rdata[31:0]</obj_property>
+   <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/bram_rdata" type="array">
+      <obj_property name="ElementShortName">bram_rdata[31:0]</obj_property>
+      <obj_property name="ObjectShortName">bram_rdata[31:0]</obj_property>
    </wvobject>
    <wvobject fp_name="/tb_myCPU/uut/student_top_inst/bridge_inst/seg_wdata" type="array">
       <obj_property name="ElementShortName">seg_wdata[31:0]</obj_property>

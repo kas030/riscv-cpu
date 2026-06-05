@@ -1,7 +1,7 @@
 # CPU-only 仿真默认输入。
 # 路径相对于 sim_cpu_only/ 解析，因为 run_verilator.sh 会进入该目录运行 make。
 IROM_COE := ../sim/coe/irom.coe
-DRAM_COE := ../sim/coe/dram.coe
+BRAM_COE := ../sim/coe/bram.coe
 
 # 留空则按 PASS_LED / FAIL_LED 判定；非空时额外要求最终 LED 等于 EXPECTED_LED。
 EXPECTED_LED :=
