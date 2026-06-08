@@ -19,10 +19,16 @@ module mycpu_mem_stage #(
     output logic                   perip_wen       ,
     output logic [1:0]             perip_mask
 );
-    // 直连外设接口：地址 / 写使能 / 字节 mask / 写数据
-    assign perip_addr  = MEM_perip_addr;
-    assign perip_wen   = MEM_MemWrite;
-    assign perip_mask  = MEM_funct3[1:0];
-    assign perip_wdata = MEM_rR2_data;
-    assign MEM_mdata   = perip_rdata;
+    mycpu_lsu #(DATAWIDTH) u_lsu (
+        .lsu_addr_i   (MEM_perip_addr),
+        .store_data_i (MEM_rR2_data  ),
+        .funct3_i     (MEM_funct3    ),
+        .mem_write_i  (MEM_MemWrite  ),
+        .bus_rdata_i  (perip_rdata   ),
+        .bus_addr_o   (perip_addr    ),
+        .bus_wen_o    (perip_wen     ),
+        .bus_mask_o   (perip_mask    ),
+        .bus_wdata_o  (perip_wdata   ),
+        .load_raw_o   (MEM_mdata     )
+    );
 endmodule

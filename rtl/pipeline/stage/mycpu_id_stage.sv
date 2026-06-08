@@ -31,46 +31,25 @@ module mycpu_id_stage #(
     output logic [4:0]             ID_rs2           ,
     output logic [4:0]             ID_rd
 );
-    // 直接从指令中切出寄存器号字段
-    assign ID_rs1    = ID_instr[19:15];
-    assign ID_rs2    = ID_instr[24:20];
-    assign ID_rd     = ID_instr[11: 7];
-    assign ID_funct3 = ID_instr[14:12];
-
-    // 主控制译码 → 各种控制信号
-    main_ctrl u_main_ctrl (
-        .instr        (ID_instr       ),
-        .opcode       (ID_instr[6:0]   ),
-        .funct        (ID_funct3       ),
-        .NpcOp        (ID_NpcOp        ),
-        .RegWrite     (ID_RegWrite     ),
-        .MemToReg     (ID_MemToReg     ),
-        .MemWrite     (ID_MemWrite     ),
-        .MemRead      (ID_MemRead      ),
-        .OffsetOrigin (ID_OffsetOrigin ),
-        .ALUSrcA      (ID_ALUSrcA      ),
-        .ALUSrcB      (ID_ALUSrcB      ),
-        .isCSR        (ID_isCSR        )
-    );
-
-    // 立即数生成
-    imm_gen #(DATAWIDTH) u_imm_gen (
-        .instr (ID_instr),
-        .imm   (ID_imm  )
-    );
-
-    // alu 操作码译码（独热编码）
-    alu_ctrl u_alu_ctrl (
-        .opcode     (ID_instr[6:0]              ),
-        .funct      ({ID_instr[31:25], ID_funct3}),
-        .ALUControl (ID_ALUControl              )
-    );
-
-    // csr_file 控制译码
-    csr_ctrl_decode u_csr_ctrl_decode (
-        .instr       (ID_instr      ),
-        .csr_idx     (ID_csr_idx    ),
-        .csr_zimm    (ID_csr_zimm   ),
-        .CSRControll (ID_CSRControll)
+    mycpu_decoder #(DATAWIDTH) u_decoder (
+        .ID_instr        (ID_instr       ),
+        .ID_imm          (ID_imm         ),
+        .ID_RegWrite     (ID_RegWrite    ),
+        .ID_MemWrite     (ID_MemWrite    ),
+        .ID_MemRead      (ID_MemRead     ),
+        .ID_isCSR        (ID_isCSR       ),
+        .ID_ALUSrcA      (ID_ALUSrcA     ),
+        .ID_ALUSrcB      (ID_ALUSrcB     ),
+        .ID_MemToReg     (ID_MemToReg    ),
+        .ID_NpcOp        (ID_NpcOp       ),
+        .ID_OffsetOrigin (ID_OffsetOrigin),
+        .ID_ALUControl   (ID_ALUControl  ),
+        .ID_csr_idx      (ID_csr_idx     ),
+        .ID_csr_zimm     (ID_csr_zimm    ),
+        .ID_CSRControll  (ID_CSRControll ),
+        .ID_funct3       (ID_funct3      ),
+        .ID_rs1          (ID_rs1         ),
+        .ID_rs2          (ID_rs2         ),
+        .ID_rd           (ID_rd          )
     );
 endmodule

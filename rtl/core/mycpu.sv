@@ -140,15 +140,19 @@ module mycpu (
         .Flush_ID_EX   (Flush_ID_EX    )
     );
 
-    // 前半段统一停顿条件：
-    //   1) 原有 load-use 冒险
-    //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
-    assign Stall_Front     = Stall_Hazard | EX_busy;
-    // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
-    assign Flush_ID_EX_comb = Flush_ID_EX & ~EX_busy;
-    assign Stall           = Stall_Front;
-    assign BP_update_en    = !EX_busy && (EX_NpcOp == 2'b01);
-    assign BP_update_taken = BranchTaken;
+    mycpu_pipeline_ctrl u_pipeline_ctrl (
+        .stall_hazard_i       (Stall_Hazard     ),
+        .ex_busy_i            (EX_busy          ),
+        .flush_id_ex_hazard_i (Flush_ID_EX      ),
+        .ex_npc_op_i          (EX_NpcOp         ),
+        .branch_taken_i       (BranchTaken      ),
+        .stall_front_o        (Stall_Front      ),
+        .flush_id_ex_o        (Flush_ID_EX_comb ),
+        .bp_update_en_o       (BP_update_en     ),
+        .bp_update_taken_o    (BP_update_taken  )
+    );
+
+    assign Stall = Stall_Front;
 
     forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),

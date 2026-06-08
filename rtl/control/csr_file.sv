@@ -32,11 +32,21 @@ module csr_file #(
     logic [DATAWIDTH-1:0] csr_old;
     logic [DATAWIDTH-1:0] csr_next;
     logic [DATAWIDTH-1:0] mstatus_write_value;
-    logic csr_write_en;
+    logic                 csr_write_en;
+    logic                 csr_op_write;
+    logic                 csr_op_set;
+    logic                 csr_op_clear;
+    logic                 trap_enter;
+    logic                 trap_return;
 
-    assign csr_write_en = CSRControll[0] ||
-                          (CSRControll[1] && (csr_wdata != '0)) ||
-                          (CSRControll[2] && (csr_wdata != '0));
+    assign csr_op_write = CSRControll[0];
+    assign csr_op_set   = CSRControll[1];
+    assign csr_op_clear = CSRControll[2];
+    assign trap_enter   = CSRControll[3];
+    assign trap_return  = CSRControll[4];
+    assign csr_write_en = csr_op_write ||
+                          (csr_op_set   && (csr_wdata != '0)) ||
+                          (csr_op_clear && (csr_wdata != '0));
 
     always_comb begin
         unique case (csr_idx)
@@ -51,11 +61,11 @@ module csr_file #(
 
     always_comb begin
         csr_next = csr_old;
-        if (CSRControll[0]) begin
+        if (csr_op_write) begin
             csr_next = csr_wdata;
-        end else if (CSRControll[1]) begin
+        end else if (csr_op_set) begin
             csr_next = csr_old | csr_wdata;
-        end else if (CSRControll[2]) begin
+        end else if (csr_op_clear) begin
             csr_next = csr_old & ~csr_wdata;
         end
     end
@@ -74,13 +84,13 @@ module csr_file #(
             mscratch <= '0;
             mepc    <= '0;
             mcause  <= '0;
-        end else if (CSRControll[3]) begin
+        end else if (trap_enter) begin
             mstatus[CSR_MSTATUS_MIE] <= 1'b0;
             mstatus[CSR_MSTATUS_MPIE] <= mstatus[CSR_MSTATUS_MIE];
             mstatus[CSR_MSTATUS_MPP_LSB +: 2] <= 2'b11;
             mepc   <= {pc[DATAWIDTH-1:2], 2'b00};
             mcause <= 32'd11;
-        end else if (CSRControll[4]) begin
+        end else if (trap_return) begin
             mstatus[CSR_MSTATUS_MIE] <= mstatus[CSR_MSTATUS_MPIE];
             mstatus[CSR_MSTATUS_MPIE] <= 1'b1;
             mstatus[CSR_MSTATUS_MPP_LSB +: 2] <= 2'b11;
@@ -99,6 +109,6 @@ module csr_file #(
 
     assign csr_wb = csr_old;
 
-    assign csr_npc = {DATAWIDTH{CSRControll[3]}} & {mtvec[DATAWIDTH-1:2], 2'b00} |
-                     {DATAWIDTH{CSRControll[4]}} & {mepc[DATAWIDTH-1:1], 1'b0};
+    assign csr_npc = {DATAWIDTH{trap_enter }} & {mtvec[DATAWIDTH-1:2], 2'b00} |
+                     {DATAWIDTH{trap_return}} & {mepc[DATAWIDTH-1:1], 1'b0};
 endmodule
