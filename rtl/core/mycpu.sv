@@ -45,7 +45,9 @@ module mycpu (
     logic        Flush_EX_MEM;
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken, BranchTaken_raw;
+`ifndef SYNTHESIS
     logic        BranchTaken_stat_q, BranchTaken_stat_pending_q;
+`endif
     logic        BranchMispredict, BranchMispredict_raw;
     logic [31:0] IF_npc_redirect_raw;
     logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
@@ -254,6 +256,7 @@ module mycpu (
     assign Flush_ID_EX_comb = redirect_valid_q ? 1'b1 :
                                (Flush_ID_EX & ~EX_busy);
     assign Stall           = Stall_Front;
+`ifndef SYNTHESIS
     always_ff @(posedge clk) begin
         if (rst) begin
             BranchTaken_stat_q         <= 1'b0;
@@ -274,6 +277,9 @@ module mycpu (
     end
 
     assign BranchTaken     = BranchTaken_stat_q;
+`else
+    assign BranchTaken     = BranchTaken_raw;
+`endif
     assign BranchMispredict = redirect_valid_q;
     assign BP_update_en    = redirect_bp_update_q;
     assign BP_update_taken = redirect_taken_q;
