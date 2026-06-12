@@ -82,7 +82,7 @@ module mycpu (
     // ID 级信号
     // -------------------------------------------------------------------------
     logic [31:0] ID_imm, ID_rR1_data, ID_rR2_data;
-    logic        ID_RegWrite, ID_MemWrite, ID_MemRead, ID_isCSR;
+    logic        ID_RegWrite, ID_MemWrite, ID_MemRead;
     logic        ID_ALUSrcA, ID_ALUSrcB;
     logic [2:0]  ID_MemToReg;
     logic [1:0]  ID_NpcOp, ID_OffsetOrigin;
@@ -99,7 +99,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] EX_pc, EX_imm, EX_rR1_data, EX_rR2_data;
     logic [4:0]  EX_rs1, EX_rs2, EX_rd;
-    logic        EX_RegWrite, EX_MemWrite, EX_MemRead, EX_isCSR;
+    logic        EX_RegWrite, EX_MemWrite, EX_MemRead;
     logic [2:0]  EX_MemToReg, EX_funct3;
     logic        EX_ALUSrcA, EX_ALUSrcB;
     logic [`ALU_OP_WIDTH - 1:0] EX_ALUControl;
@@ -122,7 +122,7 @@ module mycpu (
     logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_perip_addr, MEM_perip_bus_addr, MEM_rR2_data, MEM_imm;
     logic [4:0]  MEM_rd;
     logic [31:0] MEM_rd_oh;
-    logic        MEM_RegWrite, MEM_MemWrite, MEM_MemRead, MEM_isCSR;
+    logic        MEM_RegWrite, MEM_MemWrite, MEM_MemRead;
     logic [2:0]  MEM_MemToReg, MEM_funct3;
     logic [31:0] MEM_csr_wb;
 
@@ -334,7 +334,6 @@ module mycpu (
         .ID_RegWrite     (ID_RegWrite    ),
         .ID_MemWrite     (ID_MemWrite    ),
         .ID_MemRead      (ID_MemRead     ),
-        .ID_isCSR        (ID_isCSR       ),
         .ID_ALUSrcA      (ID_ALUSrcA     ),
         .ID_ALUSrcB      (ID_ALUSrcB     ),
         .ID_MemToReg     (ID_MemToReg    ),
@@ -374,7 +373,6 @@ module mycpu (
         .ID_RegWrite     (ID_RegWrite    ),
         .ID_MemWrite     (ID_MemWrite    ),
         .ID_MemRead      (ID_MemRead     ),
-        .ID_isCSR        (ID_isCSR       ),
         .ID_MemToReg     (ID_MemToReg    ),
         .ID_funct3       (ID_funct3      ),
         .ID_ALUSrcA      (ID_ALUSrcA     ),
@@ -401,7 +399,6 @@ module mycpu (
         .EX_RegWrite     (EX_RegWrite    ),
         .EX_MemWrite     (EX_MemWrite    ),
         .EX_MemRead      (EX_MemRead     ),
-        .EX_isCSR        (EX_isCSR       ),
         .EX_MemToReg     (EX_MemToReg    ),
         .EX_funct3       (EX_funct3      ),
         .EX_ALUSrcA      (EX_ALUSrcA     ),
@@ -464,7 +461,6 @@ module mycpu (
         .EX_RegWrite      (EX_RegWrite     ),
         .EX_MemWrite      (EX_MemWrite     ),
         .EX_MemRead       (EX_MemRead      ),
-        .EX_isCSR         (EX_isCSR        ),
         .EX_MemToReg      (EX_MemToReg     ),
         .EX_funct3        (EX_funct3       ),
         .clk              (clk             ),
@@ -484,7 +480,6 @@ module mycpu (
         .MEM_RegWrite     (MEM_RegWrite    ),
         .MEM_MemWrite     (MEM_MemWrite    ),
         .MEM_MemRead      (MEM_MemRead     ),
-        .MEM_isCSR        (MEM_isCSR       ),
         .MEM_MemToReg     (MEM_MemToReg    ),
         .MEM_funct3       (MEM_funct3      )
     );

@@ -21,7 +21,6 @@ module mycpu_id_ex_reg #(
     input  logic                    ID_RegWrite     ,
     input  logic                    ID_MemWrite     ,
     input  logic                    ID_MemRead      ,
-    input  logic                    ID_isCSR        ,
     input  logic [2:0]              ID_MemToReg     ,
     input  logic [2:0]              ID_funct3       ,
     input  logic                    ID_ALUSrcA      ,
@@ -49,7 +48,6 @@ module mycpu_id_ex_reg #(
     output logic                    EX_RegWrite     ,
     output logic                    EX_MemWrite     ,
     output logic                    EX_MemRead      ,
-    output logic                    EX_isCSR        ,
     output logic [2:0]              EX_MemToReg     ,
     output logic [2:0]              EX_funct3       ,
     output logic                    EX_ALUSrcA      ,
@@ -69,7 +67,6 @@ module mycpu_id_ex_reg #(
             EX_RegWrite     <= 1'b0;
             EX_MemWrite     <= 1'b0;
             EX_MemRead      <= 1'b0;
-            EX_isCSR        <= 1'b0;
             EX_ALUSrcA      <= 1'b0;
             EX_ALUSrcB      <= 1'b0;
             EX_MemToReg     <= '0;
@@ -103,7 +100,6 @@ module mycpu_id_ex_reg #(
             EX_RegWrite     <= ID_RegWrite;
             EX_MemWrite     <= ID_MemWrite;
             EX_MemRead      <= ID_MemRead;
-            EX_isCSR        <= ID_isCSR;
             EX_MemToReg     <= ID_MemToReg;
             EX_funct3       <= ID_funct3;
             EX_ALUSrcA      <= ID_ALUSrcA;

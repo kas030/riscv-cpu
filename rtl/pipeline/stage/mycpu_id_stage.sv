@@ -16,7 +16,6 @@ module mycpu_id_stage #(
     output logic                   ID_RegWrite      ,       // 控制信号（详见 main_ctrl）
     output logic                   ID_MemWrite      ,
     output logic                   ID_MemRead       ,
-    output logic                   ID_isCSR         ,
     output logic                   ID_ALUSrcA       ,
     output logic                   ID_ALUSrcB       ,
     output logic [2:0]             ID_MemToReg      ,
@@ -37,7 +36,6 @@ module mycpu_id_stage #(
         .ID_RegWrite     (ID_RegWrite    ),
         .ID_MemWrite     (ID_MemWrite    ),
         .ID_MemRead      (ID_MemRead     ),
-        .ID_isCSR        (ID_isCSR       ),
         .ID_ALUSrcA      (ID_ALUSrcA     ),
         .ID_ALUSrcB      (ID_ALUSrcB     ),
         .ID_MemToReg     (ID_MemToReg    ),
