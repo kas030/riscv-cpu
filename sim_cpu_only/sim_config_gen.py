@@ -15,6 +15,19 @@ def u64_literal(v: str, name: str) -> str:
     return f"64'd{v}"
 
 
+def real_literal(v: str, name: str) -> str:
+    digits = v.strip().replace("_", "")
+    if not digits:
+        raise ValueError(f"{name} must be a positive decimal value, got {v!r}")
+    try:
+        value = float(digits)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive decimal value, got {v!r}") from exc
+    if not value > 0.0:
+        raise ValueError(f"{name} must be greater than 0, got {v!r}")
+    return f"{value:.12g}"
+
+
 def hex32_literal(v: str, name: str) -> str:
     digits = v.strip().replace("_", "")
     if digits.lower().startswith("0x"):
@@ -30,6 +43,7 @@ def main() -> int:
     pass_led = os.environ.get("PASS_LED", "01221C08").strip()
     fail_led = os.environ.get("FAIL_LED", "24181824").strip()
     trace = os.environ.get("TRACE", "0").strip()
+    cpu_freq_mhz = os.environ.get("CPU_FREQ_MHZ", "150.0").strip()
     stop_ns = os.environ.get("STOP_NS", "400000000").strip()
     progress_ns = os.environ.get("PROGRESS_NS", "10000000").strip()
     trace_file = os.environ.get("TRACE_FILE", "build/wave.fst").strip()
@@ -43,6 +57,7 @@ def main() -> int:
 `define SIM_PASS_LED {hex32_literal(pass_led, "PASS_LED")}
 `define SIM_FAIL_LED {hex32_literal(fail_led, "FAIL_LED")}
 `define SIM_TRACE {trace_value}
+`define SIM_CPU_FREQ_MHZ {real_literal(cpu_freq_mhz, "CPU_FREQ_MHZ")}
 `define SIM_STOP_NS {u64_literal(stop_ns, "STOP_NS")}
 `define SIM_PROGRESS_NS {u64_literal(progress_ns, "PROGRESS_NS")}
 `define SIM_TRACE_FILE "{q(trace_file)}"

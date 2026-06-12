@@ -42,6 +42,8 @@ module tb_cpu_only;
     longint unsigned cnt_store = 64'd0;
     longint unsigned cnt_branch = 64'd0;
     longint unsigned approx_inst;
+    localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
+    localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
     localparam [31:0]         EXPECTED_LED     = `SIM_EXPECTED_LED;
     localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
@@ -55,7 +57,7 @@ module tb_cpu_only;
     string stop_reason;
     integer init_idx;
 
-    always #3.333 clk = ~clk;
+    always #(CPU_HALF_PERIOD_NS) clk = ~clk;
     always #10 cnt_clk = ~cnt_clk;
 
     mycpu dut (
@@ -285,6 +287,8 @@ module tb_cpu_only;
                 $display(" cnt_ms            : %0d", cnt_ms);
                 $display(" cnt_start_ns      : %0d", cnt_start_time);
                 $display(" cycles            : %0d", cycles);
+                $display(" cpu_freq_mhz      : %0.3f", CPU_FREQ_MHZ);
+                $display(" cpu_period_ns     : %0.6f", CPU_HALF_PERIOD_NS * 2.0);
                 $display(" writeback (reg_file)    : %0d", cnt_writeback);
                 $display(" stores            : %0d", cnt_store);
                 $display(" taken branches    : %0d", cnt_branch);
