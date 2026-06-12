@@ -69,12 +69,14 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] IF_pc, IF_npc_redirect, IF_instr;
     logic        IF_pred_taken;
+    logic [31:0] IF_pred_target;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
     // -------------------------------------------------------------------------
     logic [31:0] ID_pc, ID_instr;
     logic        ID_pred_taken;
+    logic [31:0] ID_pred_target;
 
     // -------------------------------------------------------------------------
     // ID 级信号
@@ -106,6 +108,7 @@ module mycpu (
     logic [4:0]  EX_csr_zimm;
     logic [5:0]  EX_CSRControll;
     logic        EX_pred_taken;
+    logic [31:0] EX_pred_target;
 
     // -------------------------------------------------------------------------
     // EX 级输出
@@ -300,7 +303,8 @@ module mycpu (
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
         .IF_instr        (IF_instr       ),
-        .IF_pred_taken   (IF_pred_taken  )
+        .IF_pred_taken   (IF_pred_taken  ),
+        .IF_pred_target  (IF_pred_target )
     );
 
     // ---- IF/ID 流水寄存器 ----
@@ -312,9 +316,11 @@ module mycpu (
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
         .IF_pred_taken (IF_pred_taken),
+        .IF_pred_target(IF_pred_target),
         .ID_pc       (ID_pc      ),
         .ID_instr    (ID_instr   ),
-        .ID_pred_taken (ID_pred_taken)
+        .ID_pred_taken (ID_pred_taken),
+        .ID_pred_target(ID_pred_target)
     );
 
     // =========================================================================
@@ -380,6 +386,7 @@ module mycpu (
         .ID_csr_zimm     (ID_csr_zimm    ),
         .ID_CSRControll  (ID_CSRControll ),
         .ID_pred_taken   (ID_pred_taken  ),
+        .ID_pred_target  (ID_pred_target ),
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
@@ -405,7 +412,8 @@ module mycpu (
         .EX_csr_idx      (EX_csr_idx     ),
         .EX_csr_zimm     (EX_csr_zimm    ),
         .EX_CSRControll  (EX_CSRControll ),
-        .EX_pred_taken   (EX_pred_taken  )
+        .EX_pred_taken   (EX_pred_taken  ),
+        .EX_pred_target  (EX_pred_target )
     );
 
     // =========================================================================
@@ -431,6 +439,7 @@ module mycpu (
         .EX_ALUSrcA       (EX_ALUSrcA      ),
         .EX_ALUSrcB       (EX_ALUSrcB      ),
         .EX_pred_taken    (EX_pred_taken   ),
+        .EX_pred_target   (EX_pred_target  ),
         .EX_stall         (Stall_DMemLoad  ),
         .EX_kill          (redirect_valid_q),
         .clk              (clk             ),

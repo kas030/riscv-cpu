@@ -24,11 +24,11 @@ module mycpu_if_stage #(
     output logic [DATAWIDTH - 1:0] irom_addr       ,        // 取指地址
     output logic [DATAWIDTH - 1:0] IF_pc           ,        // 当前 pc_reg
     output logic [DATAWIDTH - 1:0] IF_instr        ,        // 当前取到的指令
-    output logic                   IF_pred_taken
+    output logic                   IF_pred_taken   ,
+    output logic [DATAWIDTH - 1:0] IF_pred_target
 );
     // 取下一条指令地址：纠错重定向优先，其次使用动态分支预测。
     logic [DATAWIDTH - 1:0] IF_next_pc;
-    logic [DATAWIDTH - 1:0] IF_pred_target;
 
     branch_predictor #(DATAWIDTH) u_branch_predictor (
         .clk             (clk            ),
