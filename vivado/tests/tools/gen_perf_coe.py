@@ -14,7 +14,7 @@ gen_perf_coe.py - 自研 RV32I CPU 性能测试 COE 生成器（无需 GCC 工�
 
 内存映射（来自 perip_bridge.sv）：
   PC reset = 0x80000000
-  DRAM     = 0x80100000 - 0x8013FFFF
+  BRAM     = 0x80100000 - 0x8013FFFF
   LED      = 0x80200040
 """
 
@@ -180,7 +180,7 @@ def build():
 
     # ---------- 入口 ----------
     a.lbl('_start')
-    a.li(GP, 0x80100000)               # 数据基址 (DRAM)
+    a.li(GP, 0x80100000)               # 数据基址 (BRAM)
     a.li(S7, 0x80200040)               # LED 寄存器地址
 
     # ---------- Phase A：紧密 ADDI 链 ----------

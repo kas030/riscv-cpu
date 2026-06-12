@@ -36,8 +36,7 @@ module perip_bridge(
 	output logic [39:0]  virtual_seg_output	,
     output logic [31:0]  virtual_led_output
 );
-    localparam DRAM_ADDR_START = 32'h8010_0000;
-    localparam DRAM_ADDR_END   = 32'h8013_FFFF;
+    localparam BRAM_ADDR_TAG = 14'h2004;  // 0x8010_0000..0x8013_FFFF
     localparam SW0_ADDR  = 32'h8020_0000;  // sw[31:0]
     localparam SW1_ADDR  = 32'h8020_0004;  // sw[63:32]
     localparam KEY_ADDR  = 32'h8020_0010;  // key[7:0]
@@ -48,11 +47,16 @@ module perip_bridge(
     localparam CNT_STOP_CMD  = 32'hFFFF_FFFF;
 
     logic [31:0] LED;
-    logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, dram_rdata;
+    logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
     logic [39:0] seg_output;
     logic cnt_enable_cfg;
+    logic bram_hit, bram_ren, bram_wen, bram_resp_valid;
 
-    // we don't care perip_mask in LED, SEG, SW & KEY, only care in DRAM
+    assign bram_hit = (perip_addr[31:18] == BRAM_ADDR_TAG);
+    assign bram_ren = ~perip_wen & bram_hit;
+    assign bram_wen = perip_wen & bram_hit;
+
+    // we don't care perip_mask in LED, SEG, SW & KEY, only care in BRAM
     // write process
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -107,15 +111,24 @@ module perip_bridge(
     assign seg_output[37] = 0;
     
 
-    // dram rw
-    dram_driver dram_driver_inst (
+    // bram rw
+    bram_driver bram_driver_inst (
         .clk				(clk),
         .perip_addr			(perip_addr[17:0]),
         .perip_wdata		(perip_wdata),
         .perip_mask			(perip_mask),
-        .dram_wen 			(perip_wen & (perip_addr >= DRAM_ADDR_START && perip_addr < DRAM_ADDR_END)),
-        .perip_rdata		(dram_rdata)
+        .bram_ren           (bram_ren),
+        .bram_wen 			(bram_wen),
+        .perip_rdata		(bram_rdata)
     );
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            bram_resp_valid <= 1'b0;
+        end else begin
+            bram_resp_valid <= bram_ren;
+        end
+    end
 
     // counter rw
     counter counter_inst (
@@ -126,12 +139,12 @@ module perip_bridge(
         .perip_rdata		(cnt_rdata)
     );
 
-    assign perip_rdata = {32{perip_addr == SW0_ADDR}} & mmio_rdata |
-                        {32{perip_addr == SW1_ADDR}} & mmio_rdata |
-                        {32{perip_addr == KEY_ADDR}} & mmio_rdata |
-                        {32{perip_addr == SEG_ADDR}} & mmio_rdata |
-                        {32{perip_addr >= DRAM_ADDR_START && perip_addr < DRAM_ADDR_END}} & dram_rdata |
-                        {32{perip_addr == CNT_ADDR}} & cnt_rdata;
+    assign perip_rdata = {32{bram_resp_valid}} & bram_rdata |
+                         {32{~bram_resp_valid && perip_addr == SW0_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == SW1_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == KEY_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == SEG_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata;
     
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;

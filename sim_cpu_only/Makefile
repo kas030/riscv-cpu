@@ -13,13 +13,14 @@ SRC_HAZARD := $(ROOT)/rtl/hazard
 SRC_MEMORY := $(ROOT)/rtl/memory
 SRC_PIPE_REG := $(ROOT)/rtl/pipeline/register
 SRC_PIPE_STAGE := $(ROOT)/rtl/pipeline/stage
-IROM_COE := $(ROOT)/sim/coe/irom.coe
-DRAM_COE := $(ROOT)/sim/coe/dram.coe
+IROM_COE := $(ROOT)/sim/coe/mext/irom-v2.coe
+BRAM_COE := $(ROOT)/sim/coe/mext/dram.coe
 EXPECTED_LED ?=
 PASS_LED ?= 01221C08
 FAIL_LED ?= 24181824
 TRACE ?= 0
 TRACE_FILE ?= $(BUILD)/wave.fst
+CPU_FREQ_MHZ ?= 200.0
 STOP_NS ?= 400000000
 PROGRESS_NS ?= 10000000
 QUIET ?= 1
@@ -78,27 +79,27 @@ $(BUILD):
 	@mkdir -p $@
 
 $(BUILD)/sim_config.svh: sim_config_gen.py FORCE | $(BUILD)
-	@EXPECTED_LED="$(EXPECTED_LED)" PASS_LED="$(PASS_LED)" FAIL_LED="$(FAIL_LED)" TRACE="$(TRACE)" STOP_NS="$(STOP_NS)" PROGRESS_NS="$(PROGRESS_NS)" TRACE_FILE="$(TRACE_FILE)" \
+	@EXPECTED_LED="$(EXPECTED_LED)" PASS_LED="$(PASS_LED)" FAIL_LED="$(FAIL_LED)" TRACE="$(TRACE)" CPU_FREQ_MHZ="$(CPU_FREQ_MHZ)" STOP_NS="$(STOP_NS)" PROGRESS_NS="$(PROGRESS_NS)" TRACE_FILE="$(TRACE_FILE)" \
 	python3 sim_config_gen.py $@
 
 $(BUILD)/irom.mem: $(IROM_COE) coe_to_mem.py FORCE | $(BUILD)
 	@python3 coe_to_mem.py $(IROM_COE) $@
 
-$(BUILD)/dram.mem: $(DRAM_COE) coe_to_mem.py FORCE | $(BUILD)
-	@python3 coe_to_mem.py $(DRAM_COE) $@
+$(BUILD)/bram.mem: $(BRAM_COE) coe_to_mem.py FORCE | $(BUILD)
+	@python3 coe_to_mem.py $(BRAM_COE) $@
 
 $(BUILD)/tb_cpu_only.vvp: tb_cpu_only.sv $(CPU_SRCS) $(BUILD)/sim_config.svh | $(BUILD)
 	@$(IVERILOG) -g2012 -Wall $(INC_DIRS) -s tb_cpu_only -o $@ $^
 
 sim: sim-verilator
 
-sim-iverilog: check-tools $(BUILD)/irom.mem $(BUILD)/dram.mem $(BUILD)/tb_cpu_only.vvp
+sim-iverilog: check-tools $(BUILD)/irom.mem $(BUILD)/bram.mem $(BUILD)/tb_cpu_only.vvp
 	@stdbuf -oL -eL $(VVP) $(BUILD)/tb_cpu_only.vvp | tee $(BUILD)/sim.log
 
 $(VERILATOR_OBJ_DIR)/Vtb_cpu_only: tb_cpu_only.sv verilator_finish_quiet.cpp $(CPU_SRCS) $(BUILD)/sim_config.svh | $(BUILD)
 	@CXX=$(CXX) $(VERILATOR) $(VFLAGS) --Mdir $(VERILATOR_OBJ_DIR) $(INC_DIRS) --top-module tb_cpu_only $^
 
-sim-verilator: check-verilator $(BUILD)/irom.mem $(BUILD)/dram.mem $(VERILATOR_OBJ_DIR)/Vtb_cpu_only
+sim-verilator: check-verilator $(BUILD)/irom.mem $(BUILD)/bram.mem $(VERILATOR_OBJ_DIR)/Vtb_cpu_only
 	@stdbuf -oL -eL ./$(VERILATOR_OBJ_DIR)/Vtb_cpu_only $(VERILATOR_RUNTIME_ARGS) | tee $(BUILD)/verilator-sim.log
 
 clean:

@@ -7,7 +7,7 @@
 //     - cpu_clk / cpu_rst                     时钟与复位
 //     - irom_addr / irom_data                 IROM 取指接口（同步只读）
 //     - perip_addr / perip_wen / perip_mask /
-//       perip_wdata / perip_rdata             外设/DRAM 访存接口
+//       perip_wdata / perip_rdata             外设/BRAM 访存接口
 //   内部信号按 IF→ID→EX→MEM→WB 五级分组，每一组对应一个流水寄存器输出端，
 //   命名沿用 `<stage>_<信号>` 以便与教材中的经典 5 级流水线对齐。
 // =============================================================================
@@ -19,7 +19,7 @@ module mycpu (
     output logic [31:0]  irom_addr ,
     input  logic [31:0]  irom_data ,
 
-    // ---- 外设/DRAM 访存接口 ----
+    // ---- 外设/BRAM 访存接口 ----
     output logic [31:0]  perip_addr  ,
     output logic         perip_wen   ,
     output logic [ 1:0]  perip_mask  ,
@@ -41,24 +41,40 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
     logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
+    logic        Stall_DMemLoad, Flush_EX_MEM, Flush_MEM_WB;
     logic [1:0]  ForwardA, ForwardB;
-    logic        BranchTaken;
-    logic        BranchMispredict;
+    logic        BranchTaken, BranchTaken_raw;
+    logic        BranchTaken_stat_q, BranchTaken_stat_pending_q;
+    logic        BranchMispredict, BranchMispredict_raw;
+    logic [31:0] IF_npc_redirect_raw;
+    logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
+    logic        redirect_pending_q, redirect_pending_taken_q, redirect_pending_bp_update_q;
+    logic [31:0] redirect_target_q, redirect_bp_pc_q;
+    logic [31:0] redirect_pending_target_q, redirect_pending_bp_pc_q;
     logic        BP_update_en, BP_update_taken;
+    logic        MEM_bram_access, MEM_mmio_read;
+    logic        MEM_bram_load_issue, MEM_bram_pending;
+    logic [31:0] MEM_bus_addr, MEM_bus_wdata;
+    logic        MEM_bus_wen;
+    logic [1:0]  MEM_bus_mask;
+
+    localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
+
+    function automatic logic is_bram_addr(input logic [31:0] addr);
+        is_bram_addr = (addr[31:18] == BRAM_ADDR_TAG);
+    endfunction
 
     // -------------------------------------------------------------------------
     // IF 级信号
     // -------------------------------------------------------------------------
     logic [31:0] IF_pc, IF_npc_redirect, IF_instr;
     logic        IF_pred_taken;
-    logic [31:0] IF_pred_target;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
     // -------------------------------------------------------------------------
     logic [31:0] ID_pc, ID_instr;
     logic        ID_pred_taken;
-    logic [31:0] ID_pred_target;
 
     // -------------------------------------------------------------------------
     // ID 级信号
@@ -74,6 +90,7 @@ module mycpu (
     logic [5:0]  ID_CSRControll;
     logic [2:0]  ID_funct3;
     logic [4:0]  ID_rs1, ID_rs2, ID_rd;
+    logic        ID_uses_rs1, ID_uses_rs2;
 
     // -------------------------------------------------------------------------
     // ID/EX 寄存器输出（即 EX 级输入）
@@ -89,7 +106,6 @@ module mycpu (
     logic [4:0]  EX_csr_zimm;
     logic [5:0]  EX_CSRControll;
     logic        EX_pred_taken;
-    logic [31:0] EX_pred_target;
 
     // -------------------------------------------------------------------------
     // EX 级输出
@@ -100,7 +116,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // EX/MEM 寄存器输出（即 MEM 级输入）
     // -------------------------------------------------------------------------
-    logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_perip_addr, MEM_rR2_data, MEM_imm;
+    logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_perip_addr, MEM_perip_bus_addr, MEM_rR2_data, MEM_imm;
     logic [4:0]  MEM_rd;
     logic [31:0] MEM_rd_oh;
     logic        MEM_RegWrite, MEM_MemWrite, MEM_MemRead, MEM_isCSR;
@@ -126,12 +142,29 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] WB_wdata;
 
+    assign ID_uses_rs1 = (ID_instr[6:0] == `R_TYPE  ) ||
+                         (ID_instr[6:0] == `I_TYPE  ) ||
+                         (ID_instr[6:0] == `IL_TYPE ) ||
+                         (ID_instr[6:0] == `IJ_TYPE ) ||
+                         (ID_instr[6:0] == `S_TYPE  ) ||
+                         (ID_instr[6:0] == `B_TYPE  ) ||
+                         ((ID_instr[6:0] == `CSR_TYPE) &&
+                          ((ID_instr[14:12] == 3'b001) ||
+                           (ID_instr[14:12] == 3'b010) ||
+                           (ID_instr[14:12] == 3'b011)));
+
+    assign ID_uses_rs2 = (ID_instr[6:0] == `R_TYPE) ||
+                         (ID_instr[6:0] == `S_TYPE) ||
+                         (ID_instr[6:0] == `B_TYPE);
+
     // =========================================================================
     // 冒险检测 / 前递选择
     // =========================================================================
     hazard_unit u_hazard_unit (
         .IF_ID_rs1     (ID_instr[19:15]),
         .IF_ID_rs2     (ID_instr[24:20]),
+        .IF_ID_uses_rs1(ID_uses_rs1    ),
+        .IF_ID_uses_rs2(ID_uses_rs2    ),
         .ID_EX_rd      (EX_rd          ),
         .ID_EX_MemRead (EX_MemRead     ),
         .BranchMispredict (BranchMispredict),
@@ -140,15 +173,107 @@ module mycpu (
         .Flush_ID_EX   (Flush_ID_EX    )
     );
 
+    assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
+    assign MEM_mmio_read      = MEM_MemRead && !MEM_bram_access;
+    assign MEM_bram_load_issue = MEM_MemRead && MEM_bram_access && !MEM_bram_pending;
+    assign Stall_DMemLoad     = MEM_bram_load_issue || MEM_bram_pending;
+    assign Flush_EX_MEM       = MEM_bram_pending | redirect_valid_q;
+    assign Flush_MEM_WB       = MEM_bram_load_issue;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            MEM_bram_pending <= 1'b0;
+        end else begin
+            MEM_bram_pending <= MEM_bram_load_issue;
+        end
+    end
+
+    // redirect/flush 打拍提交：
+    //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
+    //   切断 ALU/branch compare -> Flush_ID_EX 的运行期长路径。
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            redirect_valid_q     <= 1'b0;
+            redirect_target_q    <= '0;
+            redirect_taken_q     <= 1'b0;
+            redirect_bp_update_q <= 1'b0;
+            redirect_bp_pc_q     <= '0;
+            redirect_pending_q     <= 1'b0;
+            redirect_pending_target_q <= '0;
+            redirect_pending_taken_q  <= 1'b0;
+            redirect_pending_bp_update_q <= 1'b0;
+            redirect_pending_bp_pc_q     <= '0;
+        end else begin
+            redirect_bp_update_q <= 1'b0;
+            redirect_bp_pc_q     <= (redirect_pending_q && !Stall_DMemLoad) ?
+                                    redirect_pending_bp_pc_q : EX_pc;
+
+            if (redirect_valid_q) begin
+                if (!Stall_Front) begin
+                    redirect_valid_q <= 1'b0;
+                end
+            end else if (redirect_pending_q && !Stall_DMemLoad) begin
+                redirect_valid_q  <= 1'b1;
+                redirect_target_q <= redirect_pending_target_q;
+                redirect_taken_q  <= redirect_pending_taken_q;
+
+                redirect_bp_update_q <= redirect_pending_bp_update_q;
+                redirect_pending_q   <= 1'b0;
+            end else if (BranchMispredict_raw) begin
+                if (Stall_DMemLoad) begin
+                    redirect_pending_q     <= 1'b1;
+                    redirect_pending_target_q <= IF_npc_redirect_raw;
+                    redirect_pending_taken_q  <= BranchTaken_raw;
+                    redirect_pending_bp_update_q <= (EX_NpcOp == 2'b01);
+                    redirect_pending_bp_pc_q     <= EX_pc;
+                end else begin
+                    redirect_valid_q  <= 1'b1;
+                    redirect_target_q <= IF_npc_redirect_raw;
+                    redirect_taken_q  <= BranchTaken_raw;
+
+                    redirect_bp_update_q <= (EX_NpcOp == 2'b01);
+                end
+            end else if (!EX_busy && !Stall_DMemLoad && (EX_NpcOp == 2'b01)) begin
+                redirect_taken_q     <= BranchTaken_raw;
+                redirect_bp_update_q <= 1'b1;
+            end
+        end
+    end
+
+    assign IF_npc_redirect = redirect_target_q;
+
     // 前半段统一停顿条件：
     //   1) 原有 load-use 冒险
     //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
-    assign Stall_Front     = Stall_Hazard | EX_busy;
+    //   3) MEM 级 BRAM 同步读发起后一拍等待返回
+    assign Stall_Front     = Stall_Hazard | EX_busy | Stall_DMemLoad;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
-    assign Flush_ID_EX_comb = Flush_ID_EX & ~EX_busy;
+    assign Flush_ID_EX_comb = redirect_valid_q ? ~Stall_DMemLoad :
+                               (Flush_ID_EX & ~(EX_busy | Stall_DMemLoad));
     assign Stall           = Stall_Front;
-    assign BP_update_en    = !EX_busy && (EX_NpcOp == 2'b01);
-    assign BP_update_taken = BranchTaken;
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            BranchTaken_stat_q         <= 1'b0;
+            BranchTaken_stat_pending_q <= 1'b0;
+        end else begin
+            BranchTaken_stat_q <= 1'b0;
+            if (BranchTaken_stat_pending_q && !Stall_Front) begin
+                BranchTaken_stat_q         <= 1'b1;
+                BranchTaken_stat_pending_q <= 1'b0;
+            end else if (BranchTaken_raw) begin
+                if (Stall_Front) begin
+                    BranchTaken_stat_pending_q <= 1'b1;
+                end else begin
+                    BranchTaken_stat_q <= 1'b1;
+                end
+            end
+        end
+    end
+
+    assign BranchTaken     = BranchTaken_stat_q;
+    assign BranchMispredict = redirect_valid_q;
+    assign BP_update_en    = redirect_bp_update_q;
+    assign BP_update_taken = redirect_taken_q;
 
     forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),
@@ -170,13 +295,12 @@ module mycpu (
         .Stall           (Stall_Front    ),
         .BranchRedirect  (BranchMispredict),
         .BP_update_en    (BP_update_en   ),
-        .BP_update_pc    (EX_pc          ),
+        .BP_update_pc    (redirect_bp_pc_q),
         .BP_update_taken (BP_update_taken),
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
         .IF_instr        (IF_instr       ),
-        .IF_pred_taken   (IF_pred_taken  ),
-        .IF_pred_target  (IF_pred_target )
+        .IF_pred_taken   (IF_pred_taken  )
     );
 
     // ---- IF/ID 流水寄存器 ----
@@ -188,11 +312,9 @@ module mycpu (
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
         .IF_pred_taken (IF_pred_taken),
-        .IF_pred_target(IF_pred_target),
         .ID_pc       (ID_pc      ),
         .ID_instr    (ID_instr   ),
-        .ID_pred_taken (ID_pred_taken),
-        .ID_pred_target(ID_pred_target)
+        .ID_pred_taken (ID_pred_taken)
     );
 
     // =========================================================================
@@ -258,11 +380,10 @@ module mycpu (
         .ID_csr_zimm     (ID_csr_zimm    ),
         .ID_CSRControll  (ID_CSRControll ),
         .ID_pred_taken   (ID_pred_taken  ),
-        .ID_pred_target  (ID_pred_target ),
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
-        .Stall_ID_EX     (EX_busy        ),
+        .Stall_ID_EX     (EX_busy | Stall_DMemLoad),
         .EX_pc           (EX_pc          ),
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
@@ -284,8 +405,7 @@ module mycpu (
         .EX_csr_idx      (EX_csr_idx     ),
         .EX_csr_zimm     (EX_csr_zimm    ),
         .EX_CSRControll  (EX_CSRControll ),
-        .EX_pred_taken   (EX_pred_taken  ),
-        .EX_pred_target  (EX_pred_target )
+        .EX_pred_taken   (EX_pred_taken  )
     );
 
     // =========================================================================
@@ -311,15 +431,16 @@ module mycpu (
         .EX_ALUSrcA       (EX_ALUSrcA      ),
         .EX_ALUSrcB       (EX_ALUSrcB      ),
         .EX_pred_taken    (EX_pred_taken   ),
-        .EX_pred_target   (EX_pred_target  ),
+        .EX_stall         (Stall_DMemLoad  ),
+        .EX_kill          (redirect_valid_q),
         .clk              (clk             ),
         .rst              (rst             ),
-        .IF_npc_redirect  (IF_npc_redirect ),
+        .IF_npc_redirect_raw(IF_npc_redirect_raw),
         .EX_alu_result    (EX_alu_result   ),
         .EX_forward_B_out (EX_forward_B_out),
         .EX_csr_wb        (EX_csr_wb       ),
-        .BranchTaken      (BranchTaken     ),
-        .BranchMispredict (BranchMispredict),
+        .BranchTaken      (BranchTaken_raw ),
+        .BranchMispredict (BranchMispredict_raw),
         .EX_busy          (EX_busy         )
     );
 
@@ -339,10 +460,12 @@ module mycpu (
         .EX_funct3        (EX_funct3       ),
         .clk              (clk             ),
         .rst              (rst             ),
-        .en               (~EX_busy        ),
+        .en               (~(EX_busy | Stall_DMemLoad)),
+        .Flush_EX_MEM     (Flush_EX_MEM    ),
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
         .MEM_perip_addr   (MEM_perip_addr  ),
+        .MEM_perip_bus_addr(MEM_perip_bus_addr),
         .MEM_rR2_data     (MEM_rR2_data    ),
         .MEM_imm           (MEM_imm        ),
         .MEM_csr_wb       (MEM_csr_wb      ),
@@ -359,20 +482,27 @@ module mycpu (
 
     // =========================================================================
     // STAGE 4：MEM（访存）
-    //   外设/DRAM 直连；前递候选已在 EX/MEM 寄存器内锁存好
+    //   BRAM load 在 MEM 级发起同步读，等待一拍后让 MEM/WB 捕获返回数据。
+    //   所有外部访存地址均来自 EX/MEM 锁存后的 MEM_perip_addr，切断 EX 级长路径。
     // =========================================================================
     mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
-        .MEM_perip_addr   (MEM_perip_addr  ),
+        .MEM_perip_addr   (MEM_perip_bus_addr),
         .MEM_rR2_data     (MEM_rR2_data    ),
         .MEM_funct3       (MEM_funct3      ),
         .MEM_MemWrite     (MEM_MemWrite    ),
-        .perip_addr       (perip_addr      ),
-        .perip_wdata      (perip_wdata     ),
+        .perip_addr       (MEM_bus_addr    ),
+        .perip_wdata      (MEM_bus_wdata   ),
         .MEM_mdata        (MEM_mdata       ),
-        .perip_wen        (perip_wen       ),
-        .perip_mask       (perip_mask      )
+        .perip_wen        (MEM_bus_wen     ),
+        .perip_mask       (MEM_bus_mask    )
     );
+
+    assign perip_wen   = MEM_bus_wen;
+    assign perip_wdata = MEM_bus_wdata;
+    assign perip_mask  = MEM_bus_mask;
+    assign perip_addr  = (MEM_MemWrite || MEM_mmio_read || MEM_bram_load_issue) ? MEM_bus_addr :
+                                                                               32'b0;
 
     // ---- MEM/WB 流水寄存器 ----
     mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (
@@ -388,6 +518,7 @@ module mycpu (
         .MEM_funct3     (MEM_funct3    ),
         .clk            (clk           ),
         .rst            (rst           ),
+        .Flush_MEM_WB   (Flush_MEM_WB  ),
         .WB_pcadd4      (WB_pcadd4     ),
         .WB_alu_result  (WB_alu_result ),
         .WB_mdata       (WB_mdata      ),

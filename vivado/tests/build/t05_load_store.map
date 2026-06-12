@@ -1,0 +1,68 @@
+
+There are no discarded input sections
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+IROM             0x00000000         0x00004000         xr
+BRAM             0x80100000         0x00040000         rw
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD /tmp/ccqNFnm2.o
+
+.text           0x00000000      0x104
+ *(.text.init)
+ .text.init     0x00000000      0x104 /tmp/ccqNFnm2.o
+                0x00000000                _start
+ *(.text)
+ .text          0x00000104        0x0 /tmp/ccqNFnm2.o
+ *(.text.*)
+
+.rodata
+ *(.rodata)
+ *(.rodata.*)
+
+.data           0x80100000        0x0
+                0x80100000                        _data_start = .
+ *(.data)
+ .data          0x80100000        0x0 /tmp/ccqNFnm2.o
+ *(.data.*)
+                0x80100000                        _data_end = .
+
+.bss            0x80100000        0x0
+                0x80100000                        _bss_start = .
+ *(.bss)
+ .bss           0x80100000        0x0 /tmp/ccqNFnm2.o
+ *(.bss.*)
+                0x80100000                        _bss_end = .
+                0x80140000                        _stack_top = (ORIGIN (BRAM) + LENGTH (BRAM))
+                0x8013ff00                        _result_addr = ((ORIGIN (BRAM) + LENGTH (BRAM)) - 0x100)
+OUTPUT(build/t05_load_store.elf elf32-littleriscv)
+
+.riscv.attributes
+                0x00000000       0x28
+ .riscv.attributes
+                0x00000000       0x28 /tmp/ccqNFnm2.o
+
+.debug_line     0x00000000      0x1b2
+ .debug_line    0x00000000      0x1b2 /tmp/ccqNFnm2.o
+
+.debug_line_str
+                0x00000000       0x3e
+ .debug_line_str
+                0x00000000       0x3e /tmp/ccqNFnm2.o
+
+.debug_info     0x00000000       0x25
+ .debug_info    0x00000000       0x25 /tmp/ccqNFnm2.o
+
+.debug_abbrev   0x00000000       0x14
+ .debug_abbrev  0x00000000       0x14 /tmp/ccqNFnm2.o
+
+.debug_aranges  0x00000000       0x20
+ .debug_aranges
+                0x00000000       0x20 /tmp/ccqNFnm2.o
+
+.debug_str      0x00000000       0x4a
+ .debug_str     0x00000000       0x4a /tmp/ccqNFnm2.o

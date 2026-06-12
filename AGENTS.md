@@ -17,14 +17,14 @@
   `imm_gen.sv`、`csr_ctrl_decode.sv`、`csr_file.sv`、`npc_calc.sv`。
 - `rtl/datapath/`：`alu.sv`、`pc_reg.sv`、`reg_file.sv` 等数据通路基础模块。
 - `rtl/hazard/`：`hazard_unit.sv` 与 `forwarding_unit.sv`。
-- `rtl/memory/`：DRAM 访问与 load 数据 mask/扩展相关模块。
-- `rtl/bus/perip_bridge.sv`：当前 RTL 的 DRAM/MMIO 地址译码权威来源。
+- `rtl/memory/`：BRAM 访问与 load 数据 mask/扩展相关模块。
+- `rtl/bus/perip_bridge.sv`：当前 RTL 的 BRAM/MMIO 地址译码权威来源。
 - `rtl/soc/student_top.sv`：实例化 `mycpu`、IROM 和 `perip_bridge`。
 - `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 与
   `student_top`。
 - `tb/`：CPU/top/UART 的 SystemVerilog testbench。
 - `vivado/tests/`：RV32I 汇编测试、链接脚本和 `.coe`/`.mif` 生成工具。
-- `ip/`：Vivado IP 描述文件，如 PLL、IROM、DRAM。
+- `ip/`：Vivado IP 描述文件，如 PLL、IROM、BRAM。
 - `constraints/`：板级约束文件。
 
 ## 架构要点
@@ -48,7 +48,7 @@
 
 当前 RTL 行为以 `rtl/bus/perip_bridge.sv` 为准：
 
-- DRAM：`0x8010_0000 <= addr < 0x8013_FFFF`
+- BRAM：`0x8010_0000 <= addr < 0x8013_FFFF`
 - SW0：`0x8020_0000`
 - SW1：`0x8020_0004`
 - KEY：`0x8020_0010`
@@ -66,7 +66,7 @@
   `always_ff`。
 - CPU 核心修改边界：`rtl/core/mycpu.sv` 的对外端口列表视为固定接口，
   不允许增删端口、改名、改宽度、改方向或改变接口时序语义。功能实现必须
-  接入 `mycpu` 已定义的 IROM 与外设/DRAM 访问接口。
+  接入 `mycpu` 已定义的 IROM 与外设/BRAM 访问接口。
 - 除非任务明确要求改 SoC、外设地址映射、板级集成、testbench 或 Vivado
   IP，否则只能修改隶属于 `mycpu` 的 CPU 核心实现模块，例如
   `rtl/core/mycpu.sv` 的内部连线、流水级、流水寄存器、控制、数据通路、
@@ -131,7 +131,7 @@ Vivado 仿真入口：
   `t09_branch_hazard.S`。
 - 改分支/csr_file：检查 `npc_calc.sv`、`csr_file.sv`、`csr_ctrl_decode.sv`、`main_ctrl.sv`，以及
   IF/ID 与 ID/EX 的冲刷行为。
-- 改 load/store：同时核对 `load_mask.sv`、`dram_driver.sv`、
+- 改 load/store：同时核对 `load_mask.sv`、`bram_driver.sv`、
   `mycpu_mem_stage.sv`、`perip_bridge.sv` 的宽度、符号扩展、字节偏移和
   地址译码。
 - 改顶层：保持 `top.sv`、`student_top.sv`、约束、testbench、Vivado IP 的
@@ -145,7 +145,7 @@ Vivado 仿真入口：
   不要擅自修改全局 Git 配置。
 - 地址映射、链接脚本和旧测试注释之间存在不一致迹象。以当前 RTL 为准，
   再有意识地修正测试侧。
-- `load_mask.sv` 与 `dram_driver.sv` 分担了字节/半字选择、符号扩展和读写拼接
+- `load_mask.sv` 与 `bram_driver.sv` 分担了字节/半字选择、符号扩展和读写拼接
   责任；不要只改其中一侧。
 - IROM 测试镜像的完成约定必须和 testbench 匹配，否则会出现“CPU 正常跑、
   仿真不结束”的假失败。

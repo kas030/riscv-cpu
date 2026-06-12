@@ -1,6 +1,6 @@
 // =============================================================================
 // load_mask.sv - Load sign/zero extension for RV32I
-//   The DRAM driver has already selected the addressed byte/halfword/word and
+//   The BRAM driver has already selected the addressed byte/halfword/word and
 //   zero-extended it into dout. This stage applies signed extension for lb/lh.
 // =============================================================================
 module load_mask #(

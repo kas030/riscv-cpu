@@ -13,10 +13,10 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201
+    lui     sp, 0x80140
 
     /* 清零 bitmap：32 字节 = 256 bit */
-    lui     t0, 0x80200
+    lui     t0, 0x80100
     addi    t0, t0, 0x400       # bitmap 起点
     li      t1, 8
 clr:
@@ -28,7 +28,7 @@ clr:
     /* 筛 */
     li      s0, 2               # i
     li      s1, 256             # N
-    lui     s2, 0x80200
+    lui     s2, 0x80100
     addi    s2, s2, 0x400
 sieve_outer:
     /* 检查 i 是否已被筛（is_marked(i)） */
@@ -90,7 +90,8 @@ no_prime:
     li      t0, 54
     bne     s3, t0, fail
     /* 把素数计数显示到 LED */
-    lui     t0, 0x80000
+    lui     t0, 0x80200
+    addi    t0, t0, 0x40
     sw      s3, 0(t0)
 
 pass:
@@ -100,6 +101,6 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b

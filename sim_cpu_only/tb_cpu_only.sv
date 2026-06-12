@@ -2,8 +2,8 @@
 `include "sim_config.svh"
 
 module tb_cpu_only;
-    localparam DRAM_BASE = 32'h8010_0000;
-    localparam DRAM_END  = 32'h8013_FFFF;
+    localparam BRAM_BASE = 32'h8010_0000;
+    localparam BRAM_END  = 32'h8013_FFFF;
     localparam SW0_ADDR  = 32'h8020_0000;
     localparam SW1_ADDR  = 32'h8020_0004;
     localparam KEY_ADDR  = 32'h8020_0010;
@@ -33,13 +33,17 @@ module tb_cpu_only;
     logic        cnt_started = 1'b0;
     time         cnt_start_time = 0;
     logic [31:0] irom [0:4095];
-    logic [31:0] dram [0:65535];
+    logic [31:0] bram [0:65535];
+    logic [31:0] bram_rdata_q;
+    logic        bram_resp_valid;
 
     longint unsigned cycles = 64'd0;
     longint unsigned cnt_writeback = 64'd0;
     longint unsigned cnt_store = 64'd0;
     longint unsigned cnt_branch = 64'd0;
     longint unsigned approx_inst;
+    localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
+    localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
     localparam [31:0]         EXPECTED_LED     = `SIM_EXPECTED_LED;
     localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
@@ -53,7 +57,7 @@ module tb_cpu_only;
     string stop_reason;
     integer init_idx;
 
-    always #3.333 clk = ~clk;
+    always #(CPU_HALF_PERIOD_NS) clk = ~clk;
     always #10 cnt_clk = ~cnt_clk;
 
     mycpu dut (
@@ -77,9 +81,9 @@ module tb_cpu_only;
         for (init_idx = 0; init_idx < 4096; init_idx = init_idx + 1)
             irom[init_idx] = 32'd0;
         for (init_idx = 0; init_idx < 65536; init_idx = init_idx + 1)
-            dram[init_idx] = 32'd0;
+            bram[init_idx] = 32'd0;
         $readmemh("build/irom.mem", irom);
-        $readmemh("build/dram.mem", dram);
+        $readmemh("build/bram.mem", bram);
         repeat (5) @(posedge clk);
         rst = 1'b0;
     end
@@ -133,19 +137,17 @@ module tb_cpu_only;
 
     always_comb begin
         perip_rdata = 32'd0;
-        if (!perip_wen) begin
-            if (perip_addr >= DRAM_BASE && perip_addr < DRAM_END) begin
-                perip_rdata = select_load_word(dram[(perip_addr - DRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
-            end else begin
-                case (perip_addr)
-                    SW0_ADDR: perip_rdata = 32'd0;
-                    SW1_ADDR: perip_rdata = 32'd0;
-                    KEY_ADDR: perip_rdata = 32'd0;
-                    SEG_ADDR: perip_rdata = seg_wdata;
-                    CNT_ADDR: perip_rdata = cnt_ms;
-                    default: perip_rdata = 32'd0;
-                endcase
-            end
+        if (bram_resp_valid) begin
+            perip_rdata = bram_rdata_q;
+        end else if (!perip_wen) begin
+            case (perip_addr)
+                SW0_ADDR: perip_rdata = 32'd0;
+                SW1_ADDR: perip_rdata = 32'd0;
+                KEY_ADDR: perip_rdata = 32'd0;
+                SEG_ADDR: perip_rdata = seg_wdata;
+                CNT_ADDR: perip_rdata = cnt_ms;
+                default: perip_rdata = 32'd0;
+            endcase
         end
     end
 
@@ -157,11 +159,17 @@ module tb_cpu_only;
             seg_written <= 1'b0;
             cnt_enable <= 1'b0;
             cnt_started <= 1'b0;
+            bram_rdata_q <= 32'd0;
+            bram_resp_valid <= 1'b0;
         end else begin
+            bram_resp_valid <= !perip_wen && (perip_addr >= BRAM_BASE && perip_addr < BRAM_END);
+            if (!perip_wen && (perip_addr >= BRAM_BASE && perip_addr < BRAM_END)) begin
+                bram_rdata_q <= select_load_word(bram[(perip_addr - BRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
+            end
             if (perip_wen) begin
-                if (perip_addr >= DRAM_BASE && perip_addr < DRAM_END) begin
-                    dram[(perip_addr - DRAM_BASE) >> 2] <= merge_store_word(
-                        dram[(perip_addr - DRAM_BASE) >> 2],
+                if (perip_addr >= BRAM_BASE && perip_addr < BRAM_END) begin
+                    bram[(perip_addr - BRAM_BASE) >> 2] <= merge_store_word(
+                        bram[(perip_addr - BRAM_BASE) >> 2],
                         perip_wdata,
                         perip_mask,
                         perip_addr[1:0]
@@ -279,6 +287,8 @@ module tb_cpu_only;
                 $display(" cnt_ms            : %0d", cnt_ms);
                 $display(" cnt_start_ns      : %0d", cnt_start_time);
                 $display(" cycles            : %0d", cycles);
+                $display(" cpu_freq_mhz      : %0.3f", CPU_FREQ_MHZ);
+                $display(" cpu_period_ns     : %0.6f", CPU_HALF_PERIOD_NS * 2.0);
                 $display(" writeback (reg_file)    : %0d", cnt_writeback);
                 $display(" stores            : %0d", cnt_store);
                 $display(" taken branches    : %0d", cnt_branch);

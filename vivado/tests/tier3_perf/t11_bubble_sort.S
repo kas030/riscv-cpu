@@ -1,7 +1,7 @@
 /* =============================================================
  * t11_bubble_sort.S —— 冒泡排序性能基准
  *
- * 数据：32 个 32 位整数（数据存于 .data 段，供 DRAM.coe 初始化）
+ * 数据：32 个 32 位整数（数据存于 .data 段，供 BRAM.coe 初始化）
  * 算法：经典冒泡排序，外层 N-1 次，内层每次少 1 次比较
  * 时间复杂度：O(N²)；本例 N=32 → 992 次比较，最多同样次数交换
  *
@@ -13,22 +13,22 @@
     .section .text.init
     .globl _start
 _start:
-    lui     sp, 0x80201
-    /* 把数组从 .data 拷到工作区（DRAM 0x80200200） */
+    lui     sp, 0x80140
+    /* 把数组从 .data 拷到工作区（BRAM 0x80100200） */
     la      a0, src_arr
-    lui     a1, 0x80200
+    lui     a1, 0x80100
     addi    a1, a1, 0x200
     li      a2, 32
     jal     ra, copy_words
 
     /* 调用排序 */
-    lui     a0, 0x80200
+    lui     a0, 0x80100
     addi    a0, a0, 0x200
     li      a1, 32
     jal     ra, bubble_sort
 
     /* 校验：a[0] 应为最小值 1，a[31] 应为最大值 32 */
-    lui     a0, 0x80200
+    lui     a0, 0x80100
     addi    a0, a0, 0x200
     lw      t0, 0(a0)
     li      t1, 1
@@ -44,7 +44,7 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b
 

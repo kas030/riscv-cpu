@@ -12,7 +12,7 @@
     .section .text.init
     .globl _start
 _start:
-    lui     gp, 0x80200
+    lui     gp, 0x80100
     addi    gp, gp, 0x200       # gp 指向数据缓冲区
 
     /* 初始化 8 个连续字 */
@@ -80,6 +80,6 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b

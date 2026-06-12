@@ -38,3 +38,9 @@ reports/
 *~
 .DS_Store
 Thumbs.db
+
+# XSim generated files
+xsim.dir/
+xelab.pb
+xvlog.pb
+*.sdb

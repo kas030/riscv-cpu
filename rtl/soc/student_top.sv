@@ -57,7 +57,7 @@ module student_top#(
         .irom_addr          (pc),             
         .irom_data          (instruction),   
 
-        // Interface to DRAM & periphera
+        // Interface to BRAM & periphera
         .perip_addr         (perip_addr),     
         .perip_wen          (perip_wen),     
         .perip_mask         (perip_mask),   

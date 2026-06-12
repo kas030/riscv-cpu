@@ -2,10 +2,9 @@
  * t06_csr_periph.S —— CSR 与外设访问测试
  *
  * 本工程外设地址（来自 perip_bridge.sv 综合分析）：
- *   - LED:   0x80000000 (32 个虚拟 LED)
- *   - SEG:   0x80000004 (8 段数码管，BCD)
- *   - UART:  0x80000010 (TX 寄存器)
- *   - COUNTER: 0x80000020 (周期计数器，只读)
+ *   - LED:   0x80200040 (32 个虚拟 LED)
+ *   - SEG:   0x80200020 (8 段数码管，BCD)
+ *   - COUNTER: 0x80200050 (周期计数器，只读)
  *
  * 验证：
  *   - LUI 形成的高位地址 + 偏移可以访问到 MMIO
@@ -30,22 +29,22 @@ _start:
     bne     t0, t1, fail
 
     /* ---------- 外设：点亮 LED 模式 0xA5A5A5A5 ---------- */
-    lui     t0, 0x80000
+    lui     t0, 0x80200
     li      t1, 0xA5A5A5A5
-    sw      t1, 0(t0)           # LED 寄存器
+    sw      t1, 0x40(t0)        # LED 寄存器
 
     /* ---------- 外设：在数码管显示 0x12345678 ---------- */
     li      t1, 0x12345678
-    sw      t1, 4(t0)
+    sw      t1, 0x20(t0)
 
     /* ---------- 读取硬件周期计数器（如果实现） ---------- */
-    lw      t2, 0x20(t0)        # 读取当前 cycle
+    lw      t2, 0x50(t0)        # 读取当前 cycle
     nop
     nop
     nop
     nop
     nop
-    lw      t3, 0x20(t0)        # 再读一次
+    lw      t3, 0x50(t0)        # 再读一次
     sub     t4, t3, t2          # 差值 ≥ 6（至少经过的指令数）
     li      t5, 4
     blt     t4, t5, fail        # 计数器没动 → 异常
@@ -57,6 +56,6 @@ fail:
     li      a0, 0xDEADBEEF
 done:
     lui     t0, 0x80200
-    addi    t0, t0, 0x3F00
+    addi    t0, t0, 0x40
     sw      a0, 0(t0)
 1:  j       1b

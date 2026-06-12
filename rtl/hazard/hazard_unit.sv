@@ -10,6 +10,8 @@
 module hazard_unit (
     input  logic [4:0] IF_ID_rs1     ,                      // IF/ID 已译出的 rs1 号
     input  logic [4:0] IF_ID_rs2     ,                      // IF/ID 已译出的 rs2 号
+    input  logic       IF_ID_uses_rs1,
+    input  logic       IF_ID_uses_rs2,
     input  logic [4:0] ID_EX_rd      ,                      // ID/EX 已译出的 rd 号
     input  logic       ID_EX_MemRead ,                      // ID/EX 是 load 标志
     input  logic       BranchMispredict,                    // EX 级发现预测错误
@@ -20,7 +22,8 @@ module hazard_unit (
     // load-use 检测：ID/EX 是 load 且 rd 与 IF/ID 任一源寄存器命中
     logic load_use;
     assign load_use     = ID_EX_MemRead && (ID_EX_rd != 5'd0) &&
-                          ((ID_EX_rd == IF_ID_rs1) || (ID_EX_rd == IF_ID_rs2));
+                          ((IF_ID_uses_rs1 && (ID_EX_rd == IF_ID_rs1)) ||
+                           (IF_ID_uses_rs2 && (ID_EX_rd == IF_ID_rs2)));
 
     // 输出：load-use → Stall + Flush_ID_EX；预测错误 → Flush_IF_ID + Flush_ID_EX
     assign Stall        = load_use;

@@ -7,7 +7,7 @@
 //   2. 指令计数器（inst_count，依据 IF→ID 有效信号）
 //   3. 停顿计数器（stall_count，hazard_unit 拉高时）
 //   4. 分支刷新计数器（flush_count，控制冒险时）
-//   5. 测试完成探测：扫描 DRAM 0x80200F00 处的结果字
+//   5. 测试完成探测：扫描 BRAM 0x80200F00 处的结果字
 //      - 0xC0DEC0DE → PASS
 //      - 0xDEADBEEF → FAIL
 //   6. 自动打印 CPI、指令数、停顿数、刷新数、运行时间
@@ -84,21 +84,21 @@ module tb_perf;
     end
 
     // -------- 探测结果地址 --------
-    // 结果字位于 DRAM 0x80200F00，对应 IP 内的字索引
+    // 结果字位于 BRAM 0x80200F00，对应 IP 内的字索引
     // = 0xF00/4 = 0x3C0
     localparam RESULT_WORD_IDX = 12'h3C0;
     localparam PASS_MAGIC = 32'hC0DEC0DE;
     localparam FAIL_MAGIC = 32'hDEADBEEF;
 
-    // 假设 DRAM IP 实例为 uut.u_DRAM.U0.inst_blk_mem_gen.gnative_mem.RAM
+    // 假设 BRAM IP 实例为 uut.u_BRAM.U0.inst_blk_mem_gen.gnative_mem.RAM
     // 不同版本的 IP 路径不同，需要按工程实际改
     reg [31:0] result_word;
     reg        result_seen;
     initial begin
         result_seen = 1'b0;
-        // 用 $monitor 周期检查；不直接 hierarchical 访问 DRAM，
+        // 用 $monitor 周期检查；不直接 hierarchical 访问 BRAM，
         // 而是通过 LED 上探测：测试程序在结束前会把结果同时写到
-        // LED（0x80000000）。这样 testbench 不依赖 DRAM IP 内部路径。
+        // LED（0x80000000）。这样 testbench 不依赖 BRAM IP 内部路径。
     end
 
     // -------- 简化方案：监控 virtual_led + 超时机制 --------
