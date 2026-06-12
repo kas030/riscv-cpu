@@ -29,7 +29,6 @@ module mycpu_ex_stage #(
     input  logic                   EX_ALUSrcA       ,
     input  logic                   EX_ALUSrcB       ,
     input  logic                   EX_pred_taken    ,
-    input  logic [DATAWIDTH - 1:0] EX_pred_target   ,
     input  logic                   EX_stall         ,
     input  logic                   EX_kill          ,
     input  logic                   clk              ,
@@ -54,10 +53,10 @@ module mycpu_ex_stage #(
     logic [5:0]             csr_control_effective;
     logic [DATAWIDTH - 1:0] alu_result_i;
     logic [DATAWIDTH - 1:0] m_result;
-    logic [DATAWIDTH - 1:0] predicted_next_pc;
     logic                   alu_isTrue;
     logic                   is_m_op;
     logic                   is_control_flow;
+    logic                   control_taken;
     logic                   m_busy, m_done, m_start;
 
     // 双路前递：根据 ForwardA/B 在 EX/MEM、MEM/WB、寄存器堆三者间选
@@ -148,15 +147,15 @@ module mycpu_ex_stage #(
     );
 
     // 跳转判定：分支条件成立 / jalr·mret / jal
-    assign BranchTaken = !EX_kill && !EX_busy && (
-                         (EX_NpcOp == 2'b01 && alu_isTrue) ||
-                         (EX_NpcOp == 2'b10              ) ||
-                         (EX_NpcOp == 2'b11              ));
+    assign control_taken = (EX_NpcOp == 2'b01 && alu_isTrue) ||
+                           (EX_NpcOp == 2'b10              ) ||
+                           (EX_NpcOp == 2'b11              );
+
+    assign BranchTaken = !EX_kill && !EX_busy && control_taken;
 
     assign is_control_flow  = (EX_NpcOp != 2'b00);
-    assign predicted_next_pc = EX_pred_taken ? EX_pred_target : (EX_pc + 4);
     assign BranchMispredict = !EX_kill && !EX_busy && is_control_flow &&
-                              (IF_npc_redirect_raw != predicted_next_pc);
+                              (control_taken != EX_pred_taken);
 endmodule
 
 module rv32m_unit #(

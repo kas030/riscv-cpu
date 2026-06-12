@@ -44,6 +44,7 @@ module mycpu (
     logic        Stall_DMemLoad, Flush_EX_MEM, Flush_MEM_WB;
     logic [1:0]  ForwardA, ForwardB;
     logic        BranchTaken, BranchTaken_raw;
+    logic        BranchTaken_stat_q, BranchTaken_stat_pending_q;
     logic        BranchMispredict, BranchMispredict_raw;
     logic [31:0] IF_npc_redirect_raw;
     logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
@@ -68,14 +69,12 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] IF_pc, IF_npc_redirect, IF_instr;
     logic        IF_pred_taken;
-    logic [31:0] IF_pred_target;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
     // -------------------------------------------------------------------------
     logic [31:0] ID_pc, ID_instr;
     logic        ID_pred_taken;
-    logic [31:0] ID_pred_target;
 
     // -------------------------------------------------------------------------
     // ID 级信号
@@ -91,6 +90,7 @@ module mycpu (
     logic [5:0]  ID_CSRControll;
     logic [2:0]  ID_funct3;
     logic [4:0]  ID_rs1, ID_rs2, ID_rd;
+    logic        ID_uses_rs1, ID_uses_rs2;
 
     // -------------------------------------------------------------------------
     // ID/EX 寄存器输出（即 EX 级输入）
@@ -106,7 +106,6 @@ module mycpu (
     logic [4:0]  EX_csr_zimm;
     logic [5:0]  EX_CSRControll;
     logic        EX_pred_taken;
-    logic [31:0] EX_pred_target;
 
     // -------------------------------------------------------------------------
     // EX 级输出
@@ -117,7 +116,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // EX/MEM 寄存器输出（即 MEM 级输入）
     // -------------------------------------------------------------------------
-    logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_perip_addr, MEM_rR2_data, MEM_imm;
+    logic [31:0] MEM_pcadd4, MEM_alu_result, MEM_perip_addr, MEM_perip_bus_addr, MEM_rR2_data, MEM_imm;
     logic [4:0]  MEM_rd;
     logic [31:0] MEM_rd_oh;
     logic        MEM_RegWrite, MEM_MemWrite, MEM_MemRead, MEM_isCSR;
@@ -143,12 +142,29 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] WB_wdata;
 
+    assign ID_uses_rs1 = (ID_instr[6:0] == `R_TYPE  ) ||
+                         (ID_instr[6:0] == `I_TYPE  ) ||
+                         (ID_instr[6:0] == `IL_TYPE ) ||
+                         (ID_instr[6:0] == `IJ_TYPE ) ||
+                         (ID_instr[6:0] == `S_TYPE  ) ||
+                         (ID_instr[6:0] == `B_TYPE  ) ||
+                         ((ID_instr[6:0] == `CSR_TYPE) &&
+                          ((ID_instr[14:12] == 3'b001) ||
+                           (ID_instr[14:12] == 3'b010) ||
+                           (ID_instr[14:12] == 3'b011)));
+
+    assign ID_uses_rs2 = (ID_instr[6:0] == `R_TYPE) ||
+                         (ID_instr[6:0] == `S_TYPE) ||
+                         (ID_instr[6:0] == `B_TYPE);
+
     // =========================================================================
     // 冒险检测 / 前递选择
     // =========================================================================
     hazard_unit u_hazard_unit (
         .IF_ID_rs1     (ID_instr[19:15]),
         .IF_ID_rs2     (ID_instr[24:20]),
+        .IF_ID_uses_rs1(ID_uses_rs1    ),
+        .IF_ID_uses_rs2(ID_uses_rs2    ),
         .ID_EX_rd      (EX_rd          ),
         .ID_EX_MemRead (EX_MemRead     ),
         .BranchMispredict (BranchMispredict),
@@ -189,6 +205,8 @@ module mycpu (
             redirect_pending_bp_pc_q     <= '0;
         end else begin
             redirect_bp_update_q <= 1'b0;
+            redirect_bp_pc_q     <= (redirect_pending_q && !Stall_DMemLoad) ?
+                                    redirect_pending_bp_pc_q : EX_pc;
 
             if (redirect_valid_q) begin
                 if (!Stall_Front) begin
@@ -200,7 +218,6 @@ module mycpu (
                 redirect_taken_q  <= redirect_pending_taken_q;
 
                 redirect_bp_update_q <= redirect_pending_bp_update_q;
-                redirect_bp_pc_q     <= redirect_pending_bp_pc_q;
                 redirect_pending_q   <= 1'b0;
             end else if (BranchMispredict_raw) begin
                 if (Stall_DMemLoad) begin
@@ -215,12 +232,10 @@ module mycpu (
                     redirect_taken_q  <= BranchTaken_raw;
 
                     redirect_bp_update_q <= (EX_NpcOp == 2'b01);
-                    redirect_bp_pc_q     <= EX_pc;
                 end
             end else if (!EX_busy && !Stall_DMemLoad && (EX_NpcOp == 2'b01)) begin
                 redirect_taken_q     <= BranchTaken_raw;
                 redirect_bp_update_q <= 1'b1;
-                redirect_bp_pc_q     <= EX_pc;
             end
         end
     end
@@ -236,8 +251,26 @@ module mycpu (
     assign Flush_ID_EX_comb = redirect_valid_q ? ~Stall_DMemLoad :
                                (Flush_ID_EX & ~(EX_busy | Stall_DMemLoad));
     assign Stall           = Stall_Front;
-    assign BranchTaken     = redirect_taken_q && (redirect_bp_update_q ||
-                             (redirect_valid_q && !Stall_Front));
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            BranchTaken_stat_q         <= 1'b0;
+            BranchTaken_stat_pending_q <= 1'b0;
+        end else begin
+            BranchTaken_stat_q <= 1'b0;
+            if (BranchTaken_stat_pending_q && !Stall_Front) begin
+                BranchTaken_stat_q         <= 1'b1;
+                BranchTaken_stat_pending_q <= 1'b0;
+            end else if (BranchTaken_raw) begin
+                if (Stall_Front) begin
+                    BranchTaken_stat_pending_q <= 1'b1;
+                end else begin
+                    BranchTaken_stat_q <= 1'b1;
+                end
+            end
+        end
+    end
+
+    assign BranchTaken     = BranchTaken_stat_q;
     assign BranchMispredict = redirect_valid_q;
     assign BP_update_en    = redirect_bp_update_q;
     assign BP_update_taken = redirect_taken_q;
@@ -267,8 +300,7 @@ module mycpu (
         .irom_addr       (irom_addr      ),
         .IF_pc           (IF_pc          ),
         .IF_instr        (IF_instr       ),
-        .IF_pred_taken   (IF_pred_taken  ),
-        .IF_pred_target  (IF_pred_target )
+        .IF_pred_taken   (IF_pred_taken  )
     );
 
     // ---- IF/ID 流水寄存器 ----
@@ -280,11 +312,9 @@ module mycpu (
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
         .IF_pred_taken (IF_pred_taken),
-        .IF_pred_target(IF_pred_target),
         .ID_pc       (ID_pc      ),
         .ID_instr    (ID_instr   ),
-        .ID_pred_taken (ID_pred_taken),
-        .ID_pred_target(ID_pred_target)
+        .ID_pred_taken (ID_pred_taken)
     );
 
     // =========================================================================
@@ -350,7 +380,6 @@ module mycpu (
         .ID_csr_zimm     (ID_csr_zimm    ),
         .ID_CSRControll  (ID_CSRControll ),
         .ID_pred_taken   (ID_pred_taken  ),
-        .ID_pred_target  (ID_pred_target ),
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
@@ -376,8 +405,7 @@ module mycpu (
         .EX_csr_idx      (EX_csr_idx     ),
         .EX_csr_zimm     (EX_csr_zimm    ),
         .EX_CSRControll  (EX_CSRControll ),
-        .EX_pred_taken   (EX_pred_taken  ),
-        .EX_pred_target  (EX_pred_target )
+        .EX_pred_taken   (EX_pred_taken  )
     );
 
     // =========================================================================
@@ -403,7 +431,6 @@ module mycpu (
         .EX_ALUSrcA       (EX_ALUSrcA      ),
         .EX_ALUSrcB       (EX_ALUSrcB      ),
         .EX_pred_taken    (EX_pred_taken   ),
-        .EX_pred_target   (EX_pred_target  ),
         .EX_stall         (Stall_DMemLoad  ),
         .EX_kill          (redirect_valid_q),
         .clk              (clk             ),
@@ -438,6 +465,7 @@ module mycpu (
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
         .MEM_perip_addr   (MEM_perip_addr  ),
+        .MEM_perip_bus_addr(MEM_perip_bus_addr),
         .MEM_rR2_data     (MEM_rR2_data    ),
         .MEM_imm           (MEM_imm        ),
         .MEM_csr_wb       (MEM_csr_wb      ),
@@ -459,7 +487,7 @@ module mycpu (
     // =========================================================================
     mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
-        .MEM_perip_addr   (MEM_perip_addr  ),
+        .MEM_perip_addr   (MEM_perip_bus_addr),
         .MEM_rR2_data     (MEM_rR2_data    ),
         .MEM_funct3       (MEM_funct3      ),
         .MEM_MemWrite     (MEM_MemWrite    ),

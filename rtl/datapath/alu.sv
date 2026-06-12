@@ -27,7 +27,7 @@ module alu #(
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
     logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra;
-    logic [DATAWIDTH-1:0] r_beq, r_bne, r_blt, r_bge, r_bgeu, r_bltu;
+    logic [DATAWIDTH-1:0] r_slt, r_sltu;
     logic                 cmp_eq, cmp_lt, cmp_ltu;
 
     assign m_add  = ALUControl[ 0];
@@ -63,12 +63,8 @@ module alu #(
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
     assign cmp_ltu = ~cout;
-    assign r_beq   = {{DATAWIDTH - 1{1'b0}},  cmp_eq };
-    assign r_bne   = {{DATAWIDTH - 1{1'b0}}, ~cmp_eq };
-    assign r_blt   = {{DATAWIDTH - 1{1'b0}},  cmp_lt };
-    assign r_bge   = {{DATAWIDTH - 1{1'b0}}, ~cmp_lt };
-    assign r_bgeu  = {{DATAWIDTH - 1{1'b0}}, ~cmp_ltu};
-    assign r_bltu  = {{DATAWIDTH - 1{1'b0}},  cmp_ltu};
+    assign r_slt   = {{DATAWIDTH - 1{1'b0}},  cmp_lt };
+    assign r_sltu  = {{DATAWIDTH - 1{1'b0}},  cmp_ltu};
 
     assign isTrue = (m_beq  &  cmp_eq ) |
                     (m_bne  & ~cmp_eq ) |
@@ -84,10 +80,6 @@ module alu #(
                     {DATAWIDTH{m_sll        }} & r_sll    |
                     {DATAWIDTH{m_srl        }} & r_srl    |
                     {DATAWIDTH{m_sra        }} & r_sra    |
-                    {DATAWIDTH{m_beq        }} & r_beq    |
-                    {DATAWIDTH{m_bne        }} & r_bne    |
-                    {DATAWIDTH{m_blt        }} & r_blt    |
-                    {DATAWIDTH{m_bge        }} & r_bge    |
-                    {DATAWIDTH{m_bgeu       }} & r_bgeu   |
-                    {DATAWIDTH{m_bltu       }} & r_bltu;
+                    {DATAWIDTH{m_blt        }} & r_slt    |
+                    {DATAWIDTH{m_bltu       }} & r_sltu;
 endmodule

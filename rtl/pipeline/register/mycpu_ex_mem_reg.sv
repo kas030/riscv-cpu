@@ -31,8 +31,9 @@ module mycpu_ex_mem_reg #(
     // ---- 输出：送往 MEM 级 ----
     output logic [DATAWIDTH - 1:0]  MEM_pcadd4       ,
     output logic [DATAWIDTH - 1:0]  MEM_alu_result   ,
-    (* keep = "true", max_fanout = 64 *)
     output logic [DATAWIDTH - 1:0]  MEM_perip_addr   ,
+    (* keep = "true", max_fanout = 64 *)
+    output logic [DATAWIDTH - 1:0]  MEM_perip_bus_addr,
     output logic [DATAWIDTH - 1:0]  MEM_rR2_data     ,
     output logic [DATAWIDTH - 1:0]  MEM_imm          ,
     output logic [DATAWIDTH - 1:0]  MEM_csr_wb       ,
@@ -64,6 +65,7 @@ module mycpu_ex_mem_reg #(
             MEM_pcadd4     <= EX_pcadd4;                    // 顺手算 pc_reg+4 给 jal/jalr 写回用
             MEM_alu_result <= EX_alu_result;
             MEM_perip_addr <= EX_alu_result;                // 独立访存地址副本，避免内部 alu 结果承担外部高扇出
+            MEM_perip_bus_addr <= EX_alu_result;            // 外设总线专用副本，和 CPU 本地判断解耦
             MEM_rR2_data   <= EX_forward_B_out;             // 注意是前递后的值
             MEM_imm        <= EX_imm;
             MEM_rd         <= EX_rd;
