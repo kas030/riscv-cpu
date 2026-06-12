@@ -12,6 +12,7 @@ module mycpu_ex_stage #(
     parameter DATAWIDTH = 32
 ) (
     input  logic [DATAWIDTH - 1:0] MEM_forward_data,
+    input  logic [DATAWIDTH - 1:0] MEM2_forward_data,
     input  logic [DATAWIDTH - 1:0] WB_wdata,
     input  logic [DATAWIDTH - 1:0] EX_pc,
     input  logic [DATAWIDTH - 1:0] EX_imm,
@@ -60,9 +61,11 @@ module mycpu_ex_stage #(
     logic                   branch_mispredict_raw;
 
     assign EX_forward_A_comb = (ForwardA == 2'b10) ? MEM_forward_data :
+                               (ForwardA == 2'b11) ? MEM2_forward_data :
                                (ForwardA == 2'b01) ? WB_wdata         :
                                                      EX_rR1_data;
     assign EX_forward_B_comb = (ForwardB == 2'b10) ? MEM_forward_data :
+                               (ForwardB == 2'b11) ? MEM2_forward_data :
                                (ForwardB == 2'b01) ? WB_wdata         :
                                                      EX_rR2_data;
 
