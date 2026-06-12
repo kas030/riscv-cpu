@@ -1,37 +1,57 @@
 // =============================================================================
-// forwarding_unit.sv —— 数据冒险前递选择
-//   为 EX 级的 alu 两个输入端各产生一个 2 位选择码：
-//     2'b10  从 EX/MEM 流水寄存器前递（最近一拍写回的目标）
-//     2'b01  从 MEM/WB 流水寄存器前递（再前一拍）
-//     2'b00  无前递，使用寄存器堆原始读出值
-//   优先级：EX/MEM > MEM/WB > 寄存器堆，因为越近的指令值越新。
-//   x0 永远为 0，命中 rd==0 不视为冒险。
+// forwarding_unit.sv -- EX stage RAW forwarding selector
+//   Produces the two 2-bit forwarding selects used by mycpu_ex_stage:
+//     2'b10  forward from EX/MEM
+//     2'b11  forward from MEM2
+//     2'b01  forward from MEM/WB
+//     2'b00  use the value read from reg_file
+//   Priority remains EX/MEM > MEM2 > MEM/WB > reg_file.  The match logic uses
+//   5-bit rd equality instead of rd_oh[rs] dynamic indexing to shorten the
+//   rs -> forwarding-select path at 200 MHz.
 // =============================================================================
 module forwarding_unit (
-    input  logic [4:0] ID_EX_rs1       ,                    // EX 级源寄存器 1
-    input  logic [4:0] ID_EX_rs2       ,                    // EX 级源寄存器 2
-    input  logic [31:0] EX_MEM_rd_oh   ,                    // EX/MEM 写回目标 one-hot
-    input  logic [31:0] MEM_WB_rd_oh   ,                    // MEM/WB 写回目标 one-hot
-    output logic [1:0] ForwardA        ,                    // alu A 端前递选择
-    output logic [1:0] ForwardB                             // alu B 端前递选择
+    input  logic [4:0] ID_EX_rs1,
+    input  logic [4:0] ID_EX_rs2,
+    input  logic [4:0] EX_MEM_rd,
+    input  logic       EX_MEM_valid,
+    input  logic [4:0] MEM2_rd,
+    input  logic       MEM2_valid,
+    input  logic [4:0] MEM_WB_rd,
+    input  logic       MEM_WB_valid,
+    output logic [1:0] ForwardA,
+    output logic [1:0] ForwardB
 );
-    // A 端前递：EX/MEM 优先，其次 MEM/WB
+    logic hit_ex_mem_rs1, hit_mem2_rs1, hit_mem_wb_rs1;
+    logic hit_ex_mem_rs2, hit_mem2_rs2, hit_mem_wb_rs2;
+
+    assign hit_ex_mem_rs1 = EX_MEM_valid && (EX_MEM_rd == ID_EX_rs1);
+    assign hit_mem2_rs1   = MEM2_valid   && (MEM2_rd   == ID_EX_rs1);
+    assign hit_mem_wb_rs1 = MEM_WB_valid && (MEM_WB_rd == ID_EX_rs1);
+    assign hit_ex_mem_rs2 = EX_MEM_valid && (EX_MEM_rd == ID_EX_rs2);
+    assign hit_mem2_rs2   = MEM2_valid   && (MEM2_rd   == ID_EX_rs2);
+    assign hit_mem_wb_rs2 = MEM_WB_valid && (MEM_WB_rd == ID_EX_rs2);
+
     always_comb begin
-        if      (EX_MEM_rd_oh[ID_EX_rs1])
+        if (hit_ex_mem_rs1) begin
             ForwardA = 2'b10;
-        else if (MEM_WB_rd_oh[ID_EX_rs1])
+        end else if (hit_mem2_rs1) begin
+            ForwardA = 2'b11;
+        end else if (hit_mem_wb_rs1) begin
             ForwardA = 2'b01;
-        else
+        end else begin
             ForwardA = 2'b00;
+        end
     end
 
-    // B 端前递：同上
     always_comb begin
-        if      (EX_MEM_rd_oh[ID_EX_rs2])
+        if (hit_ex_mem_rs2) begin
             ForwardB = 2'b10;
-        else if (MEM_WB_rd_oh[ID_EX_rs2])
+        end else if (hit_mem2_rs2) begin
+            ForwardB = 2'b11;
+        end else if (hit_mem_wb_rs2) begin
             ForwardB = 2'b01;
-        else
+        end else begin
             ForwardB = 2'b00;
+        end
     end
 endmodule

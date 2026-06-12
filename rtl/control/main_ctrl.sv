@@ -14,8 +14,7 @@ module main_ctrl(
     output logic        MemRead,
     output logic [1:0]  OffsetOrigin,
     output logic        ALUSrcA,
-    output logic        ALUSrcB,
-    output logic        isCSR
+    output logic        ALUSrcB
 );
     logic is_jalr, is_branch, is_jal, is_store, is_rtype, is_itype;
     logic is_load, is_auipc, is_lui, is_csr, is_ecall, is_mret, is_callret;
@@ -57,5 +56,4 @@ module main_ctrl(
     assign ALUSrcA      = is_auipc;
     assign ALUSrcB      = ~(is_rtype | is_branch);
     assign MemRead      = is_load;
-    assign isCSR        = is_csr | is_callret;
 endmodule

@@ -21,7 +21,6 @@ module mycpu_ex_mem_reg #(
     input  logic                    EX_RegWrite      ,
     input  logic                    EX_MemWrite      ,
     input  logic                    EX_MemRead       ,
-    input  logic                    EX_isCSR         ,
     input  logic [2:0]              EX_MemToReg      ,
     input  logic [2:0]              EX_funct3        ,
     input  logic                    clk              ,
@@ -43,7 +42,6 @@ module mycpu_ex_mem_reg #(
     output logic                    MEM_RegWrite     ,
     output logic                    MEM_MemWrite     ,
     output logic                    MEM_MemRead      ,
-    output logic                    MEM_isCSR        ,
     output logic [2:0]              MEM_MemToReg     ,
     output logic [2:0]              MEM_funct3
 );
@@ -57,7 +55,6 @@ module mycpu_ex_mem_reg #(
             MEM_RegWrite <= 1'b0;
             MEM_MemWrite <= 1'b0;
             MEM_MemRead  <= 1'b0;
-            MEM_isCSR    <= 1'b0;
             MEM_MemToReg <= '0;
             MEM_funct3   <= '0;
             MEM_rd_oh    <= 32'b0;
@@ -73,7 +70,6 @@ module mycpu_ex_mem_reg #(
             MEM_RegWrite   <= EX_RegWrite;
             MEM_MemWrite   <= EX_MemWrite;
             MEM_MemRead    <= EX_MemRead;
-            MEM_isCSR      <= EX_isCSR;
             MEM_MemToReg   <= EX_MemToReg;
             MEM_funct3     <= EX_funct3;
             MEM_csr_wb     <= EX_csr_wb;

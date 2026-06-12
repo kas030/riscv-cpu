@@ -32,16 +32,14 @@ module rv32m_unit #(
     logic op_mul, op_mulh, op_mulhsu, op_mulhu, op_div, op_divu, op_rem, op_remu;
     logic busy_q, done_q;
     logic mode_mul_q, special_q;
-    logic negate_mul_q, negate_quot_q, negate_rem_q;
+    logic negate_quot_q, negate_rem_q;
     logic [2:0] op_sel_q;
     logic [5:0] cycles_left_q;
     logic [DATAWIDTH-1:0] result_q, special_result_q;
     logic [DATAWIDTH-1:0] abs_a, abs_b;
     logic [DATAWIDTH-1:0] mul_operand_a_q, mul_operand_b_q;
-    logic [63:0] product_acc_q, multiplicand_q, product_next, product_signed;
     logic [63:0] product_uu_fast;
     logic signed [63:0] product_ss_fast, product_su_fast;
-    logic [31:0] multiplier_q;
     logic [32:0] remainder_q, rem_shift, rem_next;
     logic [31:0] quotient_q, quotient_next, quotient_final, divisor_q;
     logic        rem_ge_divisor;
@@ -66,8 +64,6 @@ module rv32m_unit #(
     assign abs_a = (signed_a && operand_a[31]) ? (~operand_a + 1'b1) : operand_a;
     assign abs_b = (signed_b && operand_b[31]) ? (~operand_b + 1'b1) : operand_b;
 
-    assign product_next    = product_acc_q + (multiplier_q[0] ? multiplicand_q : 64'd0);
-    assign product_signed  = negate_mul_q ? (~product_next + 64'd1) : product_next;
     assign product_uu_fast = {32'd0, mul_operand_a_q} * {32'd0, mul_operand_b_q};
     assign product_ss_fast = $signed({{32{mul_operand_a_q[31]}}, mul_operand_a_q}) *
                              $signed({{32{mul_operand_b_q[31]}}, mul_operand_b_q});
@@ -87,7 +83,6 @@ module rv32m_unit #(
             done_q           <= 1'b0;
             mode_mul_q       <= 1'b0;
             special_q        <= 1'b0;
-            negate_mul_q     <= 1'b0;
             negate_quot_q    <= 1'b0;
             negate_rem_q     <= 1'b0;
             op_sel_q         <= '0;
@@ -96,9 +91,6 @@ module rv32m_unit #(
             special_result_q <= '0;
             mul_operand_a_q  <= '0;
             mul_operand_b_q  <= '0;
-            product_acc_q    <= '0;
-            multiplicand_q   <= '0;
-            multiplier_q     <= '0;
             remainder_q      <= '0;
             quotient_q       <= '0;
             divisor_q        <= '0;
@@ -108,16 +100,12 @@ module rv32m_unit #(
             if (op_mul || op_mulh || op_mulhsu || op_mulhu) begin
                 mode_mul_q      <= 1'b1;
                 special_q       <= 1'b0;
-                negate_mul_q    <= (op_mulh || op_mulhsu) && (operand_a[31] ^ (op_mulh && operand_b[31]));
                 op_sel_q        <= op_mul ? OP_MUL :
                                    op_mulh ? OP_MULH :
                                    op_mulhsu ? OP_MULHSU : OP_MULHU;
                 cycles_left_q   <= 6'd1;
                 mul_operand_a_q <= operand_a;
                 mul_operand_b_q <= operand_b;
-                product_acc_q   <= 64'd0;
-                multiplicand_q  <= {32'd0, (op_mul ? operand_a : abs_a)};
-                multiplier_q    <= op_mul ? operand_b : ((op_mulhsu || op_mulh || op_mulhu) ? abs_b : operand_b);
             end else begin
                 mode_mul_q    <= 1'b0;
                 op_sel_q      <= op_div ? OP_DIV :
@@ -157,11 +145,6 @@ module rv32m_unit #(
                         OP_MULHSU: result_q <= product_su_fast[63:32];
                         default:   result_q <= product_uu_fast[63:32];
                     endcase
-                end else begin
-                    cycles_left_q  <= cycles_left_q - 6'd1;
-                    product_acc_q  <= product_next;
-                    multiplicand_q <= multiplicand_q << 1;
-                    multiplier_q   <= multiplier_q >> 1;
                 end
             end else begin
                 if (cycles_left_q == 6'd1) begin

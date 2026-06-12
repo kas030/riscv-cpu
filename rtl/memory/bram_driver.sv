@@ -75,8 +75,8 @@ module bram_driver(
                 endcase
             2'b01: // lh/lhu
                 case (roffset_q[1])
-                    1'b0:  dout = {24'b0, bram_rdata_raw[15:0]};
-                    1'b1:  dout = {24'b0, bram_rdata_raw[31:16]};
+                    1'b0:  dout = {16'b0, bram_rdata_raw[15:0]};
+                    1'b1:  dout = {16'b0, bram_rdata_raw[31:16]};
                 endcase
             2'b10: dout = bram_rdata_raw;
             default: dout = 0;

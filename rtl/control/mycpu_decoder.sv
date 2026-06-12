@@ -14,7 +14,6 @@ module mycpu_decoder #(
     output logic                   ID_RegWrite,
     output logic                   ID_MemWrite,
     output logic                   ID_MemRead,
-    output logic                   ID_isCSR,
     output logic                   ID_ALUSrcA,
     output logic                   ID_ALUSrcB,
     output logic [2:0]             ID_MemToReg,
@@ -45,8 +44,7 @@ module mycpu_decoder #(
         .MemRead      (ID_MemRead     ),
         .OffsetOrigin (ID_OffsetOrigin),
         .ALUSrcA      (ID_ALUSrcA     ),
-        .ALUSrcB      (ID_ALUSrcB     ),
-        .isCSR        (ID_isCSR       )
+        .ALUSrcB      (ID_ALUSrcB     )
     );
 
     imm_gen #(DATAWIDTH) u_imm_gen (

@@ -9,25 +9,42 @@ module mycpu_redirect_ctrl #(
 ) (
     input  logic                   ex_busy_i,
     input  logic [1:0]             ex_npc_op_i,
-    input  logic [DATAWIDTH-1:0]   ex_pc_i,
     input  logic                   alu_branch_true_i,
-    input  logic [DATAWIDTH-1:0]   redirect_pc_i,
+    input  logic [DATAWIDTH-1:0]   branch_target_i,
+    input  logic [DATAWIDTH-1:0]   jal_target_i,
+    input  logic [DATAWIDTH-1:0]   jalr_csr_target_i,
     input  logic                   pred_taken_i,
     input  logic [DATAWIDTH-1:0]   pred_target_i,
 
     output logic                   branch_taken_o,
     output logic                   branch_mispredict_o
 );
-    logic [DATAWIDTH-1:0] predicted_next_pc;
-    logic                 is_control_flow;
+    logic is_branch;
+    logic is_jalr_csr;
+    logic is_jal;
+    logic branch_mispredict;
+    logic jal_mispredict;
+    logic jalr_csr_mispredict;
 
-    assign branch_taken_o = !ex_busy_i && (
-                            (ex_npc_op_i == 2'b01 && alu_branch_true_i) ||
-                            (ex_npc_op_i == 2'b10                    ) ||
-                            (ex_npc_op_i == 2'b11                    ));
+    assign is_branch   = (ex_npc_op_i == 2'b01);
+    assign is_jalr_csr = (ex_npc_op_i == 2'b10);
+    assign is_jal      = (ex_npc_op_i == 2'b11);
 
-    assign is_control_flow     = (ex_npc_op_i != 2'b00);
-    assign predicted_next_pc   = pred_taken_i ? pred_target_i : (ex_pc_i + 4);
-    assign branch_mispredict_o = !ex_busy_i && is_control_flow &&
-                                 (redirect_pc_i != predicted_next_pc);
+    assign branch_taken_o = !ex_busy_i &&
+                            ((is_branch && alu_branch_true_i) ||
+                             is_jalr_csr ||
+                             is_jal);
+
+    assign branch_mispredict = is_branch &&
+                               ((pred_taken_i != alu_branch_true_i) ||
+                                (alu_branch_true_i && (pred_target_i != branch_target_i)));
+    assign jal_mispredict = is_jal &&
+                            (!pred_taken_i || (pred_target_i != jal_target_i));
+    assign jalr_csr_mispredict = is_jalr_csr &&
+                                 (!pred_taken_i || (pred_target_i != jalr_csr_target_i));
+
+    assign branch_mispredict_o = !ex_busy_i &&
+                                 (branch_mispredict ||
+                                  jal_mispredict ||
+                                  jalr_csr_mispredict);
 endmodule
