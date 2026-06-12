@@ -36,7 +36,7 @@ module tb_myCPU;
     wire cpu_clk = uut.student_top_inst.w_cpu_clk;
 
     // CPU 时钟频率 (MHz)，按你 PLL 实际配置改
-    localparam real CPU_CLK_MHZ = 150.0;
+    localparam real CPU_CLK_MHZ = 200.0;
 
     integer cnt_cycles    = 0;
     integer cnt_writeback = 0;

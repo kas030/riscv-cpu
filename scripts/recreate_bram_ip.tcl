@@ -12,7 +12,7 @@ set project_dir  [file join $repo_root vivado]
 set project_path [file join $project_dir ${project_name}.xpr]
 set bram_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip BRAM]
 set bram_xci     [file join $bram_ip_dir BRAM.xci]
-set bram_coe     [file normalize [file join $repo_root sim coe bram.coe]]
+set bram_coe     [file normalize [file join $repo_root sim coe mext dram.coe]]
 set legacy_ip_name [format "%s%s" D RAM]
 set legacy_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip $legacy_ip_name]
 set legacy_xci     [file join $legacy_ip_dir ${legacy_ip_name}.xci]
@@ -105,6 +105,8 @@ set_property -dict [list \
     CONFIG.Register_PortB_Output_of_Memory_Core {false} \
     CONFIG.Load_Init_File {true} \
     CONFIG.Coe_File $bram_coe \
+    CONFIG.Port_A_Clock {200} \
+    CONFIG.Port_B_Clock {200} \
     CONFIG.Fill_Remaining_Memory_Locations {true} \
     CONFIG.Remaining_Memory_Locations {0} \
     CONFIG.Use_RSTA_Pin {false} \

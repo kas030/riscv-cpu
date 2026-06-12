@@ -11,7 +11,7 @@ FAIL_LED := 24181824
 # TRACE := 1 时生成 FST 波形：sim_cpu_only/build/wave.fst。
 TRACE := 0
 
-# CPU-only 仿真的 CPU 主频，单位 MHz。默认 150MHz，对应半周期约 3.333ns。
+# CPU-only 仿真的 CPU 主频，单位 MHz。默认 200MHz，对应半周期 2.5ns。
 CPU_FREQ_MHZ := 200.0
 
 # 仿真超时时间，单位 ns。抓波形时建议改小，例如 1000000。

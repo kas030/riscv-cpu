@@ -74,6 +74,27 @@ proc glob_existing_files {patterns} {
     return [lsort -unique $files]
 }
 
+proc create_pll_ip {project_dir project_name} {
+    set pll_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip pll]
+    file mkdir $pll_ip_dir
+
+    create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 \
+        -module_name pll -dir $pll_ip_dir
+
+    set pll_ip [get_ips pll]
+    set_property -dict [list \
+        CONFIG.Component_Name {pll} \
+        CONFIG.PRIM_SOURCE {Differential_clock_capable_pin} \
+        CONFIG.PRIM_IN_FREQ {200.000} \
+        CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {50.000} \
+        CONFIG.CLKOUT2_USED {true} \
+        CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {200.000} \
+        CONFIG.NUM_OUT_CLKS {2} \
+        CONFIG.USE_RESET {false} \
+        CONFIG.USE_LOCKED {true} \
+    ] $pll_ip
+}
+
 if {[llength [current_project -quiet]] != 0} {
     close_project
 }
@@ -115,11 +136,11 @@ set rtl_files [glob_existing_files [list \
 set ip_files [list \
     [file join $repo_root ip IROM IROM.xci] \
     [file join $repo_root ip BRAM BRAM.xci] \
-    [file join $repo_root ip pll pll.xci] \
 ]
 
 set mem_files [glob_existing_files [list \
     [file join $repo_root sim coe *.coe] \
+    [file join $repo_root sim coe mext *.coe] \
     [file join $repo_root vivado tests build *.coe] \
     [file join $repo_root vivado tests build *.mif] \
     [file join $repo_root vivado *.mif] \
@@ -127,11 +148,17 @@ set mem_files [glob_existing_files [list \
 
 add_existing_files sources_1 [concat $mem_files $rtl_files]
 import_existing_files sources_1 $ip_files
+create_pll_ip $project_dir $project_name
 
 set imported_coe_dir [file join $project_dir ${project_name}.srcs sources_1 sim coe]
 file mkdir $imported_coe_dir
 foreach coe_file [glob_existing_files [list [file join $repo_root sim coe *.coe]]] {
     file copy -force $coe_file [file join $imported_coe_dir [file tail $coe_file]]
+}
+set imported_mext_coe_dir [file join $imported_coe_dir mext]
+file mkdir $imported_mext_coe_dir
+foreach coe_file [glob_existing_files [list [file join $repo_root sim coe mext *.coe]]] {
+    file copy -force $coe_file [file join $imported_mext_coe_dir [file tail $coe_file]]
 }
 
 set_property include_dirs [list [file normalize [file join $repo_root rtl common]]] [get_filesets sources_1]

@@ -6,8 +6,8 @@ Vivado IROM/BRAM IP 和板级外设，便于快速验证 CPU 核。
 常用输入在 `config.mk` 中配置：
 
 ```make
-IROM_COE := ../sim/coe/irom.coe
-BRAM_COE := ../sim/coe/bram.coe
+IROM_COE := ../sim/coe/mext/irom-v2.coe
+BRAM_COE := ../sim/coe/mext/dram.coe
 EXPECTED_LED :=
 PASS_LED := 01221C08
 FAIL_LED := 24181824
@@ -50,7 +50,7 @@ make sim-verilator \
 python3 vivado/tests/tools/gen_t18_m_ext_basic_coe.py vivado/tests/build/t18_m_ext_basic.coe
 ./sim_cpu_only/run_verilator.sh \
   IROM_COE=../vivado/tests/build/t18_m_ext_basic.coe \
-  BRAM_COE=../sim/coe/bram.coe \
+  BRAM_COE=../sim/coe/mext/dram.coe \
   PASS_LED=C0DEC0DE \
   FAIL_LED=DEADBEEF \
   EXPECTED_LED=C0DEC0DE \

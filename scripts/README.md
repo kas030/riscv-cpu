@@ -44,7 +44,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 
 数据存储器统一命名为 `BRAM`，对应 RTL 中 `BRAM Mem_BRAM (...)` 的 IP
 例化、Vivado 工程内的 `BRAM` IP、`ip/BRAM/BRAM.xci` 配置文件，以及
-`sim/coe/bram.coe` 初始化文件。脚本会按这一套命名重建 IP output products。
+`sim/coe/mext/dram.coe` 初始化文件。脚本会按这一套命名重建 IP output products。
 
 ### 何时需要运行
 
@@ -76,7 +76,7 @@ vivado -mode batch -source scripts/create_project.tcl
 ```
 
 - Vivado 版本需提供 `xilinx.com:ip:blk_mem_gen:8.4`。
-- `sim/coe/bram.coe` 存在，用作 BRAM 初始化文件。
+- `sim/coe/mext/dram.coe` 存在，用作 BRAM 初始化文件。
 
 ### 执行方式
 
@@ -112,7 +112,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs synth
    - Port A：同步读，32 位宽，深度 65536 word。
    - Port B：同步写，32 位宽，支持 4-bit byte write enable。
    - 关闭输出寄存器，保持读延迟为 BRAM 原生同步读一拍。
-   - 使用 `sim/coe/bram.coe` 初始化。
+   - 使用 `sim/coe/mext/dram.coe` 初始化。
 6. 执行 `generate_target all` 生成新的 output products。
 7. 更新 `sources_1` 编译顺序并关闭工程。
 
@@ -136,7 +136,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs synth
 5. A/B 口宽度设为 32，深度设为 65536。
 6. 开启 byte write enable，byte size 设为 8。
 7. Port A/Port B 使用 enable pin。
-8. 加载 `sim/coe/bram.coe`。
+8. 加载 `sim/coe/mext/dram.coe`。
 9. 生成 output products。
 10. 重新运行综合。
 
