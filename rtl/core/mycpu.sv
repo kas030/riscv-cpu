@@ -52,6 +52,8 @@ module mycpu (
     logic        redirect_pending_q, redirect_pending_taken_q, redirect_pending_bp_update_q;
     logic [31:0] redirect_target_q, redirect_bp_pc_q;
     logic [31:0] redirect_pending_target_q, redirect_pending_bp_pc_q;
+    logic [31:0] redirect_target_next;
+    logic        redirect_taken_next;
     logic        BP_update_en, BP_update_taken;
     logic        MEM_bram_access;
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
@@ -129,7 +131,6 @@ module mycpu (
     // MEM 级中转给 EX 级前递的候选数据 / 外设原始读数
     logic [31:0] MEM_mdata;
     logic [31:0] MEM_forward_data;
-    logic [31:0] MEM_forward_rd_oh;
 
     // -------------------------------------------------------------------------
     // MEM1/MEM2 寄存器输出（即 MEM2 级输入）
@@ -142,7 +143,6 @@ module mycpu (
     logic [31:0] MEM2_csr_wb;
     logic [31:0] MEM2_mdata;
     logic [31:0] MEM2_forward_data;
-    logic [31:0] MEM2_forward_rd_oh;
 
     // -------------------------------------------------------------------------
     // MEM/WB 寄存器输出（即 WB 级输入）
@@ -194,6 +194,10 @@ module mycpu (
 
     assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
     assign Flush_EX_MEM       = redirect_valid_q;
+    assign redirect_target_next = redirect_pending_q ? redirect_pending_target_q :
+                                                       IF_npc_redirect_raw;
+    assign redirect_taken_next  = redirect_pending_q ? redirect_pending_taken_q :
+                                                       BranchTaken_raw;
 
     // redirect/flush 打拍提交：
     //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
@@ -215,25 +219,25 @@ module mycpu (
             redirect_bp_pc_q     <= redirect_pending_q ?
                                     redirect_pending_bp_pc_q : EX_pc;
 
+            if (!(redirect_valid_q && Stall_Front)) begin
+                redirect_target_q <= redirect_target_next;
+                redirect_taken_q  <= redirect_taken_next;
+            end
+
             if (redirect_valid_q) begin
                 if (!Stall_Front) begin
                     redirect_valid_q <= 1'b0;
                 end
             end else if (redirect_pending_q) begin
                 redirect_valid_q  <= 1'b1;
-                redirect_target_q <= redirect_pending_target_q;
-                redirect_taken_q  <= redirect_pending_taken_q;
 
                 redirect_bp_update_q <= redirect_pending_bp_update_q;
                 redirect_pending_q   <= 1'b0;
             end else if (BranchMispredict_raw) begin
                 redirect_valid_q  <= 1'b1;
-                redirect_target_q <= IF_npc_redirect_raw;
-                redirect_taken_q  <= BranchTaken_raw;
 
                 redirect_bp_update_q <= (EX_NpcOp == 2'b01);
             end else if (!EX_busy && (EX_NpcOp == 2'b01)) begin
-                redirect_taken_q     <= BranchTaken_raw;
                 redirect_bp_update_q <= 1'b1;
             end
         end
@@ -273,15 +277,15 @@ module mycpu (
     assign BranchMispredict = redirect_valid_q;
     assign BP_update_en    = redirect_bp_update_q;
     assign BP_update_taken = redirect_taken_q;
-    assign MEM_forward_rd_oh = MEM_MemRead ? 32'b0 : MEM_rd_oh;
-    assign MEM2_forward_rd_oh = MEM2_MemRead ? 32'b0 : MEM2_rd_oh;
-
     forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),
         .ID_EX_rs2       (EX_rs2      ),
-        .EX_MEM_rd_oh    (MEM_forward_rd_oh),
-        .MEM2_rd_oh      (MEM2_forward_rd_oh),
-        .MEM_WB_rd_oh    (WB_rd_oh    ),
+        .EX_MEM_rd       (MEM_rd      ),
+        .EX_MEM_valid    (MEM_RegWrite && !MEM_MemRead && (MEM_rd != 5'd0)),
+        .MEM2_rd         (MEM2_rd     ),
+        .MEM2_valid      (MEM2_RegWrite && !MEM2_MemRead && (MEM2_rd != 5'd0)),
+        .MEM_WB_rd       (WB_rd       ),
+        .MEM_WB_valid    (WB_RegWrite && (WB_rd != 5'd0)),
         .ForwardA        (ForwardA    ),
         .ForwardB        (ForwardB    )
     );

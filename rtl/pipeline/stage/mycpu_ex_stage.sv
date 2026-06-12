@@ -47,8 +47,12 @@ module mycpu_ex_stage #(
     logic [DATAWIDTH - 1:0] EX_forward_A_comb, EX_forward_B_comb;
     logic [DATAWIDTH - 1:0] EX_forward_A_hold, EX_forward_B_hold;
     logic                   EX_forward_hold_valid;
-    logic [DATAWIDTH - 1:0] npc_offset;
+    logic [DATAWIDTH - 1:0] seq_pc;
+    logic [DATAWIDTH - 1:0] branch_target;
+    logic [DATAWIDTH - 1:0] jal_target;
     logic [DATAWIDTH - 1:0] jalr_target;
+    logic [DATAWIDTH - 1:0] csr_target;
+    logic [DATAWIDTH - 1:0] jalr_csr_target;
     logic [DATAWIDTH - 1:0] csr_npc;
     logic [DATAWIDTH - 1:0] csr_wdata;
     logic [5:0]             csr_control_effective;
@@ -126,26 +130,25 @@ module mycpu_ex_stage #(
         .csr_wb      (EX_csr_wb            )
     );
 
-    assign jalr_target = (EX_forward_A_out + EX_imm) & {{DATAWIDTH - 1{1'b1}}, 1'b0};
-    assign npc_offset  = {DATAWIDTH{EX_OffsetOrigin == 2'b00}} & EX_imm      |
-                         {DATAWIDTH{EX_OffsetOrigin == 2'b01}} & jalr_target |
-                         {DATAWIDTH{EX_OffsetOrigin == 2'b10}} & csr_npc;
+    assign seq_pc          = EX_pc + 4;
+    assign branch_target   = EX_pc + EX_imm;
+    assign jal_target      = branch_target;
+    assign jalr_target     = (EX_forward_A_out + EX_imm) & {{DATAWIDTH - 1{1'b1}}, 1'b0};
+    assign csr_target      = csr_npc;
+    assign jalr_csr_target = (EX_OffsetOrigin == 2'b10) ? csr_target : jalr_target;
 
-    npc_calc #(DATAWIDTH) u_npc_calc (
-        .isTrue (alu_isTrue          ),
-        .npc_op (EX_NpcOp            ),
-        .pc     (EX_pc               ),
-        .offset (npc_offset          ),
-        .npc    (IF_npc_redirect_raw ),
-        .pcadd4 (                    )
-    );
+    assign IF_npc_redirect_raw = (EX_NpcOp == 2'b01) ? (alu_isTrue ? branch_target : seq_pc) :
+                                 (EX_NpcOp == 2'b10) ? jalr_csr_target                    :
+                                 (EX_NpcOp == 2'b11) ? jal_target                         :
+                                                        seq_pc;
 
     mycpu_redirect_ctrl #(DATAWIDTH) u_redirect_ctrl (
         .ex_busy_i           (EX_busy            ),
         .ex_npc_op_i         (EX_NpcOp           ),
-        .ex_pc_i             (EX_pc              ),
         .alu_branch_true_i   (alu_isTrue         ),
-        .redirect_pc_i       (IF_npc_redirect_raw),
+        .branch_target_i     (branch_target      ),
+        .jal_target_i        (jal_target         ),
+        .jalr_csr_target_i   (jalr_csr_target    ),
         .pred_taken_i        (EX_pred_taken      ),
         .pred_target_i       (EX_pred_target     ),
         .branch_taken_o      (branch_taken_raw   ),
