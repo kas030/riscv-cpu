@@ -52,8 +52,15 @@ module tb_cpu_only;
     localparam time           STOP_NS          = `SIM_STOP_NS;
     localparam time           PROGRESS_NS      = `SIM_PROGRESS_NS;
     localparam int unsigned   PROGRESS_FD      = 32'h8000_0002;
+    localparam int unsigned   PROGRESS_LINES   = 6;
     string trace_file = `SIM_TRACE_FILE;
     bit sim_done = 1'b0;
+    bit progress_drawn = 1'b0;
+    bit progress_last_valid = 1'b0;
+    bit progress_last_led_written = 1'b0;
+    bit progress_last_seg_written = 1'b0;
+    logic [31:0] progress_last_led = 32'd0;
+    logic [31:0] progress_last_seg = 32'd0;
     string stop_reason;
     integer init_idx;
 
@@ -229,11 +236,71 @@ module tb_cpu_only;
     endfunction
 
     task automatic clear_progress_line;
+        integer line_idx;
         begin
-            if (PROGRESS_NS > 0) begin
-                $fwrite(PROGRESS_FD, "\r                                                                                \r");
+            if (PROGRESS_NS > 0 && progress_drawn) begin
+                $fwrite(PROGRESS_FD, "\r\033[2K");
+                for (line_idx = 1; line_idx < PROGRESS_LINES; line_idx = line_idx + 1)
+                    $fwrite(PROGRESS_FD, "\033[1A\r\033[2K");
+                $fwrite(PROGRESS_FD, "\r");
                 $fflush();
+                progress_drawn = 1'b0;
             end
+        end
+    endtask
+
+    task automatic print_progress_led_graphic(input [31:0] led, input bit written);
+        integer row;
+        integer col;
+        integer bit_idx;
+        begin
+            for (row = 3; row >= 0; row = row - 1) begin
+                if (row == 3)
+                    $fwrite(PROGRESS_FD, " led_graphic       : ");
+                else
+                    $fwrite(PROGRESS_FD, "                     ");
+
+                if (written) begin
+                    for (col = 7; col >= 0; col = col - 1) begin
+                        bit_idx = row * 8 + col;
+                        $fwrite(PROGRESS_FD, "%s", led[bit_idx] ? "#" : ".");
+                    end
+                end else if (row == 3) begin
+                    $fwrite(PROGRESS_FD, "not written");
+                end
+                $fwrite(PROGRESS_FD, "\n");
+            end
+        end
+    endtask
+
+    task automatic print_progress_display(
+        input time elapsed_ns,
+        input integer percent_whole,
+        input integer percent_tenth
+    );
+        begin
+            clear_progress_line();
+            print_progress_led_graphic(virtual_led, led_written);
+            if (seg_written)
+                $fwrite(PROGRESS_FD, " seg_wdata         : 0x%08X\n", seg_wdata);
+            else
+                $fwrite(PROGRESS_FD, " seg_wdata         : 0x%08X (not written)\n", seg_wdata);
+            $fwrite(PROGRESS_FD, "[progress] sim=%0dns / %0dns (%0d.%0d%%)",
+                    elapsed_ns, STOP_NS, percent_whole, percent_tenth);
+            $fflush();
+            progress_drawn = 1'b1;
+        end
+    endtask
+
+    task automatic update_progress_line(
+        input time elapsed_ns,
+        input integer percent_whole,
+        input integer percent_tenth
+    );
+        begin
+            $fwrite(PROGRESS_FD, "\r\033[2K[progress] sim=%0dns / %0dns (%0d.%0d%%)",
+                    elapsed_ns, STOP_NS, percent_whole, percent_tenth);
+            $fflush();
         end
     endtask
 
@@ -334,6 +401,7 @@ module tb_cpu_only;
         time elapsed_ns;
         integer percent_whole;
         integer percent_tenth;
+        bit display_changed;
         if (PROGRESS_NS > 0) begin
             forever begin
                 #(PROGRESS_NS);
@@ -342,9 +410,21 @@ module tb_cpu_only;
                     disable progress_reporter;
                 percent_whole = integer'((elapsed_ns * 100) / STOP_NS);
                 percent_tenth = integer'((elapsed_ns * 1000) / STOP_NS) % 10;
-                $fwrite(PROGRESS_FD, "\r[progress] sim=%0dns / %0dns (%0d.%0d%%)",
-                        elapsed_ns, STOP_NS, percent_whole, percent_tenth);
-                $fflush();
+                display_changed = !progress_last_valid ||
+                                  (progress_last_led_written != led_written) ||
+                                  (progress_last_seg_written != seg_written) ||
+                                  (led_written && (progress_last_led !== virtual_led)) ||
+                                  (seg_written && (progress_last_seg !== seg_wdata));
+                if (display_changed || !progress_drawn) begin
+                    print_progress_display(elapsed_ns, percent_whole, percent_tenth);
+                    progress_last_valid = 1'b1;
+                    progress_last_led_written = led_written;
+                    progress_last_seg_written = seg_written;
+                    progress_last_led = virtual_led;
+                    progress_last_seg = seg_wdata;
+                end else begin
+                    update_progress_line(elapsed_ns, percent_whole, percent_tenth);
+                end
             end
         end
     end
