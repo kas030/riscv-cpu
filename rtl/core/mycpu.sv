@@ -51,11 +51,7 @@ module mycpu (
     logic        BranchMispredict, BranchMispredict_raw;
     logic [31:0] IF_npc_redirect_raw;
     logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
-    logic        redirect_pending_q, redirect_pending_taken_q, redirect_pending_bp_update_q;
     logic [31:0] redirect_target_q, redirect_bp_pc_q;
-    logic [31:0] redirect_pending_target_q, redirect_pending_bp_pc_q;
-    logic [31:0] redirect_target_next;
-    logic        redirect_taken_next;
     logic        BP_update_en, BP_update_taken;
     logic        MEM_bram_access;
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
@@ -196,14 +192,15 @@ module mycpu (
 
     assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
     assign Flush_EX_MEM       = redirect_valid_q;
-    assign redirect_target_next = redirect_pending_q ? redirect_pending_target_q :
-                                                       IF_npc_redirect_raw;
-    assign redirect_taken_next  = redirect_pending_q ? redirect_pending_taken_q :
-                                                       BranchTaken_raw;
 
     // redirect/flush 打拍提交：
     //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
     //   切断 ALU/branch compare -> Flush_ID_EX 的运行期长路径。
+    //
+    // 优先级（从高到低）：
+    //   1) redirect_valid_q 有效且前段不暂停 → 消费完毕，清 0
+    //   2) BranchMispredict_raw 新来了分支误预测 → 直接设置 valid
+    //   3) 分支指令（NpcOp==01）且 EX 不忙 → 记录 bp_update（预测正确也要更新）
     always_ff @(posedge clk) begin
         if (rst) begin
             redirect_valid_q     <= 1'b0;
@@ -211,34 +208,30 @@ module mycpu (
             redirect_taken_q     <= 1'b0;
             redirect_bp_update_q <= 1'b0;
             redirect_bp_pc_q     <= '0;
-            redirect_pending_q     <= 1'b0;
-            redirect_pending_target_q <= '0;
-            redirect_pending_taken_q  <= 1'b0;
-            redirect_pending_bp_update_q <= 1'b0;
-            redirect_pending_bp_pc_q     <= '0;
         end else begin
+            // bp_update 默认清 0（仅当有分支完成时在下方设为 1）
             redirect_bp_update_q <= 1'b0;
-            redirect_bp_pc_q     <= redirect_pending_q ?
-                                    redirect_pending_bp_pc_q : EX_pc;
+            // 记录分支 PC，用于更新预测器历史表
+            redirect_bp_pc_q     <= EX_pc;
 
+            // target/taken 只在有效重定向正在被前段 stall 阻隔时不更新
+            // （否则 stall 期间 EX 组合输出变化会冲掉正确的目标）
             if (!(redirect_valid_q && Stall_Front)) begin
-                redirect_target_q <= redirect_target_next;
-                redirect_taken_q  <= redirect_taken_next;
+                redirect_target_q <= IF_npc_redirect_raw;
+                redirect_taken_q  <= BranchTaken_raw;
             end
 
+            // [优先级 1] 当前重定向正在被 IF 消费
             if (redirect_valid_q) begin
-                if (!Stall_Front) begin
+                if (!Stall_Front) begin           // 前段已处理完，可以清 valid
                     redirect_valid_q <= 1'b0;
                 end
-            end else if (redirect_pending_q) begin
-                redirect_valid_q  <= 1'b1;
-
-                redirect_bp_update_q <= redirect_pending_bp_update_q;
-                redirect_pending_q   <= 1'b0;
+            // [优先级 2] EX 刚检测到分支误预测，立即发起重定向
             end else if (BranchMispredict_raw) begin
                 redirect_valid_q  <= 1'b1;
-
+                // 只有分支（非 jal/jalr）才需要更新预测器历史
                 redirect_bp_update_q <= (EX_NpcOp == 2'b01);
+            // [优先级 3] 普通分支（预测正确），只需更新预测器，不需要重定向
             end else if (!EX_busy && (EX_NpcOp == 2'b01)) begin
                 redirect_bp_update_q <= 1'b1;
             end
