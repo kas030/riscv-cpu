@@ -5,8 +5,6 @@
 // =============================================================================
 module main_ctrl(
     input  logic [31:0] instr,
-    input  logic [6:0]  opcode,
-    input  logic [2:0]  funct,
     output logic [1:0]  NpcOp,
     output logic        RegWrite,
     output logic [2:0]  MemToReg,
@@ -16,6 +14,8 @@ module main_ctrl(
     output logic        ALUSrcA,
     output logic        ALUSrcB
 );
+    logic [6:0] opcode = instr[6:0];
+    logic [2:0] funct  = instr[14:12];
     logic is_jalr, is_branch, is_jal, is_store, is_rtype, is_itype;
     logic is_load, is_auipc, is_lui, is_csr, is_ecall, is_mret, is_callret;
 

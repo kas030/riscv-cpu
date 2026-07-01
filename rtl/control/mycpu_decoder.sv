@@ -35,8 +35,6 @@ module mycpu_decoder #(
 
     main_ctrl u_main_ctrl (
         .instr        (ID_instr       ),
-        .opcode       (ID_instr[6:0]  ),
-        .funct        (ID_funct3      ),
         .NpcOp        (ID_NpcOp       ),
         .RegWrite     (ID_RegWrite    ),
         .MemToReg     (ID_MemToReg    ),
