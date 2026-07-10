@@ -12,8 +12,11 @@ module mycpu_ex_stage #(
     parameter DATAWIDTH = 32
 ) (
     input  logic [DATAWIDTH - 1:0] MEM_forward_data,
+    input  logic [DATAWIDTH - 1:0] MEM_S1_forward_data,
     input  logic [DATAWIDTH - 1:0] MEM2_forward_data,
+    input  logic [DATAWIDTH - 1:0] MEM2_S1_forward_data,
     input  logic [DATAWIDTH - 1:0] WB_wdata,
+    input  logic [DATAWIDTH - 1:0] WB_S1_wdata,
     input  logic [DATAWIDTH - 1:0] EX_pc,
     input  logic [DATAWIDTH - 1:0] EX_imm,
     input  logic [DATAWIDTH - 1:0] EX_rR1_data,
@@ -24,8 +27,8 @@ module mycpu_ex_stage #(
     input  logic [11:0]            EX_csr_idx,
     input  logic [4:0]             EX_csr_zimm,
     input  logic [5:0]             EX_CSRControll,
-    input  logic [1:0]             ForwardA,
-    input  logic [1:0]             ForwardB,
+    input  logic [2:0]             ForwardA,
+    input  logic [2:0]             ForwardB,
     input  logic                   EX_ALUSrcA,
     input  logic                   EX_ALUSrcB,
     input  logic                   EX_pred_taken,
@@ -64,14 +67,29 @@ module mycpu_ex_stage #(
     logic                   branch_taken_raw;
     logic                   branch_mispredict_raw;
 
-    assign EX_forward_A_comb = (ForwardA == 2'b10) ? MEM_forward_data :
-                               (ForwardA == 2'b11) ? MEM2_forward_data :
-                               (ForwardA == 2'b01) ? WB_wdata         :
-                                                     EX_rR1_data;
-    assign EX_forward_B_comb = (ForwardB == 2'b10) ? MEM_forward_data :
-                               (ForwardB == 2'b11) ? MEM2_forward_data :
-                               (ForwardB == 2'b01) ? WB_wdata         :
-                                                     EX_rR2_data;
+    always_comb begin
+        unique case (ForwardA)
+            3'd1:    EX_forward_A_comb = WB_wdata;
+            3'd2:    EX_forward_A_comb = MEM_forward_data;
+            3'd3:    EX_forward_A_comb = MEM2_forward_data;
+            3'd4:    EX_forward_A_comb = WB_S1_wdata;
+            3'd5:    EX_forward_A_comb = MEM_S1_forward_data;
+            3'd6:    EX_forward_A_comb = MEM2_S1_forward_data;
+            default: EX_forward_A_comb = EX_rR1_data;
+        endcase
+    end
+
+    always_comb begin
+        unique case (ForwardB)
+            3'd1:    EX_forward_B_comb = WB_wdata;
+            3'd2:    EX_forward_B_comb = MEM_forward_data;
+            3'd3:    EX_forward_B_comb = MEM2_forward_data;
+            3'd4:    EX_forward_B_comb = WB_S1_wdata;
+            3'd5:    EX_forward_B_comb = MEM_S1_forward_data;
+            3'd6:    EX_forward_B_comb = MEM2_S1_forward_data;
+            default: EX_forward_B_comb = EX_rR2_data;
+        endcase
+    end
 
     always_ff @(posedge clk) begin
         if (rst || !EX_stall) begin

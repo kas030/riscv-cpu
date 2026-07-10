@@ -16,7 +16,9 @@ module tb_cpu_only;
     logic rst = 1'b1;
 
     logic [31:0] irom_addr;
+    logic [31:0] irom_addr1;
     logic [31:0] irom_data;
+    logic [31:0] irom_data1;
     logic [31:0] perip_addr;
     logic        perip_wen;
     logic [1:0]  perip_mask;
@@ -71,7 +73,9 @@ module tb_cpu_only;
         .cpu_rst     (rst),
         .cpu_clk     (clk),
         .irom_addr   (irom_addr),
+        .irom_addr1  (irom_addr1),
         .irom_data   (irom_data),
+        .irom_data1  (irom_data1),
         .perip_addr  (perip_addr),
         .perip_wen   (perip_wen),
         .perip_mask  (perip_mask),
@@ -98,6 +102,7 @@ module tb_cpu_only;
     always_comb begin
         // student_top.sv 使用 pc[13:2] 访问 IROM，这里保持同样的高位忽略语义。
         irom_data = irom[irom_addr[13:2]];
+        irom_data1 = irom[irom_addr1[13:2]];
     end
 
     function automatic [31:0] select_load_word(input [31:0] word, input [1:0] mask, input [1:0] offset);
@@ -373,8 +378,9 @@ module tb_cpu_only;
     always_ff @(posedge clk) begin
         if (!rst) begin
             cycles <= cycles + 1;
-            if (dut.rf_inst.wen && dut.rf_inst.waddr != 5'd0)
-                cnt_writeback <= cnt_writeback + 1;
+            cnt_writeback <= cnt_writeback +
+                             ((dut.rf_inst.wen && dut.rf_inst.waddr != 5'd0) ? 1 : 0) +
+                             ((dut.rf_inst.wen2 && dut.rf_inst.waddr2 != 5'd0) ? 1 : 0);
             if (perip_wen)
                 cnt_store <= cnt_store + 1;
             if (dut.BranchTaken)

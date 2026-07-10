@@ -55,9 +55,11 @@ module tb_myCPU;
         cnt_cycles <= cnt_cycles + 1;
 
         // 写 reg_file 的指令（alu / load / lui / auipc / jal-with-rd / csrrw 等）
-        if (uut.student_top_inst.Core_cpu.rf_inst.wen &&
-            uut.student_top_inst.Core_cpu.rf_inst.waddr != 5'd0)
-            cnt_writeback <= cnt_writeback + 1;
+        cnt_writeback <= cnt_writeback +
+            ((uut.student_top_inst.Core_cpu.rf_inst.wen &&
+              uut.student_top_inst.Core_cpu.rf_inst.waddr != 5'd0) ? 1 : 0) +
+            ((uut.student_top_inst.Core_cpu.rf_inst.wen2 &&
+              uut.student_top_inst.Core_cpu.rf_inst.waddr2 != 5'd0) ? 1 : 0);
 
         // 存储指令（写 BRAM 或 MMIO）
         if (uut.student_top_inst.Core_cpu.perip_wen)

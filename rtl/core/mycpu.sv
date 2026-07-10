@@ -6,11 +6,12 @@
 //   寄存器堆按数据流方向连接起来。MEM 后端拆成 MEM1/MEM2 以流水化 BRAM load。
 //   对外暴露的接口仅保留：
 //     - cpu_clk / cpu_rst                     时钟与复位
-//     - irom_addr / irom_data                 IROM 取指接口（同步只读）
+//     - irom_addr*/irom_data*                 双路 IROM 取指接口（同步只读）
 //     - perip_addr / perip_wen / perip_mask /
 //       perip_wdata / perip_rdata             外设/BRAM 访存接口
-//   内部信号按 IF→ID→EX→MEM→WB 五级分组，每一组对应一个流水寄存器输出端，
-//   命名沿用 `<stage>_<信号>` 以便与教材中的经典 5 级流水线对齐。
+//   内部信号按 IF→ID→EX→MEM→WB 五级分组。第一槽沿用 `<stage>_<信号>` 命名，
+//   第二槽使用 `_S1` 后缀。当前双发射为保守 in-order 版本：仅简单整数类指令
+//   且无槽内 RAW 时同发，其他组合自动退化为单发射。
 // =============================================================================
 module mycpu (
     input  logic         cpu_rst   ,
@@ -18,7 +19,9 @@ module mycpu (
 
     // ---- IROM 取指接口 ----
     output logic [31:0]  irom_addr ,
+    output logic [31:0]  irom_addr1,
     input  logic [31:0]  irom_data ,
+    input  logic [31:0]  irom_data1,
 
     // ---- 外设/BRAM 访存接口 ----
     output logic [31:0]  perip_addr  ,
@@ -43,7 +46,7 @@ module mycpu (
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
     logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
     logic        Flush_EX_MEM;
-    logic [1:0]  ForwardA, ForwardB;
+    logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
     logic        BranchTaken, BranchTaken_raw;
 `ifndef SYNTHESIS
     logic        BranchTaken_stat_q, BranchTaken_stat_pending_q;
@@ -67,14 +70,16 @@ module mycpu (
     // -------------------------------------------------------------------------
     // IF 级信号
     // -------------------------------------------------------------------------
-    logic [31:0] IF_pc, IF_npc_redirect, IF_instr;
+    logic [31:0] IF_pc, IF_pc1, IF_npc_redirect, IF_instr, IF_instr1;
+    logic        IF_issue_dual;
     logic        IF_pred_taken;
     logic [31:0] IF_pred_target;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
     // -------------------------------------------------------------------------
-    logic [31:0] ID_pc, ID_instr;
+    logic [31:0] ID_pc, ID_instr, ID_pc1, ID_instr1, ID_instr1_effective;
+    logic        ID_issue_dual;
     logic        ID_pred_taken;
     logic [31:0] ID_pred_target;
 
@@ -93,6 +98,18 @@ module mycpu (
     logic [2:0]  ID_funct3;
     logic [4:0]  ID_rs1, ID_rs2, ID_rd;
     logic        ID_uses_rs1, ID_uses_rs2;
+    logic [31:0] ID_S1_imm, ID_S1_rR1_data, ID_S1_rR2_data;
+    logic        ID_S1_RegWrite, ID_S1_MemWrite, ID_S1_MemRead;
+    logic        ID_S1_ALUSrcA, ID_S1_ALUSrcB;
+    logic [2:0]  ID_S1_MemToReg;
+    logic [1:0]  ID_S1_NpcOp, ID_S1_OffsetOrigin;
+    logic [`ALU_OP_WIDTH - 1:0] ID_S1_ALUControl;
+    logic [11:0] ID_S1_csr_idx;
+    logic [4:0]  ID_S1_csr_zimm;
+    logic [5:0]  ID_S1_CSRControll;
+    logic [2:0]  ID_S1_funct3;
+    logic [4:0]  ID_S1_rs1, ID_S1_rs2, ID_S1_rd;
+    logic        ID_S1_uses_rs1, ID_S1_uses_rs2;
 
     // -------------------------------------------------------------------------
     // ID/EX 寄存器输出（即 EX 级输入）
@@ -109,12 +126,28 @@ module mycpu (
     logic [5:0]  EX_CSRControll;
     logic        EX_pred_taken;
     logic [31:0] EX_pred_target;
+    logic [31:0] EX_S1_pc, EX_S1_imm, EX_S1_rR1_data, EX_S1_rR2_data;
+    logic [4:0]  EX_S1_rs1, EX_S1_rs2, EX_S1_rd;
+    logic        EX_S1_RegWrite, EX_S1_MemWrite, EX_S1_MemRead;
+    logic [2:0]  EX_S1_MemToReg, EX_S1_funct3;
+    logic        EX_S1_ALUSrcA, EX_S1_ALUSrcB;
+    logic [`ALU_OP_WIDTH - 1:0] EX_S1_ALUControl;
+    logic [1:0]  EX_S1_NpcOp, EX_S1_OffsetOrigin;
+    logic [11:0] EX_S1_csr_idx;
+    logic [4:0]  EX_S1_csr_zimm;
+    logic [5:0]  EX_S1_CSRControll;
+    logic        EX_S1_pred_taken;
+    logic [31:0] EX_S1_pred_target;
 
     // -------------------------------------------------------------------------
     // EX 级输出
     // -------------------------------------------------------------------------
     logic [31:0] EX_alu_result, EX_forward_B_out;
     logic [31:0] EX_csr_wb;
+    logic [31:0] EX_S1_alu_result, EX_S1_forward_B_out;
+    logic [31:0] EX_S1_csr_wb;
+    logic [31:0] IF_npc_redirect_raw_S1;
+    logic        BranchTaken_raw_S1, BranchMispredict_raw_S1, EX_busy_S1;
 
     // -------------------------------------------------------------------------
     // EX/MEM 寄存器输出（即 MEM 级输入）
@@ -125,10 +158,17 @@ module mycpu (
     logic        MEM_RegWrite, MEM_MemWrite, MEM_MemRead;
     logic [2:0]  MEM_MemToReg, MEM_funct3;
     logic [31:0] MEM_csr_wb;
+    logic [31:0] MEM_S1_pcadd4, MEM_S1_alu_result, MEM_S1_perip_addr, MEM_S1_perip_bus_addr, MEM_S1_rR2_data, MEM_S1_imm;
+    logic [4:0]  MEM_S1_rd;
+    logic [31:0] MEM_S1_rd_oh;
+    logic        MEM_S1_RegWrite, MEM_S1_MemWrite, MEM_S1_MemRead;
+    logic [2:0]  MEM_S1_MemToReg, MEM_S1_funct3;
+    logic [31:0] MEM_S1_csr_wb;
 
     // MEM 级中转给 EX 级前递的候选数据 / 外设原始读数
     logic [31:0] MEM_mdata;
     logic [31:0] MEM_forward_data;
+    logic [31:0] MEM_S1_forward_data;
 
     // -------------------------------------------------------------------------
     // MEM1/MEM2 寄存器输出（即 MEM2 级输入）
@@ -141,6 +181,14 @@ module mycpu (
     logic [31:0] MEM2_csr_wb;
     logic [31:0] MEM2_mdata;
     logic [31:0] MEM2_forward_data;
+    logic [31:0] MEM2_S1_pcadd4, MEM2_S1_alu_result, MEM2_S1_mmio_mdata, MEM2_S1_imm;
+    logic [4:0]  MEM2_S1_rd;
+    logic [31:0] MEM2_S1_rd_oh;
+    logic        MEM2_S1_RegWrite, MEM2_S1_MemRead, MEM2_S1_bram_access;
+    logic [2:0]  MEM2_S1_MemToReg, MEM2_S1_funct3;
+    logic [31:0] MEM2_S1_csr_wb;
+    logic [31:0] MEM2_S1_mdata;
+    logic [31:0] MEM2_S1_forward_data;
 
     // -------------------------------------------------------------------------
     // MEM/WB 寄存器输出（即 WB 级输入）
@@ -151,11 +199,22 @@ module mycpu (
     logic        WB_RegWrite;
     logic [2:0]  WB_MemToReg, WB_funct3;
     logic [31:0] WB_csr_wb;
+    logic [31:0] WB_S1_pcadd4, WB_S1_alu_result, WB_S1_mdata, WB_S1_imm;
+    logic [4:0]  WB_S1_rd;
+    logic [31:0] WB_S1_rd_oh;
+    logic        WB_S1_RegWrite;
+    logic [2:0]  WB_S1_MemToReg, WB_S1_funct3;
+    logic [31:0] WB_S1_csr_wb;
 
     // -------------------------------------------------------------------------
     // WB 级输出（同时也是 reg_file 写口数据）
     // -------------------------------------------------------------------------
     logic [31:0] WB_wdata;
+    logic [31:0] WB_S1_wdata;
+
+    localparam logic [31:0] NOP_INSTR = 32'h0000_0013;
+
+    assign ID_instr1_effective = ID_issue_dual ? ID_instr1 : NOP_INSTR;
 
     assign ID_uses_rs1 = (ID_instr[6:0] == `R_TYPE  ) ||
                          (ID_instr[6:0] == `I_TYPE  ) ||
@@ -172,6 +231,23 @@ module mycpu (
                          (ID_instr[6:0] == `S_TYPE) ||
                          (ID_instr[6:0] == `B_TYPE);
 
+    assign ID_S1_uses_rs1 = ID_issue_dual &&
+                            ((ID_instr1_effective[6:0] == `R_TYPE  ) ||
+                             (ID_instr1_effective[6:0] == `I_TYPE  ) ||
+                             (ID_instr1_effective[6:0] == `IL_TYPE ) ||
+                             (ID_instr1_effective[6:0] == `IJ_TYPE ) ||
+                             (ID_instr1_effective[6:0] == `S_TYPE  ) ||
+                             (ID_instr1_effective[6:0] == `B_TYPE  ) ||
+                             ((ID_instr1_effective[6:0] == `CSR_TYPE) &&
+                              ((ID_instr1_effective[14:12] == 3'b001) ||
+                               (ID_instr1_effective[14:12] == 3'b010) ||
+                               (ID_instr1_effective[14:12] == 3'b011))));
+
+    assign ID_S1_uses_rs2 = ID_issue_dual &&
+                            ((ID_instr1_effective[6:0] == `R_TYPE) ||
+                             (ID_instr1_effective[6:0] == `S_TYPE) ||
+                             (ID_instr1_effective[6:0] == `B_TYPE));
+
     // =========================================================================
     // 冒险检测 / 前递选择
     // =========================================================================
@@ -180,6 +256,11 @@ module mycpu (
         .IF_ID_rs2     (ID_instr[24:20]),
         .IF_ID_uses_rs1(ID_uses_rs1    ),
         .IF_ID_uses_rs2(ID_uses_rs2    ),
+        .IF_ID_rs1_1   (ID_instr1_effective[19:15]),
+        .IF_ID_rs2_1   (ID_instr1_effective[24:20]),
+        .IF_ID_uses_rs1_1(ID_S1_uses_rs1),
+        .IF_ID_uses_rs2_1(ID_S1_uses_rs2),
+        .IF_ID_valid_1 (ID_issue_dual   ),
         .ID_EX_rd      (EX_rd          ),
         .ID_EX_MemRead (EX_MemRead     ),
         .EX_MEM_rd     (MEM_rd         ),
@@ -279,14 +360,39 @@ module mycpu (
     forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),
         .ID_EX_rs2       (EX_rs2      ),
-        .EX_MEM_rd       (MEM_rd      ),
-        .EX_MEM_valid    (MEM_RegWrite && !MEM_MemRead && (MEM_rd != 5'd0)),
-        .MEM2_rd         (MEM2_rd     ),
-        .MEM2_valid      (MEM2_RegWrite && !MEM2_MemRead && (MEM2_rd != 5'd0)),
-        .MEM_WB_rd       (WB_rd       ),
-        .MEM_WB_valid    (WB_RegWrite && (WB_rd != 5'd0)),
+        .EX_MEM_rd0      (MEM_rd      ),
+        .EX_MEM_valid0   (MEM_RegWrite && !MEM_MemRead && (MEM_rd != 5'd0)),
+        .EX_MEM_rd1      (MEM_S1_rd   ),
+        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
+        .MEM2_rd0        (MEM2_rd     ),
+        .MEM2_valid0     (MEM2_RegWrite && !MEM2_MemRead && (MEM2_rd != 5'd0)),
+        .MEM2_rd1        (MEM2_S1_rd  ),
+        .MEM2_valid1     (MEM2_S1_RegWrite && (MEM2_S1_rd != 5'd0)),
+        .MEM_WB_rd0      (WB_rd       ),
+        .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
+        .MEM_WB_rd1      (WB_S1_rd    ),
+        .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
         .ForwardA        (ForwardA    ),
         .ForwardB        (ForwardB    )
+    );
+
+    forwarding_unit u_forwarding_unit_s1 (
+        .ID_EX_rs1       (EX_S1_rs1   ),
+        .ID_EX_rs2       (EX_S1_rs2   ),
+        .EX_MEM_rd0      (MEM_rd      ),
+        .EX_MEM_valid0   (MEM_RegWrite && !MEM_MemRead && (MEM_rd != 5'd0)),
+        .EX_MEM_rd1      (MEM_S1_rd   ),
+        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
+        .MEM2_rd0        (MEM2_rd     ),
+        .MEM2_valid0     (MEM2_RegWrite && !MEM2_MemRead && (MEM2_rd != 5'd0)),
+        .MEM2_rd1        (MEM2_S1_rd  ),
+        .MEM2_valid1     (MEM2_S1_RegWrite && (MEM2_S1_rd != 5'd0)),
+        .MEM_WB_rd0      (WB_rd       ),
+        .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
+        .MEM_WB_rd1      (WB_S1_rd    ),
+        .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
+        .ForwardA        (ForwardA_S1 ),
+        .ForwardB        (ForwardB_S1 )
     );
 
     // =========================================================================
@@ -294,6 +400,7 @@ module mycpu (
     // =========================================================================
     mycpu_if_stage #(DATAWIDTH, RESET_VAL) u_if_stage (
         .irom_data       (irom_data      ),
+        .irom_data1      (irom_data1     ),
         .IF_npc_redirect (IF_npc_redirect),
         .clk             (clk            ),
         .rst             (rst            ),
@@ -303,11 +410,16 @@ module mycpu (
         .BP_update_pc    (redirect_bp_pc_q),
         .BP_update_taken (BP_update_taken),
         .irom_addr       (irom_addr      ),
+        .irom_addr1      (irom_addr1     ),
         .IF_pc           (IF_pc          ),
         .IF_instr        (IF_instr       ),
+        .IF_instr1       (IF_instr1      ),
+        .IF_issue_dual   (IF_issue_dual  ),
         .IF_pred_taken   (IF_pred_taken  ),
         .IF_pred_target  (IF_pred_target )
     );
+
+    assign IF_pc1 = IF_pc + 32'd4;
 
     // ---- IF/ID 流水寄存器 ----
     mycpu_if_id_reg #(DATAWIDTH) u_if_id_reg (
@@ -317,10 +429,16 @@ module mycpu (
         .Stall       (Stall_Front),
         .IF_pc       (IF_pc      ),
         .IF_instr    (IF_instr   ),
+        .IF_pc1      (IF_pc1     ),
+        .IF_instr1   (IF_instr1  ),
+        .IF_issue_dual(IF_issue_dual),
         .IF_pred_taken (IF_pred_taken),
         .IF_pred_target(IF_pred_target),
         .ID_pc       (ID_pc      ),
         .ID_instr    (ID_instr   ),
+        .ID_pc1      (ID_pc1     ),
+        .ID_instr1   (ID_instr1  ),
+        .ID_issue_dual(ID_issue_dual),
         .ID_pred_taken (ID_pred_taken),
         .ID_pred_target(ID_pred_target)
     );
@@ -351,16 +469,44 @@ module mycpu (
         .ID_rd           (ID_rd          )
     );
 
+    mycpu_id_stage #(DATAWIDTH) u_id_stage_s1 (
+        .ID_instr        (ID_instr1_effective),
+        .ID_imm          (ID_S1_imm         ),
+        .ID_RegWrite     (ID_S1_RegWrite    ),
+        .ID_MemWrite     (ID_S1_MemWrite    ),
+        .ID_MemRead      (ID_S1_MemRead     ),
+        .ID_ALUSrcA      (ID_S1_ALUSrcA     ),
+        .ID_ALUSrcB      (ID_S1_ALUSrcB     ),
+        .ID_MemToReg     (ID_S1_MemToReg    ),
+        .ID_NpcOp        (ID_S1_NpcOp       ),
+        .ID_OffsetOrigin (ID_S1_OffsetOrigin),
+        .ID_ALUControl   (ID_S1_ALUControl  ),
+        .ID_csr_idx      (ID_S1_csr_idx     ),
+        .ID_csr_zimm     (ID_S1_csr_zimm    ),
+        .ID_CSRControll  (ID_S1_CSRControll ),
+        .ID_funct3       (ID_S1_funct3      ),
+        .ID_rs1          (ID_S1_rs1         ),
+        .ID_rs2          (ID_S1_rs2         ),
+        .ID_rd           (ID_S1_rd          )
+    );
+
     reg_file #(ADDR_WIDTH, DATAWIDTH) rf_inst (                  // 实例名沿用 rf_inst，testbench 层级引用依赖此名
         .clk      (clk        ),
         .rst      (rst        ),
         .wen      (WB_RegWrite),                            // 来自 WB 级
         .waddr    (WB_rd      ),
         .wdata    (WB_wdata   ),
+        .wen2     (WB_S1_RegWrite),
+        .waddr2   (WB_S1_rd   ),
+        .wdata2   (WB_S1_wdata),
         .rR1      (ID_rs1     ),
         .rR2      (ID_rs2     ),
+        .rR3      (ID_S1_rs1  ),
+        .rR4      (ID_S1_rs2  ),
         .rR1_data (ID_rR1_data),
-        .rR2_data (ID_rR2_data)
+        .rR2_data (ID_rR2_data),
+        .rR3_data (ID_S1_rR1_data),
+        .rR4_data (ID_S1_rR2_data)
     );
 
     // ---- ID/EX 流水寄存器 ----
@@ -415,6 +561,57 @@ module mycpu (
         .EX_pred_target  (EX_pred_target )
     );
 
+    mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg_s1 (
+        .ID_pc           (ID_pc1         ),
+        .ID_imm          (ID_S1_imm      ),
+        .ID_rR1_data     (ID_S1_rR1_data ),
+        .ID_rR2_data     (ID_S1_rR2_data ),
+        .ID_rs1          (ID_S1_rs1      ),
+        .ID_rs2          (ID_S1_rs2      ),
+        .ID_rd           (ID_S1_rd       ),
+        .ID_RegWrite     (ID_S1_RegWrite ),
+        .ID_MemWrite     (ID_S1_MemWrite ),
+        .ID_MemRead      (ID_S1_MemRead  ),
+        .ID_MemToReg     (ID_S1_MemToReg ),
+        .ID_funct3       (ID_S1_funct3   ),
+        .ID_ALUSrcA      (ID_S1_ALUSrcA  ),
+        .ID_ALUSrcB      (ID_S1_ALUSrcB  ),
+        .ID_ALUControl   (ID_S1_ALUControl),
+        .ID_NpcOp        (ID_S1_NpcOp    ),
+        .ID_OffsetOrigin (ID_S1_OffsetOrigin),
+        .ID_csr_idx      (ID_S1_csr_idx  ),
+        .ID_csr_zimm     (ID_S1_csr_zimm ),
+        .ID_CSRControll  (ID_S1_CSRControll),
+        .ID_pred_taken   (1'b0           ),
+        .ID_pred_target  ('0             ),
+        .clk             (clk            ),
+        .rst             (rst            ),
+        .Flush_ID_EX     (Flush_ID_EX_comb),
+        .Stall_ID_EX     (EX_busy),
+        .EX_pc           (EX_S1_pc       ),
+        .EX_imm          (EX_S1_imm      ),
+        .EX_rR1_data     (EX_S1_rR1_data ),
+        .EX_rR2_data     (EX_S1_rR2_data ),
+        .EX_rs1          (EX_S1_rs1      ),
+        .EX_rs2          (EX_S1_rs2      ),
+        .EX_rd           (EX_S1_rd       ),
+        .EX_RegWrite     (EX_S1_RegWrite ),
+        .EX_MemWrite     (EX_S1_MemWrite ),
+        .EX_MemRead      (EX_S1_MemRead  ),
+        .EX_MemToReg     (EX_S1_MemToReg ),
+        .EX_funct3       (EX_S1_funct3   ),
+        .EX_ALUSrcA      (EX_S1_ALUSrcA  ),
+        .EX_ALUSrcB      (EX_S1_ALUSrcB  ),
+        .EX_ALUControl   (EX_S1_ALUControl),
+        .EX_NpcOp        (EX_S1_NpcOp    ),
+        .EX_OffsetOrigin (EX_S1_OffsetOrigin),
+        .EX_csr_idx      (EX_S1_csr_idx  ),
+        .EX_csr_zimm     (EX_S1_csr_zimm ),
+        .EX_CSRControll  (EX_S1_CSRControll),
+        .EX_pred_taken   (EX_S1_pred_taken),
+        .EX_pred_target  (EX_S1_pred_target)
+    );
+
     // =========================================================================
     // STAGE 3：EX（执行）
     //   双路前递选择 → RV32I 轻量 alu / RV32M 多周期单元 + csr_file + npc_calc
@@ -422,8 +619,11 @@ module mycpu (
     // =========================================================================
     mycpu_ex_stage #(DATAWIDTH) u_ex_stage (
         .MEM_forward_data (MEM_forward_data),
+        .MEM_S1_forward_data(MEM_S1_forward_data),
         .MEM2_forward_data(MEM2_forward_data),
+        .MEM2_S1_forward_data(MEM2_S1_forward_data),
         .WB_wdata         (WB_wdata        ),
+        .WB_S1_wdata      (WB_S1_wdata     ),
         .EX_pc            (EX_pc           ),
         .EX_imm           (EX_imm          ),
         .EX_rR1_data      (EX_rR1_data     ),
@@ -451,6 +651,42 @@ module mycpu (
         .BranchTaken      (BranchTaken_raw ),
         .BranchMispredict (BranchMispredict_raw),
         .EX_busy          (EX_busy         )
+    );
+
+    mycpu_ex_stage #(DATAWIDTH) u_ex_stage_s1 (
+        .MEM_forward_data (MEM_forward_data),
+        .MEM_S1_forward_data(MEM_S1_forward_data),
+        .MEM2_forward_data(MEM2_forward_data),
+        .MEM2_S1_forward_data(MEM2_S1_forward_data),
+        .WB_wdata         (WB_wdata        ),
+        .WB_S1_wdata      (WB_S1_wdata     ),
+        .EX_pc            (EX_S1_pc        ),
+        .EX_imm           (EX_S1_imm       ),
+        .EX_rR1_data      (EX_S1_rR1_data  ),
+        .EX_rR2_data      (EX_S1_rR2_data  ),
+        .EX_ALUControl    (EX_S1_ALUControl),
+        .EX_NpcOp         (EX_S1_NpcOp     ),
+        .EX_OffsetOrigin  (EX_S1_OffsetOrigin),
+        .EX_csr_idx       (EX_S1_csr_idx   ),
+        .EX_csr_zimm      (EX_S1_csr_zimm  ),
+        .EX_CSRControll   (EX_S1_CSRControll),
+        .ForwardA         (ForwardA_S1     ),
+        .ForwardB         (ForwardB_S1     ),
+        .EX_ALUSrcA       (EX_S1_ALUSrcA   ),
+        .EX_ALUSrcB       (EX_S1_ALUSrcB   ),
+        .EX_pred_taken    (1'b0            ),
+        .EX_pred_target   ('0              ),
+        .EX_stall         (1'b0            ),
+        .EX_kill          (redirect_valid_q),
+        .clk              (clk             ),
+        .rst              (rst             ),
+        .IF_npc_redirect_raw(IF_npc_redirect_raw_S1),
+        .EX_alu_result    (EX_S1_alu_result),
+        .EX_forward_B_out (EX_S1_forward_B_out),
+        .EX_csr_wb        (EX_S1_csr_wb    ),
+        .BranchTaken      (BranchTaken_raw_S1),
+        .BranchMispredict (BranchMispredict_raw_S1),
+        .EX_busy          (EX_busy_S1      )
     );
 
     // ---- EX/MEM 流水寄存器 ----
@@ -485,6 +721,39 @@ module mycpu (
         .MEM_MemRead      (MEM_MemRead     ),
         .MEM_MemToReg     (MEM_MemToReg    ),
         .MEM_funct3       (MEM_funct3      )
+    );
+
+    mycpu_ex_mem_reg #(DATAWIDTH, ADDR_WIDTH) u_ex_mem_reg_s1 (
+        .EX_pc            (EX_S1_pc        ),
+        .EX_alu_result    (EX_S1_alu_result),
+        .EX_forward_B_out (EX_S1_forward_B_out),
+        .EX_imm           (EX_S1_imm       ),
+        .EX_csr_wb        (EX_S1_csr_wb    ),
+        .EX_rd            (EX_S1_rd        ),
+        .EX_RegWrite      (EX_S1_RegWrite  ),
+        .EX_MemWrite      (1'b0            ),
+        .EX_MemRead       (1'b0            ),
+        .EX_MemToReg      (EX_S1_MemToReg  ),
+        .EX_funct3        (EX_S1_funct3    ),
+        .clk              (clk             ),
+        .rst              (rst             ),
+        .en               (~EX_busy        ),
+        .Flush_EX_MEM     (Flush_EX_MEM    ),
+        .MEM_pcadd4       (MEM_S1_pcadd4   ),
+        .MEM_alu_result   (MEM_S1_alu_result),
+        .MEM_perip_addr   (MEM_S1_perip_addr),
+        .MEM_perip_bus_addr(MEM_S1_perip_bus_addr),
+        .MEM_rR2_data     (MEM_S1_rR2_data ),
+        .MEM_imm          (MEM_S1_imm      ),
+        .MEM_csr_wb       (MEM_S1_csr_wb   ),
+        .MEM_forward_data (MEM_S1_forward_data),
+        .MEM_rd           (MEM_S1_rd       ),
+        .MEM_rd_oh        (MEM_S1_rd_oh    ),
+        .MEM_RegWrite     (MEM_S1_RegWrite ),
+        .MEM_MemWrite     (MEM_S1_MemWrite ),
+        .MEM_MemRead      (MEM_S1_MemRead  ),
+        .MEM_MemToReg     (MEM_S1_MemToReg ),
+        .MEM_funct3       (MEM_S1_funct3   )
     );
 
     // =========================================================================
@@ -540,12 +809,46 @@ module mycpu (
         .MEM2_bram_access (MEM2_bram_access)
     );
 
+    mycpu_mem1_mem2_reg #(DATAWIDTH, ADDR_WIDTH) u_mem1_mem2_reg_s1 (
+        .MEM_pcadd4       (MEM_S1_pcadd4      ),
+        .MEM_alu_result   (MEM_S1_alu_result  ),
+        .MEM_mdata        ('0                 ),
+        .MEM_imm          (MEM_S1_imm         ),
+        .MEM_csr_wb       (MEM_S1_csr_wb      ),
+        .MEM_rd           (MEM_S1_rd          ),
+        .MEM_rd_oh        (MEM_S1_rd_oh       ),
+        .MEM_RegWrite     (MEM_S1_RegWrite    ),
+        .MEM_MemRead      (1'b0               ),
+        .MEM_MemToReg     (MEM_S1_MemToReg    ),
+        .MEM_funct3       (MEM_S1_funct3      ),
+        .MEM_bram_access  (1'b0               ),
+        .clk              (clk                ),
+        .rst              (rst                ),
+        .MEM2_pcadd4      (MEM2_S1_pcadd4     ),
+        .MEM2_alu_result  (MEM2_S1_alu_result ),
+        .MEM2_mmio_mdata  (MEM2_S1_mmio_mdata ),
+        .MEM2_imm         (MEM2_S1_imm        ),
+        .MEM2_csr_wb      (MEM2_S1_csr_wb     ),
+        .MEM2_rd          (MEM2_S1_rd         ),
+        .MEM2_rd_oh       (MEM2_S1_rd_oh      ),
+        .MEM2_RegWrite    (MEM2_S1_RegWrite   ),
+        .MEM2_MemRead     (MEM2_S1_MemRead    ),
+        .MEM2_MemToReg    (MEM2_S1_MemToReg   ),
+        .MEM2_funct3      (MEM2_S1_funct3     ),
+        .MEM2_bram_access (MEM2_S1_bram_access)
+    );
+
     assign MEM2_mdata = (MEM2_MemRead && MEM2_bram_access) ? perip_rdata :
                                                               MEM2_mmio_mdata;
     assign MEM2_forward_data = (MEM2_MemToReg == 3'b100) ? MEM2_csr_wb    :
                                (MEM2_MemToReg == 3'b011) ? MEM2_imm       :
                                (MEM2_MemToReg == 3'b000) ? MEM2_pcadd4    :
                                                             MEM2_alu_result;
+    assign MEM2_S1_mdata = 32'b0;
+    assign MEM2_S1_forward_data = (MEM2_S1_MemToReg == 3'b100) ? MEM2_S1_csr_wb    :
+                                  (MEM2_S1_MemToReg == 3'b011) ? MEM2_S1_imm       :
+                                  (MEM2_S1_MemToReg == 3'b000) ? MEM2_S1_pcadd4    :
+                                                                  MEM2_S1_alu_result;
 
     // ---- MEM/WB 流水寄存器 ----
     mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (
@@ -574,6 +877,32 @@ module mycpu (
         .WB_funct3      (WB_funct3     )
     );
 
+    mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg_s1 (
+        .MEM_pcadd4     (MEM2_S1_pcadd4     ),
+        .MEM_alu_result (MEM2_S1_alu_result ),
+        .MEM_mdata      (MEM2_S1_mdata      ),
+        .MEM_imm        (MEM2_S1_imm        ),
+        .MEM_csr_wb     (MEM2_S1_csr_wb     ),
+        .MEM_rd         (MEM2_S1_rd         ),
+        .MEM_rd_oh      (MEM2_S1_rd_oh      ),
+        .MEM_RegWrite   (MEM2_S1_RegWrite   ),
+        .MEM_MemToReg   (MEM2_S1_MemToReg   ),
+        .MEM_funct3     (MEM2_S1_funct3     ),
+        .clk            (clk                ),
+        .rst            (rst                ),
+        .Flush_MEM_WB   (1'b0               ),
+        .WB_pcadd4      (WB_S1_pcadd4       ),
+        .WB_alu_result  (WB_S1_alu_result   ),
+        .WB_mdata       (WB_S1_mdata        ),
+        .WB_imm         (WB_S1_imm          ),
+        .WB_csr_wb      (WB_S1_csr_wb       ),
+        .WB_rd          (WB_S1_rd           ),
+        .WB_rd_oh       (WB_S1_rd_oh        ),
+        .WB_RegWrite    (WB_S1_RegWrite     ),
+        .WB_MemToReg    (WB_S1_MemToReg     ),
+        .WB_funct3      (WB_S1_funct3       )
+    );
+
     // =========================================================================
     // STAGE 5：WB（写回）
     //   5 路 MemToReg 选择；输出直接接到 reg_file 写口与 forwarding_unit 的候选源
@@ -587,6 +916,17 @@ module mycpu (
         .WB_MemToReg   (WB_MemToReg  ),
         .WB_funct3     (WB_funct3    ),
         .WB_wdata      (WB_wdata     )
+    );
+
+    mycpu_wb_stage #(DATAWIDTH) u_wb_stage_s1 (
+        .WB_pcadd4     (WB_S1_pcadd4    ),
+        .WB_alu_result (WB_S1_alu_result),
+        .WB_mdata      (WB_S1_mdata     ),
+        .WB_imm        (WB_S1_imm       ),
+        .WB_csr_wb     (WB_S1_csr_wb    ),
+        .WB_MemToReg   (WB_S1_MemToReg  ),
+        .WB_funct3     (WB_S1_funct3    ),
+        .WB_wdata      (WB_S1_wdata     )
     );
 
 endmodule

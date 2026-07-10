@@ -9,10 +9,15 @@
 //   预测正确时不冲刷流水线，pc_reg 已经沿预测路径继续取指。
 // =============================================================================
 module hazard_unit (
-    input  logic [4:0] IF_ID_rs1     ,                      // IF/ID 已译出的 rs1 号
-    input  logic [4:0] IF_ID_rs2     ,                      // IF/ID 已译出的 rs2 号
+    input  logic [4:0] IF_ID_rs1     ,                      // IF/ID 第一槽 rs1 号
+    input  logic [4:0] IF_ID_rs2     ,                      // IF/ID 第一槽 rs2 号
     input  logic       IF_ID_uses_rs1,
     input  logic       IF_ID_uses_rs2,
+    input  logic [4:0] IF_ID_rs1_1   ,                      // IF/ID 第二槽 rs1 号
+    input  logic [4:0] IF_ID_rs2_1   ,                      // IF/ID 第二槽 rs2 号
+    input  logic       IF_ID_uses_rs1_1,
+    input  logic       IF_ID_uses_rs2_1,
+    input  logic       IF_ID_valid_1 ,
     input  logic [4:0] ID_EX_rd      ,                      // ID/EX 已译出的 rd 号
     input  logic       ID_EX_MemRead ,                      // ID/EX 是 load 标志
     input  logic [4:0] EX_MEM_rd     ,                      // EX/MEM(MEM1) 写回目标
@@ -24,12 +29,24 @@ module hazard_unit (
 );
     // load-use 检测：EX 级 load 和 MEM1 级 load 都还不能被下一条指令消费。
     logic load_use_ex, load_use_mem;
+    logic hit_id_ex_slot0, hit_id_ex_slot1;
+    logic hit_ex_mem_slot0, hit_ex_mem_slot1;
+
+    assign hit_id_ex_slot0 = (IF_ID_uses_rs1 && (ID_EX_rd == IF_ID_rs1)) ||
+                             (IF_ID_uses_rs2 && (ID_EX_rd == IF_ID_rs2));
+    assign hit_id_ex_slot1 = IF_ID_valid_1 &&
+                             ((IF_ID_uses_rs1_1 && (ID_EX_rd == IF_ID_rs1_1)) ||
+                              (IF_ID_uses_rs2_1 && (ID_EX_rd == IF_ID_rs2_1)));
+    assign hit_ex_mem_slot0 = (IF_ID_uses_rs1 && (EX_MEM_rd == IF_ID_rs1)) ||
+                              (IF_ID_uses_rs2 && (EX_MEM_rd == IF_ID_rs2));
+    assign hit_ex_mem_slot1 = IF_ID_valid_1 &&
+                              ((IF_ID_uses_rs1_1 && (EX_MEM_rd == IF_ID_rs1_1)) ||
+                               (IF_ID_uses_rs2_1 && (EX_MEM_rd == IF_ID_rs2_1)));
+
     assign load_use_ex  = ID_EX_MemRead && (ID_EX_rd != 5'd0) &&
-                          ((IF_ID_uses_rs1 && (ID_EX_rd == IF_ID_rs1)) ||
-                           (IF_ID_uses_rs2 && (ID_EX_rd == IF_ID_rs2)));
+                          (hit_id_ex_slot0 || hit_id_ex_slot1);
     assign load_use_mem = EX_MEM_MemRead && (EX_MEM_rd != 5'd0) &&
-                          ((IF_ID_uses_rs1 && (EX_MEM_rd == IF_ID_rs1)) ||
-                           (IF_ID_uses_rs2 && (EX_MEM_rd == IF_ID_rs2)));
+                          (hit_ex_mem_slot0 || hit_ex_mem_slot1);
 
     // 输出：load-use → Stall + Flush_ID_EX；预测错误 → Flush_IF_ID + Flush_ID_EX
     assign Stall        = load_use_ex || load_use_mem;

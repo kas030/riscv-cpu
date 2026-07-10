@@ -46,16 +46,21 @@ CPU_SRCS := \
   $(SRC_CONTROL)/main_ctrl.sv \
   $(SRC_CONTROL)/imm_gen.sv \
   $(SRC_CONTROL)/npc_calc.sv \
+  $(SRC_CONTROL)/mycpu_decoder.sv \
+  $(SRC_CONTROL)/mycpu_redirect_ctrl.sv \
   $(SRC_CORE)/mycpu.sv \
   $(SRC_DATAPATH)/alu.sv \
   $(SRC_DATAPATH)/pc_reg.sv \
   $(SRC_DATAPATH)/reg_file.sv \
+  $(SRC_DATAPATH)/rv32m_unit.sv \
   $(SRC_HAZARD)/forwarding_unit.sv \
   $(SRC_HAZARD)/hazard_unit.sv \
   $(SRC_MEMORY)/load_mask.sv \
+  $(SRC_MEMORY)/mycpu_lsu.sv \
   $(SRC_PIPE_REG)/mycpu_if_id_reg.sv \
   $(SRC_PIPE_REG)/mycpu_id_ex_reg.sv \
   $(SRC_PIPE_REG)/mycpu_ex_mem_reg.sv \
+  $(SRC_PIPE_REG)/mycpu_mem1_mem2_reg.sv \
   $(SRC_PIPE_REG)/mycpu_mem_wb_reg.sv \
   $(SRC_PIPE_STAGE)/mycpu_if_stage.sv \
   $(SRC_PIPE_STAGE)/mycpu_id_stage.sv \

@@ -41,6 +41,7 @@ Thumbs.db
 
 # XSim generated files
 xsim.dir/
+vivado/manual_xsim/
 xelab.pb
 xvlog.pb
 *.sdb

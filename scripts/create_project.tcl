@@ -5,6 +5,13 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
+if {[info exists ::env(CODEX_REPO_ROOT)] && [file exists [file join $::env(CODEX_REPO_ROOT) AGENTS.md]]} {
+    set repo_root [string map {\\ /} $::env(CODEX_REPO_ROOT)]
+    set script_dir [file join $repo_root scripts]
+} elseif {[file exists [file join [pwd] AGENTS.md]]} {
+    set repo_root [file normalize [pwd]]
+    set script_dir [file join $repo_root scripts]
+}
 
 set project_name digital_twin
 set project_dir  [file join $repo_root vivado]
@@ -33,7 +40,7 @@ foreach tclstore_root {
 proc add_existing_files {fileset files} {
     set existing {}
     foreach file_path $files {
-        set normalized [file normalize $file_path]
+        set normalized [string map {\\ /} $file_path]
         if {[file exists $normalized]} {
             lappend existing $normalized
         } else {
@@ -49,7 +56,7 @@ proc add_existing_files {fileset files} {
 proc import_existing_files {fileset files} {
     set existing {}
     foreach file_path $files {
-        set normalized [file normalize $file_path]
+        set normalized [string map {\\ /} $file_path]
         if {[file exists $normalized]} {
             lappend existing $normalized
         } else {
@@ -67,7 +74,7 @@ proc glob_existing_files {patterns} {
     foreach pattern $patterns {
         foreach file_path [glob -nocomplain $pattern] {
             if {[file isfile $file_path]} {
-                lappend files [file normalize $file_path]
+                lappend files [string map {\\ /} $file_path]
             }
         }
     }
@@ -76,6 +83,7 @@ proc glob_existing_files {patterns} {
 
 proc create_pll_ip {project_dir project_name} {
     set pll_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip pll]
+    file delete -force $pll_ip_dir
     file mkdir $pll_ip_dir
 
     create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 \
@@ -95,7 +103,71 @@ proc create_pll_ip {project_dir project_name} {
     ] $pll_ip
 }
 
-if {[llength [current_project -quiet]] != 0} {
+proc create_irom_ip {project_dir project_name repo_root} {
+    set irom_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip IROM]
+    set irom_coe [string map {\\ /} [file join $repo_root sim coe mext irom-v2.coe]]
+    file delete -force $irom_ip_dir
+    file mkdir $irom_ip_dir
+
+    create_ip -name dist_mem_gen -vendor xilinx.com -library ip -version 8.0 \
+        -module_name IROM -dir $irom_ip_dir
+
+    set irom_ip [get_ips IROM]
+    set_property -dict [list \
+        CONFIG.Component_Name {IROM} \
+        CONFIG.depth {4096} \
+        CONFIG.data_width {32} \
+        CONFIG.memory_type {rom} \
+        CONFIG.input_options {non_registered} \
+        CONFIG.output_options {non_registered} \
+        CONFIG.Pipeline_Stages {0} \
+        CONFIG.coefficient_file $irom_coe \
+        CONFIG.default_data_radix {16} \
+        CONFIG.default_data {0} \
+    ] $irom_ip
+}
+
+proc create_bram_ip {project_dir project_name repo_root} {
+    set bram_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip BRAM]
+    set bram_coe [string map {\\ /} [file join $repo_root sim coe mext dram.coe]]
+    file delete -force $bram_ip_dir
+    file mkdir $bram_ip_dir
+
+    create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 \
+        -module_name BRAM -dir $bram_ip_dir
+
+    set bram_ip [get_ips BRAM]
+    set_property -dict [list \
+        CONFIG.Component_Name {BRAM} \
+        CONFIG.Interface_Type {Native} \
+        CONFIG.Memory_Type {True_Dual_Port_RAM} \
+        CONFIG.Write_Width_A {32} \
+        CONFIG.Write_Depth_A {65536} \
+        CONFIG.Read_Width_A {32} \
+        CONFIG.Write_Width_B {32} \
+        CONFIG.Read_Width_B {32} \
+        CONFIG.Operating_Mode_A {READ_FIRST} \
+        CONFIG.Operating_Mode_B {READ_FIRST} \
+        CONFIG.Enable_A {Use_ENA_Pin} \
+        CONFIG.Enable_B {Use_ENB_Pin} \
+        CONFIG.Use_Byte_Write_Enable {true} \
+        CONFIG.Byte_Size {8} \
+        CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
+        CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
+        CONFIG.Register_PortA_Output_of_Memory_Core {false} \
+        CONFIG.Register_PortB_Output_of_Memory_Core {false} \
+        CONFIG.Load_Init_File {true} \
+        CONFIG.Coe_File $bram_coe \
+        CONFIG.Port_A_Clock {200} \
+        CONFIG.Port_B_Clock {200} \
+        CONFIG.Fill_Remaining_Memory_Locations {true} \
+        CONFIG.Remaining_Memory_Locations {0} \
+        CONFIG.Use_RSTA_Pin {false} \
+        CONFIG.Use_RSTB_Pin {false} \
+    ] $bram_ip
+}
+
+if {[llength [get_projects -quiet]] != 0} {
     close_project
 }
 
@@ -133,11 +205,6 @@ set rtl_files [glob_existing_files [list \
     [file join $repo_root rtl top *.sv] \
 ]]
 
-set ip_files [list \
-    [file join $repo_root ip IROM IROM.xci] \
-    [file join $repo_root ip BRAM BRAM.xci] \
-]
-
 set mem_files [glob_existing_files [list \
     [file join $repo_root sim coe *.coe] \
     [file join $repo_root sim coe mext *.coe] \
@@ -147,7 +214,8 @@ set mem_files [glob_existing_files [list \
 ]]
 
 add_existing_files sources_1 [concat $mem_files $rtl_files]
-import_existing_files sources_1 $ip_files
+create_irom_ip $project_dir $project_name $repo_root
+create_bram_ip $project_dir $project_name $repo_root
 create_pll_ip $project_dir $project_name
 
 set imported_coe_dir [file join $project_dir ${project_name}.srcs sources_1 sim coe]
@@ -161,7 +229,7 @@ foreach coe_file [glob_existing_files [list [file join $repo_root sim coe mext *
     file copy -force $coe_file [file join $imported_mext_coe_dir [file tail $coe_file]]
 }
 
-set_property include_dirs [list [file normalize [file join $repo_root rtl common]]] [get_filesets sources_1]
+set_property include_dirs [list [string map {\\ /} [file join $repo_root rtl common]]] [get_filesets sources_1]
 set_property top top [get_filesets sources_1]
 
 add_existing_files constrs_1 [list [file join $repo_root constraints digital_twin.xdc]]
@@ -185,6 +253,11 @@ if {[llength $xci_files] != 0} {
     puts "INFO: generating IP output products"
     generate_target all $xci_files
     export_ip_user_files -of_objects $xci_files -no_script -sync -force -quiet
+}
+
+set coe_files [get_files -quiet *.coe]
+if {[llength $coe_files] != 0} {
+    set_property USED_IN {synthesis implementation} $coe_files
 }
 
 close_project

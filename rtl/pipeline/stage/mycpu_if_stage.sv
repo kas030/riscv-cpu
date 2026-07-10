@@ -12,7 +12,8 @@ module mycpu_if_stage #(
     parameter DATAWIDTH = 32                ,
     parameter RESET_VAL = 32'h8000_0000
 ) (
-    input  logic [DATAWIDTH - 1:0] irom_data       ,        // IROM 返回的指令
+    input  logic [DATAWIDTH - 1:0] irom_data       ,        // IROM 返回的第一槽指令
+    input  logic [DATAWIDTH - 1:0] irom_data1      ,        // IROM 返回的第二槽指令（pc+4）
     input  logic [DATAWIDTH - 1:0] IF_npc_redirect ,        // EX 级算出的跳转目标
     input  logic                   clk             ,
     input  logic                   rst             ,
@@ -21,14 +22,52 @@ module mycpu_if_stage #(
     input  logic                   BP_update_en    ,
     input  logic [DATAWIDTH - 1:0] BP_update_pc    ,
     input  logic                   BP_update_taken ,
-    output logic [DATAWIDTH - 1:0] irom_addr       ,        // 取指地址
+    output logic [DATAWIDTH - 1:0] irom_addr       ,        // 第一槽取指地址
+    output logic [DATAWIDTH - 1:0] irom_addr1      ,        // 第二槽取指地址
     output logic [DATAWIDTH - 1:0] IF_pc           ,        // 当前 pc_reg
     output logic [DATAWIDTH - 1:0] IF_instr        ,        // 当前取到的指令
+    output logic [DATAWIDTH - 1:0] IF_instr1       ,        // pc+4 取到的指令
+    output logic                   IF_issue_dual   ,
     output logic                   IF_pred_taken   ,
     output logic [DATAWIDTH - 1:0] IF_pred_target
 );
     // 取下一条指令地址：纠错重定向优先，其次使用动态分支预测。
     logic [DATAWIDTH - 1:0] IF_next_pc;
+    logic [DATAWIDTH - 1:0] IF_seq_pc;
+    logic                   IF_dual_candidate;
+    logic                   IF_slot_raw_hazard;
+
+    function automatic logic instr_uses_rs1(input logic [DATAWIDTH - 1:0] instr);
+        instr_uses_rs1 = (instr[6:0] == `R_TYPE  ) ||
+                         (instr[6:0] == `I_TYPE  ) ||
+                         (instr[6:0] == `IL_TYPE ) ||
+                         (instr[6:0] == `IJ_TYPE ) ||
+                         (instr[6:0] == `S_TYPE  ) ||
+                         (instr[6:0] == `B_TYPE  ) ||
+                         ((instr[6:0] == `CSR_TYPE) &&
+                          ((instr[14:12] == 3'b001) ||
+                           (instr[14:12] == 3'b010) ||
+                           (instr[14:12] == 3'b011)));
+    endfunction
+
+    function automatic logic instr_uses_rs2(input logic [DATAWIDTH - 1:0] instr);
+        instr_uses_rs2 = (instr[6:0] == `R_TYPE) ||
+                         (instr[6:0] == `S_TYPE) ||
+                         (instr[6:0] == `B_TYPE);
+    endfunction
+
+    function automatic logic instr_simple_dual(input logic [DATAWIDTH - 1:0] instr);
+        logic [6:0] opcode;
+        logic       is_m_ext;
+        begin
+            opcode = instr[6:0];
+            is_m_ext = (opcode == `R_TYPE) && (instr[31:25] == 7'b0000001);
+            instr_simple_dual = ((opcode == `R_TYPE) ||
+                                 (opcode == `I_TYPE) ||
+                                 (opcode == `U_TYPE) ||
+                                 (opcode == `UA_TYPE)) && !is_m_ext;
+        end
+    endfunction
 
     branch_predictor #(DATAWIDTH) u_branch_predictor (
         .clk             (clk            ),
@@ -42,9 +81,17 @@ module mycpu_if_stage #(
         .IF_pred_target  (IF_pred_target )
     );
 
-    assign IF_next_pc = BranchRedirect ? IF_npc_redirect :
-                        IF_pred_taken  ? IF_pred_target   :
-                                         (IF_pc + 4);
+    assign IF_slot_raw_hazard = (IF_instr[11:7] != 5'd0) &&
+                                ((instr_uses_rs1(irom_data1) && (IF_instr[11:7] == irom_data1[19:15])) ||
+                                 (instr_uses_rs2(irom_data1) && (IF_instr[11:7] == irom_data1[24:20])));
+    assign IF_dual_candidate = instr_simple_dual(IF_instr) &&
+                               instr_simple_dual(irom_data1) &&
+                               !IF_slot_raw_hazard;
+    assign IF_issue_dual = !IF_pred_taken && IF_dual_candidate;
+    assign IF_seq_pc     = IF_pc + (IF_issue_dual ? 32'd8 : 32'd4);
+    assign IF_next_pc    = BranchRedirect ? IF_npc_redirect :
+                           IF_pred_taken  ? IF_pred_target   :
+                                            IF_seq_pc;
 
     // pc_reg 寄存器；Stall=1 时 en=0，pc_reg 保持
     pc_reg #(DATAWIDTH, RESET_VAL) u_pc (
@@ -56,8 +103,10 @@ module mycpu_if_stage #(
     );
 
     // 把 pc_reg 当作取指地址送给 IROM；IROM 当周期吐出的数据即为指令
-    assign irom_addr = IF_pc;
-    assign IF_instr  = irom_data;
+    assign irom_addr  = IF_pc;
+    assign irom_addr1 = IF_pc + 32'd4;
+    assign IF_instr   = irom_data;
+    assign IF_instr1  = irom_data1;
 endmodule
 
 module branch_predictor #(
