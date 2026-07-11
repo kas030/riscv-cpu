@@ -40,8 +40,13 @@ module tb_myCPU;
 
     integer cnt_cycles    = 0;
     integer cnt_writeback = 0;
+    integer cnt_slot1_writeback = 0;
     integer cnt_store     = 0;
     integer cnt_branch    = 0;
+    integer cnt_dual_issue = 0;
+    integer cnt_stall_front = 0;
+    integer cnt_stall_hazard = 0;
+    integer cnt_ex_busy = 0;
     integer cnt_cond_branch      = 0;
     integer cnt_pred_taken       = 0;
     integer cnt_pred_correct     = 0;
@@ -60,6 +65,9 @@ module tb_myCPU;
               uut.student_top_inst.Core_cpu.rf_inst.waddr != 5'd0) ? 1 : 0) +
             ((uut.student_top_inst.Core_cpu.rf_inst.wen2 &&
               uut.student_top_inst.Core_cpu.rf_inst.waddr2 != 5'd0) ? 1 : 0);
+        if (uut.student_top_inst.Core_cpu.rf_inst.wen2 &&
+            uut.student_top_inst.Core_cpu.rf_inst.waddr2 != 5'd0)
+            cnt_slot1_writeback <= cnt_slot1_writeback + 1;
 
         // 存储指令（写 BRAM 或 MMIO）
         if (uut.student_top_inst.Core_cpu.perip_wen)
@@ -87,6 +95,15 @@ module tb_myCPU;
             cnt_flush_if_id <= cnt_flush_if_id + 1;
         if (uut.student_top_inst.Core_cpu.Flush_ID_EX)
             cnt_flush_id_ex <= cnt_flush_id_ex + 1;
+        if (uut.student_top_inst.Core_cpu.IF_issue_dual &&
+            !uut.student_top_inst.Core_cpu.Stall_Front)
+            cnt_dual_issue <= cnt_dual_issue + 1;
+        if (uut.student_top_inst.Core_cpu.Stall_Front)
+            cnt_stall_front <= cnt_stall_front + 1;
+        if (uut.student_top_inst.Core_cpu.Stall_Hazard)
+            cnt_stall_hazard <= cnt_stall_hazard + 1;
+        if (uut.student_top_inst.Core_cpu.EX_any_busy)
+            cnt_ex_busy <= cnt_ex_busy + 1;
     end
 
     // ===================================================================
@@ -111,8 +128,13 @@ module tb_myCPU;
         $display("--------------------------------------------------");
         $display(" cycles            : %0d", cnt_cycles);
         $display(" writeback (reg_file)    : %0d", cnt_writeback);
+        $display(" slot1 writeback   : %0d", cnt_slot1_writeback);
         $display(" stores            : %0d", cnt_store);
         $display(" taken branches    : %0d", cnt_branch);
+        $display(" dual issue packets: %0d", cnt_dual_issue);
+        $display(" front stall cycles: %0d", cnt_stall_front);
+        $display(" load/use stalls   : %0d", cnt_stall_hazard);
+        $display(" ex busy cycles    : %0d", cnt_ex_busy);
         $display(" cond branches     : %0d", cnt_cond_branch);
         $display(" pred taken        : %0d", cnt_pred_taken);
         $display(" pred correct      : %0d", cnt_pred_correct);

@@ -10,8 +10,9 @@
 //     - perip_addr / perip_wen / perip_mask /
 //       perip_wdata / perip_rdata             外设/BRAM 访存接口
 //   内部信号按 IF→ID→EX→MEM→WB 五级分组。第一槽沿用 `<stage>_<信号>` 命名，
-//   第二槽使用 `_S1` 后缀。当前双发射为保守 in-order 版本：仅简单整数类指令
-//   且无槽内 RAW 时同发，其他组合自动退化为单发射。
+//   第二槽使用 `_S1` 后缀。当前双发射为顺序提交版本：允许无槽内 RAW 的
+//   普通整数/M 扩展/单访存指令同发；同包双访存、同包双 M 和控制流组合
+//   自动退化为单发射。
 // =============================================================================
 module mycpu (
     input  logic         cpu_rst   ,
@@ -44,7 +45,7 @@ module mycpu (
     // Hazard / Forwarding 控制信号
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
-    logic        Stall_Hazard, EX_busy, Stall_Front, Flush_ID_EX_comb;
+    logic        Stall_Hazard, EX_busy, EX_any_busy, Stall_Front, Flush_ID_EX_comb;
     logic        Flush_EX_MEM;
     logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
     logic        BranchTaken, BranchTaken_raw;
@@ -56,7 +57,7 @@ module mycpu (
     logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
     logic [31:0] redirect_target_q, redirect_bp_pc_q;
     logic        BP_update_en, BP_update_taken;
-    logic        MEM_bram_access;
+    logic        MEM_bram_access, MEM_S1_bram_access, MEM_use_s1_bus;
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
@@ -263,8 +264,12 @@ module mycpu (
         .IF_ID_valid_1 (ID_issue_dual   ),
         .ID_EX_rd      (EX_rd          ),
         .ID_EX_MemRead (EX_MemRead     ),
+        .ID_EX_rd_1    (EX_S1_rd       ),
+        .ID_EX_MemRead_1(EX_S1_MemRead ),
         .EX_MEM_rd     (MEM_rd         ),
         .EX_MEM_MemRead(MEM_MemRead    ),
+        .EX_MEM_rd_1   (MEM_S1_rd      ),
+        .EX_MEM_MemRead_1(MEM_S1_MemRead),
         .BranchMispredict (BranchMispredict),
         .Stall         (Stall_Hazard   ),
         .Flush_IF_ID   (Flush_IF_ID    ),
@@ -272,6 +277,9 @@ module mycpu (
     );
 
     assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
+    assign MEM_S1_bram_access = is_bram_addr(MEM_S1_perip_addr);
+    assign MEM_use_s1_bus     = !(MEM_MemWrite || MEM_MemRead) &&
+                                (MEM_S1_MemWrite || MEM_S1_MemRead);
     assign Flush_EX_MEM       = redirect_valid_q;
 
     // redirect/flush 打拍提交：
@@ -313,7 +321,7 @@ module mycpu (
                 // 只有分支（非 jal/jalr）才需要更新预测器历史
                 redirect_bp_update_q <= (EX_NpcOp == 2'b01);
             // [优先级 3] 普通分支（预测正确），只需更新预测器，不需要重定向
-            end else if (!EX_busy && (EX_NpcOp == 2'b01)) begin
+            end else if (!EX_any_busy && (EX_NpcOp == 2'b01)) begin
                 redirect_bp_update_q <= 1'b1;
             end
         end
@@ -323,12 +331,13 @@ module mycpu (
 
     // 前半段统一停顿条件：
     //   1) 原有 load-use 冒险
-    //   2) EX 正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
+    //   2) 任一 EX 槽正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
     //   BRAM load 通过 MEM1/MEM2 后端流水返回，不再冻结整条前段流水。
-    assign Stall_Front     = Stall_Hazard | EX_busy;
+    assign EX_any_busy     = EX_busy | EX_busy_S1;
+    assign Stall_Front     = Stall_Hazard | EX_any_busy;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
     assign Flush_ID_EX_comb = redirect_valid_q ? 1'b1 :
-                               (Flush_ID_EX & ~EX_busy);
+                               (Flush_ID_EX & ~EX_any_busy);
     assign Stall           = Stall_Front;
 `ifndef SYNTHESIS
     always_ff @(posedge clk) begin
@@ -363,11 +372,11 @@ module mycpu (
         .EX_MEM_rd0      (MEM_rd      ),
         .EX_MEM_valid0   (MEM_RegWrite && !MEM_MemRead && (MEM_rd != 5'd0)),
         .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
+        .EX_MEM_valid1   (MEM_S1_RegWrite && !MEM_S1_MemRead && (MEM_S1_rd != 5'd0)),
         .MEM2_rd0        (MEM2_rd     ),
         .MEM2_valid0     (MEM2_RegWrite && !MEM2_MemRead && (MEM2_rd != 5'd0)),
         .MEM2_rd1        (MEM2_S1_rd  ),
-        .MEM2_valid1     (MEM2_S1_RegWrite && (MEM2_S1_rd != 5'd0)),
+        .MEM2_valid1     (MEM2_S1_RegWrite && !MEM2_S1_MemRead && (MEM2_S1_rd != 5'd0)),
         .MEM_WB_rd0      (WB_rd       ),
         .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
         .MEM_WB_rd1      (WB_S1_rd    ),
@@ -382,11 +391,11 @@ module mycpu (
         .EX_MEM_rd0      (MEM_rd      ),
         .EX_MEM_valid0   (MEM_RegWrite && !MEM_MemRead && (MEM_rd != 5'd0)),
         .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
+        .EX_MEM_valid1   (MEM_S1_RegWrite && !MEM_S1_MemRead && (MEM_S1_rd != 5'd0)),
         .MEM2_rd0        (MEM2_rd     ),
         .MEM2_valid0     (MEM2_RegWrite && !MEM2_MemRead && (MEM2_rd != 5'd0)),
         .MEM2_rd1        (MEM2_S1_rd  ),
-        .MEM2_valid1     (MEM2_S1_RegWrite && (MEM2_S1_rd != 5'd0)),
+        .MEM2_valid1     (MEM2_S1_RegWrite && !MEM2_S1_MemRead && (MEM2_S1_rd != 5'd0)),
         .MEM_WB_rd0      (WB_rd       ),
         .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
         .MEM_WB_rd1      (WB_S1_rd    ),
@@ -536,7 +545,7 @@ module mycpu (
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
-        .Stall_ID_EX     (EX_busy),
+        .Stall_ID_EX     (EX_any_busy),
         .EX_pc           (EX_pc          ),
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
@@ -587,7 +596,7 @@ module mycpu (
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
-        .Stall_ID_EX     (EX_busy),
+        .Stall_ID_EX     (EX_any_busy),
         .EX_pc           (EX_S1_pc       ),
         .EX_imm          (EX_S1_imm      ),
         .EX_rR1_data     (EX_S1_rR1_data ),
@@ -615,7 +624,7 @@ module mycpu (
     // =========================================================================
     // STAGE 3：EX（执行）
     //   双路前递选择 → RV32I 轻量 alu / RV32M 多周期单元 + csr_file + npc_calc
-    //   其中 RV32M 执行期间会拉高 EX_busy，冻结前半段流水并阻止 EX/MEM 更新
+    //   其中 RV32M 执行期间会拉高 EX_busy/EX_busy_S1，冻结前半段流水并阻止 EX/MEM 更新
     // =========================================================================
     mycpu_ex_stage #(DATAWIDTH) u_ex_stage (
         .MEM_forward_data (MEM_forward_data),
@@ -704,7 +713,7 @@ module mycpu (
         .EX_funct3        (EX_funct3       ),
         .clk              (clk             ),
         .rst              (rst             ),
-        .en               (~EX_busy),
+        .en               (~EX_any_busy),
         .Flush_EX_MEM     (Flush_EX_MEM    ),
         .MEM_pcadd4       (MEM_pcadd4      ),
         .MEM_alu_result   (MEM_alu_result  ),
@@ -731,13 +740,13 @@ module mycpu (
         .EX_csr_wb        (EX_S1_csr_wb    ),
         .EX_rd            (EX_S1_rd        ),
         .EX_RegWrite      (EX_S1_RegWrite  ),
-        .EX_MemWrite      (1'b0            ),
-        .EX_MemRead       (1'b0            ),
+        .EX_MemWrite      (EX_S1_MemWrite  ),
+        .EX_MemRead       (EX_S1_MemRead   ),
         .EX_MemToReg      (EX_S1_MemToReg  ),
         .EX_funct3        (EX_S1_funct3    ),
         .clk              (clk             ),
         .rst              (rst             ),
-        .en               (~EX_busy        ),
+        .en               (~EX_any_busy    ),
         .Flush_EX_MEM     (Flush_EX_MEM    ),
         .MEM_pcadd4       (MEM_S1_pcadd4   ),
         .MEM_alu_result   (MEM_S1_alu_result),
@@ -763,10 +772,10 @@ module mycpu (
     // =========================================================================
     mycpu_mem_stage #(DATAWIDTH) u_mem_stage (
         .perip_rdata      (perip_rdata     ),
-        .MEM_perip_addr   (MEM_perip_bus_addr),
-        .MEM_rR2_data     (MEM_rR2_data    ),
-        .MEM_funct3       (MEM_funct3      ),
-        .MEM_MemWrite     (MEM_MemWrite    ),
+        .MEM_perip_addr   (MEM_use_s1_bus ? MEM_S1_perip_bus_addr : MEM_perip_bus_addr),
+        .MEM_rR2_data     (MEM_use_s1_bus ? MEM_S1_rR2_data : MEM_rR2_data),
+        .MEM_funct3       (MEM_use_s1_bus ? MEM_S1_funct3 : MEM_funct3),
+        .MEM_MemWrite     (MEM_use_s1_bus ? MEM_S1_MemWrite : MEM_MemWrite),
         .perip_addr       (MEM_bus_addr    ),
         .perip_wdata      (MEM_bus_wdata   ),
         .MEM_mdata        (MEM_mdata       ),
@@ -777,7 +786,8 @@ module mycpu (
     assign perip_wen   = MEM_bus_wen;
     assign perip_wdata = MEM_bus_wdata;
     assign perip_mask  = MEM_bus_mask;
-    assign perip_addr  = (MEM_MemWrite || MEM_MemRead) ? MEM_bus_addr : 32'b0;
+    assign perip_addr  = (MEM_MemWrite || MEM_MemRead ||
+                          MEM_S1_MemWrite || MEM_S1_MemRead) ? MEM_bus_addr : 32'b0;
 
     // ---- MEM1/MEM2 流水寄存器 ----
     mycpu_mem1_mem2_reg #(DATAWIDTH, ADDR_WIDTH) u_mem1_mem2_reg (
@@ -812,16 +822,16 @@ module mycpu (
     mycpu_mem1_mem2_reg #(DATAWIDTH, ADDR_WIDTH) u_mem1_mem2_reg_s1 (
         .MEM_pcadd4       (MEM_S1_pcadd4      ),
         .MEM_alu_result   (MEM_S1_alu_result  ),
-        .MEM_mdata        ('0                 ),
+        .MEM_mdata        (MEM_mdata          ),
         .MEM_imm          (MEM_S1_imm         ),
         .MEM_csr_wb       (MEM_S1_csr_wb      ),
         .MEM_rd           (MEM_S1_rd          ),
         .MEM_rd_oh        (MEM_S1_rd_oh       ),
         .MEM_RegWrite     (MEM_S1_RegWrite    ),
-        .MEM_MemRead      (1'b0               ),
+        .MEM_MemRead      (MEM_S1_MemRead     ),
         .MEM_MemToReg     (MEM_S1_MemToReg    ),
         .MEM_funct3       (MEM_S1_funct3      ),
-        .MEM_bram_access  (1'b0               ),
+        .MEM_bram_access  (MEM_S1_bram_access ),
         .clk              (clk                ),
         .rst              (rst                ),
         .MEM2_pcadd4      (MEM2_S1_pcadd4     ),
@@ -844,7 +854,8 @@ module mycpu (
                                (MEM2_MemToReg == 3'b011) ? MEM2_imm       :
                                (MEM2_MemToReg == 3'b000) ? MEM2_pcadd4    :
                                                             MEM2_alu_result;
-    assign MEM2_S1_mdata = 32'b0;
+    assign MEM2_S1_mdata = (MEM2_S1_MemRead && MEM2_S1_bram_access) ? perip_rdata :
+                                                                    MEM2_S1_mmio_mdata;
     assign MEM2_S1_forward_data = (MEM2_S1_MemToReg == 3'b100) ? MEM2_S1_csr_wb    :
                                   (MEM2_S1_MemToReg == 3'b011) ? MEM2_S1_imm       :
                                   (MEM2_S1_MemToReg == 3'b000) ? MEM2_S1_pcadd4    :

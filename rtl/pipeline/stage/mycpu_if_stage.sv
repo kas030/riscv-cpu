@@ -36,6 +36,8 @@ module mycpu_if_stage #(
     logic [DATAWIDTH - 1:0] IF_seq_pc;
     logic                   IF_dual_candidate;
     logic                   IF_slot_raw_hazard;
+    logic                   IF_slot_mem_conflict;
+    logic                   IF_slot_m_conflict;
 
     function automatic logic instr_uses_rs1(input logic [DATAWIDTH - 1:0] instr);
         instr_uses_rs1 = (instr[6:0] == `R_TYPE  ) ||
@@ -56,16 +58,46 @@ module mycpu_if_stage #(
                          (instr[6:0] == `B_TYPE);
     endfunction
 
-    function automatic logic instr_simple_dual(input logic [DATAWIDTH - 1:0] instr);
+    function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
-        logic       is_m_ext;
         begin
             opcode = instr[6:0];
-            is_m_ext = (opcode == `R_TYPE) && (instr[31:25] == 7'b0000001);
-            instr_simple_dual = ((opcode == `R_TYPE) ||
-                                 (opcode == `I_TYPE) ||
-                                 (opcode == `U_TYPE) ||
-                                 (opcode == `UA_TYPE)) && !is_m_ext;
+            instr_writes_rd = (opcode == `R_TYPE ) ||
+                              (opcode == `I_TYPE ) ||
+                              (opcode == `IL_TYPE) ||
+                              (opcode == `IJ_TYPE) ||
+                              (opcode == `J_TYPE ) ||
+                              (opcode == `U_TYPE ) ||
+                              (opcode == `UA_TYPE) ||
+                              ((opcode == `CSR_TYPE) &&
+                               ((instr[14:12] == 3'b001) ||
+                                (instr[14:12] == 3'b010) ||
+                                (instr[14:12] == 3'b011) ||
+                                (instr[14:12] == 3'b101) ||
+                                (instr[14:12] == 3'b110) ||
+                                (instr[14:12] == 3'b111)));
+        end
+    endfunction
+
+    function automatic logic instr_is_mem(input logic [DATAWIDTH - 1:0] instr);
+        instr_is_mem = (instr[6:0] == `IL_TYPE) || (instr[6:0] == `S_TYPE);
+    endfunction
+
+    function automatic logic instr_is_m_ext(input logic [DATAWIDTH - 1:0] instr);
+        instr_is_m_ext = (instr[6:0] == `R_TYPE) && (instr[31:25] == 7'b0000001);
+    endfunction
+
+    function automatic logic instr_can_dual(input logic [DATAWIDTH - 1:0] instr);
+        logic [6:0] opcode;
+        begin
+            opcode = instr[6:0];
+            // 只把无控制流/无 CSR 副作用的普通整数、M 扩展和单访存指令放进双发射包。
+            instr_can_dual = (opcode == `R_TYPE ) ||
+                             (opcode == `I_TYPE ) ||
+                             (opcode == `IL_TYPE) ||
+                             (opcode == `S_TYPE ) ||
+                             (opcode == `U_TYPE ) ||
+                             (opcode == `UA_TYPE);
         end
     endfunction
 
@@ -81,11 +113,16 @@ module mycpu_if_stage #(
         .IF_pred_target  (IF_pred_target )
     );
 
-    assign IF_slot_raw_hazard = (IF_instr[11:7] != 5'd0) &&
+    assign IF_slot_raw_hazard = instr_writes_rd(IF_instr) &&
+                                (IF_instr[11:7] != 5'd0) &&
                                 ((instr_uses_rs1(irom_data1) && (IF_instr[11:7] == irom_data1[19:15])) ||
                                  (instr_uses_rs2(irom_data1) && (IF_instr[11:7] == irom_data1[24:20])));
-    assign IF_dual_candidate = instr_simple_dual(IF_instr) &&
-                               instr_simple_dual(irom_data1) &&
+    assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(irom_data1);
+    assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(irom_data1);
+    assign IF_dual_candidate = instr_can_dual(IF_instr) &&
+                               instr_can_dual(irom_data1) &&
+                               !IF_slot_mem_conflict &&
+                               !IF_slot_m_conflict &&
                                !IF_slot_raw_hazard;
     assign IF_issue_dual = !IF_pred_taken && IF_dual_candidate;
     assign IF_seq_pc     = IF_pc + (IF_issue_dual ? 32'd8 : 32'd4);

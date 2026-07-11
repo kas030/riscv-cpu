@@ -41,8 +41,13 @@ module tb_cpu_only;
 
     longint unsigned cycles = 64'd0;
     longint unsigned cnt_writeback = 64'd0;
+    longint unsigned cnt_slot1_writeback = 64'd0;
     longint unsigned cnt_store = 64'd0;
     longint unsigned cnt_branch = 64'd0;
+    longint unsigned cnt_dual_issue = 64'd0;
+    longint unsigned cnt_stall_front = 64'd0;
+    longint unsigned cnt_stall_hazard = 64'd0;
+    longint unsigned cnt_ex_busy = 64'd0;
     longint unsigned approx_inst;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
@@ -362,8 +367,13 @@ module tb_cpu_only;
                 $display(" cpu_freq_mhz      : %0.3f", CPU_FREQ_MHZ);
                 $display(" cpu_period_ns     : %0.6f", CPU_HALF_PERIOD_NS * 2.0);
                 $display(" writeback (reg_file)    : %0d", cnt_writeback);
+                $display(" slot1 writeback   : %0d", cnt_slot1_writeback);
                 $display(" stores            : %0d", cnt_store);
                 $display(" taken branches    : %0d", cnt_branch);
+                $display(" dual issue packets: %0d", cnt_dual_issue);
+                $display(" front stall cycles: %0d", cnt_stall_front);
+                $display(" load/use stalls   : %0d", cnt_stall_hazard);
+                $display(" ex busy cycles    : %0d", cnt_ex_busy);
                 $display(" approx total inst : %0d", approx_inst);
                 if (approx_inst > 0)
                     $display(" CPI (approx)      : %0.3f", cycles * 1.0 / approx_inst);
@@ -381,10 +391,20 @@ module tb_cpu_only;
             cnt_writeback <= cnt_writeback +
                              ((dut.rf_inst.wen && dut.rf_inst.waddr != 5'd0) ? 1 : 0) +
                              ((dut.rf_inst.wen2 && dut.rf_inst.waddr2 != 5'd0) ? 1 : 0);
+            if (dut.rf_inst.wen2 && dut.rf_inst.waddr2 != 5'd0)
+                cnt_slot1_writeback <= cnt_slot1_writeback + 1;
             if (perip_wen)
                 cnt_store <= cnt_store + 1;
             if (dut.BranchTaken)
                 cnt_branch <= cnt_branch + 1;
+            if (dut.IF_issue_dual && !dut.Stall_Front)
+                cnt_dual_issue <= cnt_dual_issue + 1;
+            if (dut.Stall_Front)
+                cnt_stall_front <= cnt_stall_front + 1;
+            if (dut.Stall_Hazard)
+                cnt_stall_hazard <= cnt_stall_hazard + 1;
+            if (dut.EX_any_busy)
+                cnt_ex_busy <= cnt_ex_busy + 1;
         end
     end
 
