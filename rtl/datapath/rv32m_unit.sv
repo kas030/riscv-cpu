@@ -40,6 +40,7 @@ module rv32m_unit #(
     logic [DATAWIDTH-1:0] mul_operand_a_q, mul_operand_b_q;
     logic [63:0] product_uu_fast;
     logic signed [63:0] product_ss_fast, product_su_fast;
+    logic [31:0] product_hi_uu_q, product_hi_ss_q, product_hi_su_q;
     logic [32:0] remainder_q, rem_shift, rem_next;
     logic [31:0] quotient_q, quotient_next, quotient_final, divisor_q;
     logic        rem_ge_divisor;
@@ -91,6 +92,9 @@ module rv32m_unit #(
             special_result_q <= '0;
             mul_operand_a_q  <= '0;
             mul_operand_b_q  <= '0;
+            product_hi_uu_q  <= '0;
+            product_hi_ss_q  <= '0;
+            product_hi_su_q  <= '0;
             remainder_q      <= '0;
             quotient_q       <= '0;
             divisor_q        <= '0;
@@ -103,7 +107,9 @@ module rv32m_unit #(
                 op_sel_q        <= op_mul ? OP_MUL :
                                    op_mulh ? OP_MULH :
                                    op_mulhsu ? OP_MULHSU : OP_MULHU;
-                cycles_left_q   <= 6'd1;
+                // 普通 MUL 仅取低 32 位，保持原延迟；三种高位乘法
+                // 增加一级结果寄存，切断 DSP/符号修正长路径。
+                cycles_left_q   <= op_mul ? 6'd1 : 6'd2;
                 mul_operand_a_q <= operand_a;
                 mul_operand_b_q <= operand_b;
             end else begin
@@ -136,14 +142,19 @@ module rv32m_unit #(
                 special_q <= 1'b0;
                 result_q  <= special_result_q;
             end else if (mode_mul_q) begin
-                if (cycles_left_q == 6'd1) begin
+                if (cycles_left_q == 6'd2) begin
+                    product_hi_uu_q <= product_uu_fast[63:32];
+                    product_hi_ss_q <= product_ss_fast[63:32];
+                    product_hi_su_q <= product_su_fast[63:32];
+                    cycles_left_q   <= 6'd1;
+                end else if (cycles_left_q == 6'd1) begin
                     busy_q <= 1'b0;
                     done_q <= 1'b1;
                     case (op_sel_q)
                         OP_MUL:    result_q <= product_uu_fast[31:0];
-                        OP_MULH:   result_q <= product_ss_fast[63:32];
-                        OP_MULHSU: result_q <= product_su_fast[63:32];
-                        default:   result_q <= product_uu_fast[63:32];
+                        OP_MULH:   result_q <= product_hi_ss_q;
+                        OP_MULHSU: result_q <= product_hi_su_q;
+                        default:   result_q <= product_hi_uu_q;
                     endcase
                 end
             end else begin

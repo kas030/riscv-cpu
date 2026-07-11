@@ -34,29 +34,12 @@ module mycpu_if_stage #(
     // 取下一条指令地址：纠错重定向优先，其次使用动态分支预测。
     logic [DATAWIDTH - 1:0] IF_next_pc;
     logic [DATAWIDTH - 1:0] IF_seq_pc;
+    (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus4;
+    (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus8;
     logic                   IF_dual_candidate;
     logic                   IF_slot_raw_hazard;
     logic                   IF_slot_mem_conflict;
     logic                   IF_slot_m_conflict;
-
-    function automatic logic instr_uses_rs1(input logic [DATAWIDTH - 1:0] instr);
-        instr_uses_rs1 = (instr[6:0] == `R_TYPE  ) ||
-                         (instr[6:0] == `I_TYPE  ) ||
-                         (instr[6:0] == `IL_TYPE ) ||
-                         (instr[6:0] == `IJ_TYPE ) ||
-                         (instr[6:0] == `S_TYPE  ) ||
-                         (instr[6:0] == `B_TYPE  ) ||
-                         ((instr[6:0] == `CSR_TYPE) &&
-                          ((instr[14:12] == 3'b001) ||
-                           (instr[14:12] == 3'b010) ||
-                           (instr[14:12] == 3'b011)));
-    endfunction
-
-    function automatic logic instr_uses_rs2(input logic [DATAWIDTH - 1:0] instr);
-        instr_uses_rs2 = (instr[6:0] == `R_TYPE) ||
-                         (instr[6:0] == `S_TYPE) ||
-                         (instr[6:0] == `B_TYPE);
-    endfunction
 
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
@@ -113,10 +96,13 @@ module mycpu_if_stage #(
         .IF_pred_target  (IF_pred_target )
     );
 
+    // IF 级处在 PC -> IROM -> issue -> next-PC 关键回路上。这里保守地
+    // 同时比较第二槽的 rs1/rs2 字段，避免串接 opcode -> uses_rs 译码。
+    // I/U 类指令可能因立即数字段偶合而少发射，但不影响正确性。
     assign IF_slot_raw_hazard = instr_writes_rd(IF_instr) &&
                                 (IF_instr[11:7] != 5'd0) &&
-                                ((instr_uses_rs1(irom_data1) && (IF_instr[11:7] == irom_data1[19:15])) ||
-                                 (instr_uses_rs2(irom_data1) && (IF_instr[11:7] == irom_data1[24:20])));
+                                ((IF_instr[11:7] == irom_data1[19:15]) ||
+                                 (IF_instr[11:7] == irom_data1[24:20]));
     assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(irom_data1);
     assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(irom_data1);
     assign IF_dual_candidate = instr_can_dual(IF_instr) &&
@@ -125,7 +111,11 @@ module mycpu_if_stage #(
                                !IF_slot_m_conflict &&
                                !IF_slot_raw_hazard;
     assign IF_issue_dual = !IF_pred_taken && IF_dual_candidate;
-    assign IF_seq_pc     = IF_pc + (IF_issue_dual ? 32'd8 : 32'd4);
+    // 并行预计算两个顺序地址，避免 IF_issue_dual 进入 32 位加法器
+    // 的进位链。keep 防止综合器重新合并为带可变加数的单个加法器。
+    assign IF_pc_plus4 = IF_pc + 32'd4;
+    assign IF_pc_plus8 = IF_pc + 32'd8;
+    assign IF_seq_pc   = IF_issue_dual ? IF_pc_plus8 : IF_pc_plus4;
     assign IF_next_pc    = BranchRedirect ? IF_npc_redirect :
                            IF_pred_taken  ? IF_pred_target   :
                                             IF_seq_pc;

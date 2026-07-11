@@ -674,11 +674,13 @@ module mycpu (
         .EX_rR1_data      (EX_S1_rR1_data  ),
         .EX_rR2_data      (EX_S1_rR2_data  ),
         .EX_ALUControl    (EX_S1_ALUControl),
-        .EX_NpcOp         (EX_S1_NpcOp     ),
-        .EX_OffsetOrigin  (EX_S1_OffsetOrigin),
-        .EX_csr_idx       (EX_S1_csr_idx   ),
-        .EX_csr_zimm      (EX_S1_csr_zimm  ),
-        .EX_CSRControll   (EX_S1_CSRControll),
+        // lane1 只接收 IF 级筛选后的普通整数/M/单访存指令，
+        // 静态关闭不可达的控制流与 CSR 通路，便于综合删除冗余状态。
+        .EX_NpcOp         (2'b00           ),
+        .EX_OffsetOrigin  (2'b00           ),
+        .EX_csr_idx       (12'b0           ),
+        .EX_csr_zimm      (5'b0            ),
+        .EX_CSRControll   (6'b0            ),
         .ForwardA         (ForwardA_S1     ),
         .ForwardB         (ForwardB_S1     ),
         .EX_ALUSrcA       (EX_S1_ALUSrcA   ),

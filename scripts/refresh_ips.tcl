@@ -44,6 +44,13 @@ if {[llength $ips] != 0} {
             puts "WARN: upgrade_ip returned: $upgrade_err"
         }
         reset_target all $ip
+        if {[get_property NAME $ip] eq "BRAM"} {
+            set bram_xci [get_files -quiet -all *BRAM.xci]
+            if {[llength $bram_xci] != 0} {
+                set_property GENERATE_SYNTH_CHECKPOINT false $bram_xci
+                puts "INFO: BRAM uses global synthesis to inherit the top-level clock"
+            }
+        }
         generate_target all $ip
     }
     export_ip_user_files -of_objects $ips -no_script -sync -force -quiet
