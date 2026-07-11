@@ -213,9 +213,69 @@ module mycpu (
     logic [31:0] WB_wdata;
     logic [31:0] WB_S1_wdata;
 
+`ifndef SYNTHESIS
+    // 仿真性能统计使用的架构有效位。每一级严格复刻对应流水寄存器的
+    // flush / stall / enable 语义，不参与综合后的功能数据通路。
+    logic ID_valid, ID_S1_valid;
+    logic EX_valid, EX_S1_valid;
+    logic MEM_valid, MEM_S1_valid;
+    logic MEM2_valid, MEM2_S1_valid;
+    logic WB_retire_valid0, WB_retire_valid1;
+    logic MEM2_store0, MEM2_store1;
+    logic WB_retire_store0, WB_retire_store1;
+`endif
+
     localparam logic [31:0] NOP_INSTR = 32'h0000_0013;
 
     assign ID_instr1_effective = ID_issue_dual ? ID_instr1 : NOP_INSTR;
+
+`ifndef SYNTHESIS
+    always_ff @(posedge clk) begin
+        if (rst || Flush_IF_ID) begin
+            ID_valid    <= 1'b0;
+            ID_S1_valid <= 1'b0;
+        end else if (!Stall_Front) begin
+            ID_valid    <= 1'b1;
+            ID_S1_valid <= IF_issue_dual;
+        end
+
+        if (rst || Flush_ID_EX_comb) begin
+            EX_valid    <= 1'b0;
+            EX_S1_valid <= 1'b0;
+        end else if (!EX_any_busy) begin
+            EX_valid    <= ID_valid;
+            EX_S1_valid <= ID_S1_valid;
+        end
+
+        if (rst || Flush_EX_MEM) begin
+            MEM_valid    <= 1'b0;
+            MEM_S1_valid <= 1'b0;
+        end else if (!EX_any_busy) begin
+            MEM_valid    <= EX_valid;
+            MEM_S1_valid <= EX_S1_valid;
+        end
+
+        if (rst) begin
+            MEM2_valid       <= 1'b0;
+            MEM2_S1_valid    <= 1'b0;
+            MEM2_store0      <= 1'b0;
+            MEM2_store1      <= 1'b0;
+            WB_retire_valid0 <= 1'b0;
+            WB_retire_valid1 <= 1'b0;
+            WB_retire_store0 <= 1'b0;
+            WB_retire_store1 <= 1'b0;
+        end else begin
+            MEM2_valid       <= MEM_valid;
+            MEM2_S1_valid    <= MEM_S1_valid;
+            MEM2_store0      <= MEM_valid && MEM_MemWrite;
+            MEM2_store1      <= MEM_S1_valid && MEM_S1_MemWrite;
+            WB_retire_valid0 <= MEM2_valid;
+            WB_retire_valid1 <= MEM2_S1_valid;
+            WB_retire_store0 <= MEM2_store0;
+            WB_retire_store1 <= MEM2_store1;
+        end
+    end
+`endif
 
     assign ID_uses_rs1 = (ID_instr[6:0] == `R_TYPE  ) ||
                          (ID_instr[6:0] == `I_TYPE  ) ||
