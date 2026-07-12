@@ -61,11 +61,34 @@ module mycpu (
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
+    logic        MEM_bram_load;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
 
     function automatic logic is_bram_addr(input logic [31:0] addr);
         is_bram_addr = (addr[31:18] == BRAM_ADDR_TAG);
+    endfunction
+
+    function automatic logic [31:0] select_load_raw(
+        input logic [31:0] word,
+        input logic [2:0]  funct3,
+        input logic [1:0]  offset
+    );
+        begin
+            case (funct3[1:0])
+                2'b00: begin
+                    case (offset)
+                        2'b00: select_load_raw = {24'b0, word[7:0]};
+                        2'b01: select_load_raw = {24'b0, word[15:8]};
+                        2'b10: select_load_raw = {24'b0, word[23:16]};
+                        default: select_load_raw = {24'b0, word[31:24]};
+                    endcase
+                end
+                2'b01: select_load_raw = offset[1] ? {16'b0, word[31:16]} :
+                                                    {16'b0, word[15:0]};
+                default: select_load_raw = word;
+            endcase
+        end
     endfunction
 
     // -------------------------------------------------------------------------
@@ -866,7 +889,10 @@ module mycpu (
 
     assign perip_wen   = MEM_bus_wen;
     assign perip_wdata = MEM_bus_wdata;
-    assign perip_mask  = MEM_bus_mask;
+    assign MEM_bram_load = (MEM_MemRead && MEM_bram_access) ||
+                           (MEM_S1_MemRead && MEM_S1_bram_access);
+    // BRAM load 始终读取完整字；store 与 MMIO 保持原 mask 语义。
+    assign perip_mask  = MEM_bram_load ? 2'b10 : MEM_bus_mask;
     assign perip_addr  = (MEM_MemWrite || MEM_MemRead ||
                           MEM_S1_MemWrite || MEM_S1_MemRead) ? MEM_bus_addr : 32'b0;
 
@@ -876,13 +902,11 @@ module mycpu (
         .clk          (clk),
         .rst          (rst),
         .lookup_addr  (MEM_use_s1_bus ? MEM_S1_perip_bus_addr : MEM_perip_bus_addr),
-        .lookup_width (MEM_use_s1_bus ? MEM_S1_funct3[1:0] : MEM_funct3[1:0]),
         .lookup_hit   (MEM_cache_hit),
         .lookup_data  (MEM_cache_data),
         .fill_en      ((MEM2_MemRead && MEM2_bram_access) ||
                        (MEM2_S1_MemRead && MEM2_S1_bram_access)),
         .fill_addr    (MEM2_MemRead ? MEM2_alu_result : MEM2_S1_alu_result),
-        .fill_width   (MEM2_MemRead ? MEM2_funct3[1:0] : MEM2_S1_funct3[1:0]),
         .fill_data    (perip_rdata),
         .store_en     (MEM_bus_wen && is_bram_addr(MEM_bus_addr)),
         .store_addr   (MEM_bus_addr)
@@ -899,8 +923,10 @@ module mycpu (
         end else begin
             MEM2_cache_hit       <= MEM_cache_hit0;
             MEM2_S1_cache_hit    <= MEM_cache_hit1;
-            MEM2_cache_data      <= MEM_cache_data;
-            MEM2_S1_cache_data   <= MEM_cache_data;
+            MEM2_cache_data      <= select_load_raw(MEM_cache_data, MEM_funct3,
+                                                     MEM_perip_bus_addr[1:0]);
+            MEM2_S1_cache_data   <= select_load_raw(MEM_cache_data, MEM_S1_funct3,
+                                                     MEM_S1_perip_bus_addr[1:0]);
         end
     end
 
@@ -963,8 +989,9 @@ module mycpu (
         .MEM2_bram_access (MEM2_S1_bram_access)
     );
 
-    assign MEM2_mdata = (MEM2_MemRead && MEM2_bram_access) ? perip_rdata :
-                                                              MEM2_mmio_mdata;
+    assign MEM2_mdata = (MEM2_MemRead && MEM2_bram_access) ?
+                        select_load_raw(perip_rdata, MEM2_funct3,
+                                        MEM2_alu_result[1:0]) : MEM2_mmio_mdata;
     load_mask #(DATAWIDTH) u_mem2_cache_load_mask (
         .mask  (MEM2_funct3          ),
         .dout  (MEM2_cache_data      ),
@@ -975,8 +1002,9 @@ module mycpu (
                                (MEM2_MemToReg == 3'b000) ? MEM2_pcadd4    :
                                (MEM2_cache_hit)           ? MEM2_cache_load_data :
                                                             MEM2_alu_result;
-    assign MEM2_S1_mdata = (MEM2_S1_MemRead && MEM2_S1_bram_access) ? perip_rdata :
-                                                                    MEM2_S1_mmio_mdata;
+    assign MEM2_S1_mdata = (MEM2_S1_MemRead && MEM2_S1_bram_access) ?
+                           select_load_raw(perip_rdata, MEM2_S1_funct3,
+                                           MEM2_S1_alu_result[1:0]) : MEM2_S1_mmio_mdata;
     load_mask #(DATAWIDTH) u_mem2_cache_load_mask_s1 (
         .mask  (MEM2_S1_funct3          ),
         .dout  (MEM2_S1_cache_data      ),

@@ -1,7 +1,7 @@
 // =============================================================================
 // load_l0_cache.sv —— BRAM load 结果 L0 缓存
-//   缓存键由 BRAM 内部字地址、字节偏移和访问宽度组成，数据为 bram_driver 已完成
-//   byte/half/word 选择后的零扩展结果。load 符号扩展仍由原 load_mask 完成。
+//   缓存键仅使用 BRAM 内部字地址，数据为完整 32 位字。byte/half 选择和
+//   load 符号扩展由 CPU 在流水边界完成，因此不同宽度访问可共享缓存行。
 //   store 保持 write-through，并失效同一字地址对应的缓存行。
 //   调用侧只允许 0x8010_0000..0x8013_FFFF 进入缓存，因此地址高 14 位
 //   恒定，无需存入 tag。
@@ -12,12 +12,10 @@ module load_l0_cache #(
     input  logic        clk,
     input  logic        rst,
     input  logic [31:0] lookup_addr,
-    input  logic [1:0]  lookup_width,
     output logic        lookup_hit,
     output logic [31:0] lookup_data,
     input  logic        fill_en,
     input  logic [31:0] fill_addr,
-    input  logic [1:0]  fill_width,
     input  logic [31:0] fill_data,
     input  logic        store_en,
     input  logic [31:0] store_addr
@@ -28,8 +26,6 @@ module load_l0_cache #(
 
     logic [31:0] data_array [0:ENTRIES-1];
     logic [TAG_WIDTH-1:0] tag_array [0:ENTRIES-1];
-    logic [1:0] offset_array [0:ENTRIES-1];
-    logic [1:0] width_array [0:ENTRIES-1];
     logic valid_array [0:ENTRIES-1];
     logic [INDEX_WIDTH-1:0] lookup_index, fill_index, store_index;
     logic [TAG_WIDTH-1:0] lookup_tag, fill_tag, store_tag;
@@ -41,9 +37,7 @@ module load_l0_cache #(
     assign fill_tag     = fill_addr[17:INDEX_WIDTH+2];
     assign store_tag    = store_addr[17:INDEX_WIDTH+2];
     assign lookup_hit = valid_array[lookup_index] &&
-                        (tag_array[lookup_index] == lookup_tag) &&
-                        (offset_array[lookup_index] == lookup_addr[1:0]) &&
-                        (width_array[lookup_index] == lookup_width);
+                        (tag_array[lookup_index] == lookup_tag);
     assign lookup_data = data_array[lookup_index];
 
     integer i;
@@ -56,8 +50,6 @@ module load_l0_cache #(
             if (fill_en) begin
                 data_array[fill_index]   <= fill_data;
                 tag_array[fill_index]    <= fill_tag;
-                offset_array[fill_index] <= fill_addr[1:0];
-                width_array[fill_index]  <= fill_width;
                 valid_array[fill_index]  <= 1'b1;
             end
             if (store_en &&
