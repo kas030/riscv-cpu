@@ -29,6 +29,8 @@ module mycpu_ex_stage #(
     input  logic [5:0]             EX_CSRControll,
     input  logic [2:0]             ForwardA,
     input  logic [2:0]             ForwardB,
+    input  logic [DATAWIDTH - 1:0] ForwardAData,
+    input  logic [DATAWIDTH - 1:0] ForwardBData,
     input  logic                   EX_ALUSrcA,
     input  logic                   EX_ALUSrcB,
     input  logic                   EX_pred_taken,
@@ -39,6 +41,7 @@ module mycpu_ex_stage #(
     input  logic                   rst,
     output logic [DATAWIDTH - 1:0] IF_npc_redirect_raw,
     output logic [DATAWIDTH - 1:0] EX_alu_result,
+    output logic [DATAWIDTH - 1:0] EX_mem_addr,
     output logic [DATAWIDTH - 1:0] EX_forward_B_out,
     output logic [DATAWIDTH - 1:0] EX_csr_wb,
     output logic                   BranchTaken,
@@ -67,29 +70,8 @@ module mycpu_ex_stage #(
     logic                   branch_taken_raw;
     logic                   branch_mispredict_raw;
 
-    always_comb begin
-        unique case (ForwardA)
-            3'd1:    EX_forward_A_comb = WB_wdata;
-            3'd2:    EX_forward_A_comb = MEM_forward_data;
-            3'd3:    EX_forward_A_comb = MEM2_forward_data;
-            3'd4:    EX_forward_A_comb = WB_S1_wdata;
-            3'd5:    EX_forward_A_comb = MEM_S1_forward_data;
-            3'd6:    EX_forward_A_comb = MEM2_S1_forward_data;
-            default: EX_forward_A_comb = EX_rR1_data;
-        endcase
-    end
-
-    always_comb begin
-        unique case (ForwardB)
-            3'd1:    EX_forward_B_comb = WB_wdata;
-            3'd2:    EX_forward_B_comb = MEM_forward_data;
-            3'd3:    EX_forward_B_comb = MEM2_forward_data;
-            3'd4:    EX_forward_B_comb = WB_S1_wdata;
-            3'd5:    EX_forward_B_comb = MEM_S1_forward_data;
-            3'd6:    EX_forward_B_comb = MEM2_S1_forward_data;
-            default: EX_forward_B_comb = EX_rR2_data;
-        endcase
-    end
+    assign EX_forward_A_comb = ForwardAData;
+    assign EX_forward_B_comb = ForwardBData;
 
     always_ff @(posedge clk) begin
         if (rst || !EX_stall) begin
@@ -133,6 +115,9 @@ module mycpu_ex_stage #(
 
     assign EX_busy       = !EX_kill && is_m_op && !m_done;
     assign EX_alu_result = is_m_op ? m_result : alu_result_i;
+    // load/store 只需要 base+imm，独立加法器避免访存地址穿过通用 ALU
+    // 的移位/逻辑/比较结果汇总网络。
+    assign EX_mem_addr   = EX_forward_A_out + EX_imm;
     assign csr_wdata     = EX_CSRControll[5] ? {{(DATAWIDTH-5){1'b0}}, EX_csr_zimm} :
                                                EX_forward_A_out;
     assign csr_control_effective = EX_kill ? 6'b0 : EX_CSRControll;

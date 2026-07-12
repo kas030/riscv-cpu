@@ -47,6 +47,9 @@ module tb_cpu_only;
     longint unsigned cnt_dual_issue = 64'd0;
     longint unsigned cnt_stall_front = 64'd0;
     longint unsigned cnt_stall_hazard = 64'd0;
+    longint unsigned cnt_load_use_ex = 64'd0;
+    longint unsigned cnt_load_use_mem = 64'd0;
+    longint unsigned cnt_stall_both = 64'd0;
     longint unsigned cnt_ex_busy = 64'd0;
     longint unsigned cnt_l0_hit = 64'd0;
     longint unsigned cnt_bram_load = 64'd0;
@@ -374,6 +377,9 @@ module tb_cpu_only;
                 $display(" dual issue packets: %0d", cnt_dual_issue);
                 $display(" front stall cycles: %0d", cnt_stall_front);
                 $display(" load/use stalls   : %0d", cnt_stall_hazard);
+                $display(" load/use EX stalls: %0d", cnt_load_use_ex);
+                $display(" load/use MEM stalls: %0d", cnt_load_use_mem);
+                $display(" hazard+EX busy    : %0d", cnt_stall_both);
                 $display(" ex busy cycles    : %0d", cnt_ex_busy);
                 $display(" L0 load hits      : %0d", cnt_l0_hit);
                 $display(" BRAM loads        : %0d", cnt_bram_load);
@@ -411,6 +417,12 @@ module tb_cpu_only;
                 cnt_stall_front <= cnt_stall_front + 1;
             if (dut.Stall_Hazard)
                 cnt_stall_hazard <= cnt_stall_hazard + 1;
+            if (dut.LoadUseEX)
+                cnt_load_use_ex <= cnt_load_use_ex + 1;
+            if (dut.LoadUseMEM)
+                cnt_load_use_mem <= cnt_load_use_mem + 1;
+            if (dut.Stall_Hazard && dut.EX_any_busy)
+                cnt_stall_both <= cnt_stall_both + 1;
             if (dut.EX_any_busy)
                 cnt_ex_busy <= cnt_ex_busy + 1;
             cnt_l0_hit <= cnt_l0_hit +

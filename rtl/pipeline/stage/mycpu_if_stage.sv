@@ -40,6 +40,18 @@ module mycpu_if_stage #(
     logic                   IF_slot_raw_hazard;
     logic                   IF_slot_mem_conflict;
     logic                   IF_slot_m_conflict;
+    localparam DUAL_HINT_INDEX_WIDTH = 8;
+    localparam DUAL_HINT_ENTRIES = 1 << DUAL_HINT_INDEX_WIDTH;
+    logic [5:0] dual_hint_tag [0:DUAL_HINT_ENTRIES-1];
+    logic       dual_hint_valid [0:DUAL_HINT_ENTRIES-1];
+    logic       dual_hint_value [0:DUAL_HINT_ENTRIES-1];
+    logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_index;
+    logic [5:0] dual_hint_pc_tag;
+    logic       dual_hint_hit;
+    logic       dual_hint_pending_valid;
+    logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_pending_index;
+    logic [5:0] dual_hint_pending_tag;
+    logic       dual_hint_pending_value;
 
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
@@ -110,7 +122,37 @@ module mycpu_if_stage #(
                                !IF_slot_mem_conflict &&
                                !IF_slot_m_conflict &&
                                !IF_slot_raw_hazard;
-    assign IF_issue_dual = !IF_pred_taken && IF_dual_candidate;
+    // 双发射提示表把第二路IROM和复杂合法性译码移出PC反馈环。
+    // IROM只读，tag命中后的历史结果始终有效；冷启动/冲突仅保守单发射。
+    assign dual_hint_index  = IF_pc[DUAL_HINT_INDEX_WIDTH+1:2];
+    assign dual_hint_pc_tag = IF_pc[13:8];
+    assign dual_hint_hit = dual_hint_valid[dual_hint_index] &&
+                           (dual_hint_tag[dual_hint_index] == dual_hint_pc_tag);
+    assign IF_issue_dual = !IF_pred_taken && dual_hint_hit &&
+                           dual_hint_value[dual_hint_index];
+
+    integer hint_i;
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            dual_hint_pending_valid <= 1'b0;
+            for (hint_i = 0; hint_i < DUAL_HINT_ENTRIES; hint_i = hint_i + 1) begin
+                dual_hint_valid[hint_i] = 1'b0;
+            end
+        end else begin
+            // 训练请求先打一拍，使第二路IROM译码不直接驱动提示RAM写口。
+            if (dual_hint_pending_valid) begin
+                dual_hint_valid[dual_hint_pending_index] <= 1'b1;
+                dual_hint_tag[dual_hint_pending_index]   <= dual_hint_pending_tag;
+                dual_hint_value[dual_hint_pending_index] <= dual_hint_pending_value;
+            end
+            dual_hint_pending_valid <= !Stall;
+            if (!Stall) begin
+                dual_hint_pending_index <= dual_hint_index;
+                dual_hint_pending_tag   <= dual_hint_pc_tag;
+                dual_hint_pending_value <= IF_dual_candidate;
+            end
+        end
+    end
     // 并行预计算两个顺序地址，避免 IF_issue_dual 进入 32 位加法器
     // 的进位链。keep 防止综合器重新合并为带可变加数的单个加法器。
     assign IF_pc_plus4 = IF_pc + 32'd4;
