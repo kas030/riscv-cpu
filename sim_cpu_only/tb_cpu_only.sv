@@ -48,6 +48,8 @@ module tb_cpu_only;
     longint unsigned cnt_stall_front = 64'd0;
     longint unsigned cnt_stall_hazard = 64'd0;
     longint unsigned cnt_ex_busy = 64'd0;
+    longint unsigned cnt_l0_hit = 64'd0;
+    longint unsigned cnt_bram_load = 64'd0;
     longint unsigned cnt_retired = 64'd0;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
@@ -373,6 +375,11 @@ module tb_cpu_only;
                 $display(" front stall cycles: %0d", cnt_stall_front);
                 $display(" load/use stalls   : %0d", cnt_stall_hazard);
                 $display(" ex busy cycles    : %0d", cnt_ex_busy);
+                $display(" L0 load hits      : %0d", cnt_l0_hit);
+                $display(" BRAM loads        : %0d", cnt_bram_load);
+                if (cnt_bram_load > 0)
+                    $display(" L0 hit rate       : %0.3f%%",
+                             100.0 * cnt_l0_hit / cnt_bram_load);
                 $display(" retired inst      : %0d", cnt_retired);
                 if (cnt_retired > 0) begin
                     $display(" CPI               : %0.3f", cycles * 1.0 / cnt_retired);
@@ -406,6 +413,14 @@ module tb_cpu_only;
                 cnt_stall_hazard <= cnt_stall_hazard + 1;
             if (dut.EX_any_busy)
                 cnt_ex_busy <= cnt_ex_busy + 1;
+            cnt_l0_hit <= cnt_l0_hit +
+                          ((dut.MEM_valid && dut.MEM_cache_hit0) ? 1 : 0) +
+                          ((dut.MEM_S1_valid && dut.MEM_cache_hit1) ? 1 : 0);
+            cnt_bram_load <= cnt_bram_load +
+                             ((dut.MEM_valid && dut.MEM_MemRead &&
+                               dut.MEM_bram_access) ? 1 : 0) +
+                             ((dut.MEM_S1_valid && dut.MEM_S1_MemRead &&
+                               dut.MEM_S1_bram_access) ? 1 : 0);
 
             // 若完成 store 位于 slot0，同包 slot1 在程序顺序上更年轻，不纳入截止统计。
             if (led_written &&
