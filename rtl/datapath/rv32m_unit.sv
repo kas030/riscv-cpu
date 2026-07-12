@@ -101,6 +101,12 @@ module rv32m_unit #(
         end else if (start && !busy_q) begin
             done_q <= 1'b0;
             busy_q <= 1'b1;
+            // 启动时无条件初始化迭代除法状态。即使本条是乘法或特殊除法，
+            // 这些值也不会被使用；统一写入可避免 div_by_zero/overflow 将
+            // 操作数数据扇出到 quotient/remainder/divisor 的 CE/R 控制端。
+            remainder_q <= '0;
+            quotient_q  <= (op_div || op_rem) ? abs_a : operand_a;
+            divisor_q   <= (op_div || op_rem) ? abs_b : operand_b;
             if (op_mul || op_mulh || op_mulhsu || op_mulhu) begin
                 mode_mul_q      <= 1'b1;
                 special_q       <= 1'b0;
@@ -130,9 +136,6 @@ module rv32m_unit #(
                 end else begin
                     special_q     <= 1'b0;
                     cycles_left_q <= DIV_LATENCY[5:0];
-                    remainder_q   <= '0;
-                    quotient_q    <= (op_div || op_rem) ? abs_a : operand_a;
-                    divisor_q     <= (op_div || op_rem) ? abs_b : operand_b;
                 end
             end
         end else if (busy_q) begin

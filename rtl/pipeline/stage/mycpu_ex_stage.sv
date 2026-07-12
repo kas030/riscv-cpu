@@ -39,6 +39,7 @@ module mycpu_ex_stage #(
     input  logic                   rst,
     output logic [DATAWIDTH - 1:0] IF_npc_redirect_raw,
     output logic [DATAWIDTH - 1:0] EX_alu_result,
+    output logic [DATAWIDTH - 1:0] EX_mem_addr,
     output logic [DATAWIDTH - 1:0] EX_forward_B_out,
     output logic [DATAWIDTH - 1:0] EX_csr_wb,
     output logic                   BranchTaken,
@@ -133,6 +134,9 @@ module mycpu_ex_stage #(
 
     assign EX_busy       = !EX_kill && is_m_op && !m_done;
     assign EX_alu_result = is_m_op ? m_result : alu_result_i;
+    // load/store 只需要 base+imm，独立加法器避免访存地址穿过通用 ALU
+    // 的移位/逻辑/比较结果汇总网络。
+    assign EX_mem_addr   = EX_forward_A_out + EX_imm;
     assign csr_wdata     = EX_CSRControll[5] ? {{(DATAWIDTH-5){1'b0}}, EX_csr_zimm} :
                                                EX_forward_A_out;
     assign csr_control_effective = EX_kill ? 6'b0 : EX_CSRControll;

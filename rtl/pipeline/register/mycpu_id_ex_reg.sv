@@ -62,8 +62,8 @@ module mycpu_id_ex_reg #(
     output logic [DATAWIDTH - 1:0]  EX_pred_target
 );
     always_ff @(posedge clk) begin
-        if (rst || Flush_ID_EX) begin
-            // 复位 / 注气泡：所有控制信号清零，相当于一条无副作用的 NOP
+        if (rst) begin
+            // 复位时完整初始化，便于仿真和上板行为确定。
             EX_RegWrite     <= 1'b0;
             EX_MemWrite     <= 1'b0;
             EX_MemRead      <= 1'b0;
@@ -86,6 +86,32 @@ module mycpu_id_ex_reg #(
             EX_csr_zimm     <= '0;
             EX_pred_taken   <= 1'b0;
             EX_pred_target  <= '0;
+        end else if (Flush_ID_EX) begin
+            // 注气泡只需清除可能产生架构副作用或控制流变化的控制信号。
+            // 数据字段保持不变，避免 load-use 信号扇出到整组数据寄存器。
+            EX_RegWrite     <= 1'b0;
+            EX_MemWrite     <= 1'b0;
+            EX_MemRead      <= 1'b0;
+            EX_ALUSrcA      <= 1'b0;
+            EX_ALUSrcB      <= 1'b0;
+            EX_MemToReg     <= '0;
+            EX_funct3       <= '0;
+            EX_ALUControl   <= '0;
+            EX_NpcOp        <= '0;
+            EX_OffsetOrigin <= '0;
+            EX_CSRControll  <= '0;
+            EX_pred_taken   <= 1'b0;
+            // 数据字段与正常推进相同，令Flush只影响控制寄存器。
+            EX_pc           <= ID_pc;
+            EX_imm          <= ID_imm;
+            EX_rR1_data     <= ID_rR1_data;
+            EX_rR2_data     <= ID_rR2_data;
+            EX_rs1          <= ID_rs1;
+            EX_rs2          <= ID_rs2;
+            EX_rd           <= ID_rd;
+            EX_csr_idx      <= ID_csr_idx;
+            EX_csr_zimm     <= ID_csr_zimm;
+            EX_pred_target  <= ID_pred_target;
         end else if (Stall_ID_EX) begin
             // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
         end else begin

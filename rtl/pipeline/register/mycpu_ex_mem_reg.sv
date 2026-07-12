@@ -14,6 +14,7 @@ module mycpu_ex_mem_reg #(
     // ---- 输入：来自 EX 级 ----
     input  logic [DATAWIDTH - 1:0]  EX_pc            ,
     input  logic [DATAWIDTH - 1:0]  EX_alu_result    ,
+    input  logic [DATAWIDTH - 1:0]  EX_mem_addr      ,
     input  logic [DATAWIDTH - 1:0]  EX_forward_B_out ,      // 前递后的 rs2，用作 store 写数据
     input  logic [DATAWIDTH - 1:0]  EX_imm           ,
     input  logic [DATAWIDTH - 1:0]  EX_csr_wb        ,
@@ -23,6 +24,8 @@ module mycpu_ex_mem_reg #(
     input  logic                    EX_MemRead       ,
     input  logic [2:0]              EX_MemToReg      ,
     input  logic [2:0]              EX_funct3        ,
+    input  logic                    EX_cache_hit     ,
+    input  logic [DATAWIDTH - 1:0]  EX_cache_data    ,
     input  logic                    clk              ,
     input  logic                    rst              ,
     input  logic                    en               ,
@@ -43,7 +46,9 @@ module mycpu_ex_mem_reg #(
     output logic                    MEM_MemWrite     ,
     output logic                    MEM_MemRead      ,
     output logic [2:0]              MEM_MemToReg     ,
-    output logic [2:0]              MEM_funct3
+    output logic [2:0]              MEM_funct3       ,
+    output logic                    MEM_cache_hit    ,
+    output logic [DATAWIDTH - 1:0]  MEM_cache_data
 );
     logic [DATAWIDTH - 1:0] EX_pcadd4;
 
@@ -58,11 +63,12 @@ module mycpu_ex_mem_reg #(
             MEM_MemToReg <= '0;
             MEM_funct3   <= '0;
             MEM_rd_oh    <= 32'b0;
+            MEM_cache_hit <= 1'b0;
         end else if (en) begin
             MEM_pcadd4     <= EX_pcadd4;                    // 顺手算 pc_reg+4 给 jal/jalr 写回用
-            MEM_alu_result <= EX_alu_result;
-            MEM_perip_addr <= EX_alu_result;                // 独立访存地址副本，避免内部 alu 结果承担外部高扇出
-            MEM_perip_bus_addr <= EX_alu_result;            // 外设总线专用副本，和 CPU 本地判断解耦
+            MEM_alu_result <= (EX_MemRead || EX_MemWrite) ? EX_mem_addr : EX_alu_result;
+            MEM_perip_addr <= EX_mem_addr;                  // 独立访存地址副本，避免内部 alu 结果承担外部高扇出
+            MEM_perip_bus_addr <= EX_mem_addr;              // 外设总线专用副本，和 CPU 本地判断解耦
             MEM_rR2_data   <= EX_forward_B_out;             // 注意是前递后的值
             MEM_imm        <= EX_imm;
             MEM_rd         <= EX_rd;
@@ -73,9 +79,12 @@ module mycpu_ex_mem_reg #(
             MEM_MemToReg   <= EX_MemToReg;
             MEM_funct3     <= EX_funct3;
             MEM_csr_wb     <= EX_csr_wb;
+            MEM_cache_hit  <= EX_cache_hit;
+            MEM_cache_data <= EX_cache_data;
             MEM_forward_data <= (EX_MemToReg == 3'b100) ? EX_csr_wb    :
                                 (EX_MemToReg == 3'b011) ? EX_imm       :
                                 (EX_MemToReg == 3'b000) ? EX_pcadd4    :
+                                (EX_MemRead || EX_MemWrite) ? EX_mem_addr :
                                                            EX_alu_result;
         end else begin
             // EX 级多周期指令未完成时保持 EX/MEM，不让半成品结果进入 MEM。
