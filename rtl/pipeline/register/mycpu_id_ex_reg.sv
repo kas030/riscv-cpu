@@ -60,6 +60,7 @@ module mycpu_id_ex_reg #(
     output logic [5:0]              EX_CSRControll  ,
     output logic                    EX_pred_taken   ,
     output logic [DATAWIDTH - 1:0]  EX_pred_target
+    ,output logic                   EX_pipe_valid
 );
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -86,22 +87,11 @@ module mycpu_id_ex_reg #(
             EX_csr_zimm     <= '0;
             EX_pred_taken   <= 1'b0;
             EX_pred_target  <= '0;
+            EX_pipe_valid   <= 1'b0;
         end else if (Flush_ID_EX) begin
-            // 注气泡只需清除可能产生架构副作用或控制流变化的控制信号。
-            // 数据字段保持不变，避免 load-use 信号扇出到整组数据寄存器。
-            EX_RegWrite     <= 1'b0;
-            EX_MemWrite     <= 1'b0;
-            EX_MemRead      <= 1'b0;
-            EX_ALUSrcA      <= 1'b0;
-            EX_ALUSrcB      <= 1'b0;
-            EX_MemToReg     <= '0;
-            EX_funct3       <= '0;
-            EX_ALUControl   <= '0;
-            EX_NpcOp        <= '0;
-            EX_OffsetOrigin <= '0;
-            EX_CSRControll  <= '0;
-            EX_pred_taken   <= 1'b0;
-            // 数据字段与正常推进相同，令Flush只影响控制寄存器。
+            // 注气泡只清一个有效位；数据和控制字段照常推进，副作用由顶层
+            // 使用EX_pipe_valid统一屏蔽，缩短cache/hazard高扇出路径。
+            EX_pipe_valid   <= 1'b0;
             EX_pc           <= ID_pc;
             EX_imm          <= ID_imm;
             EX_rR1_data     <= ID_rR1_data;
@@ -112,9 +102,22 @@ module mycpu_id_ex_reg #(
             EX_csr_idx      <= ID_csr_idx;
             EX_csr_zimm     <= ID_csr_zimm;
             EX_pred_target  <= ID_pred_target;
+            EX_RegWrite     <= ID_RegWrite;
+            EX_MemWrite     <= ID_MemWrite;
+            EX_MemRead      <= ID_MemRead;
+            EX_MemToReg     <= ID_MemToReg;
+            EX_funct3       <= ID_funct3;
+            EX_ALUSrcA      <= ID_ALUSrcA;
+            EX_ALUSrcB      <= ID_ALUSrcB;
+            EX_ALUControl   <= ID_ALUControl;
+            EX_NpcOp        <= ID_NpcOp;
+            EX_OffsetOrigin <= ID_OffsetOrigin;
+            EX_CSRControll  <= ID_CSRControll;
+            EX_pred_taken   <= ID_pred_taken;
         end else if (Stall_ID_EX) begin
             // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
         end else begin
+            EX_pipe_valid   <= 1'b1;
             // 正常推进：把 ID 级所有信号锁存进 EX 级
             EX_pc           <= ID_pc;
             EX_imm          <= ID_imm;

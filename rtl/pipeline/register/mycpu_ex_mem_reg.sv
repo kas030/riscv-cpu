@@ -81,7 +81,8 @@ module mycpu_ex_mem_reg #(
             MEM_csr_wb     <= EX_csr_wb;
             MEM_cache_hit  <= EX_cache_hit;
             MEM_cache_data <= EX_cache_data;
-            MEM_forward_data <= (EX_MemToReg == 3'b100) ? EX_csr_wb    :
+            MEM_forward_data <= EX_cache_hit ? EX_cache_data :
+                                (EX_MemToReg == 3'b100) ? EX_csr_wb    :
                                 (EX_MemToReg == 3'b011) ? EX_imm       :
                                 (EX_MemToReg == 3'b000) ? EX_pcadd4    :
                                 (EX_MemRead || EX_MemWrite) ? EX_mem_addr :

@@ -47,6 +47,7 @@ module rv32m_unit #(
     logic        signed_a, signed_b;
     logic        div_by_zero, div_overflow;
     logic [DATAWIDTH-1:0] quot_signed, rem_signed;
+    logic [DATAWIDTH-1:0] special_result_start;
 
     assign op_mul    = alu_control[14];
     assign op_mulh   = alu_control[15];
@@ -77,6 +78,9 @@ module rv32m_unit #(
     assign rem_next       = rem_ge_divisor ? (rem_shift - {1'b0, divisor_q}) : rem_shift;
     assign quot_signed    = negate_quot_q ? (~quotient_final + 1'b1) : quotient_final;
     assign rem_signed     = negate_rem_q ? (~rem_next[31:0] + 1'b1) : rem_next[31:0];
+    assign special_result_start = div_by_zero ?
+                                  ((op_div || op_divu) ? {DATAWIDTH{1'b1}} : operand_a) :
+                                  (div_overflow ? (op_div ? operand_a : '0) : '0);
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -107,6 +111,7 @@ module rv32m_unit #(
             remainder_q <= '0;
             quotient_q  <= (op_div || op_rem) ? abs_a : operand_a;
             divisor_q   <= (op_div || op_rem) ? abs_b : operand_b;
+            special_result_q <= special_result_start;
             if (op_mul || op_mulh || op_mulhsu || op_mulhu) begin
                 mode_mul_q      <= 1'b1;
                 special_q       <= 1'b0;
@@ -128,11 +133,9 @@ module rv32m_unit #(
                 if (div_by_zero) begin
                     special_q        <= 1'b1;
                     cycles_left_q    <= 6'd1;
-                    special_result_q <= (op_div || op_divu) ? {DATAWIDTH{1'b1}} : operand_a;
                 end else if (div_overflow) begin
                     special_q        <= 1'b1;
                     cycles_left_q    <= 6'd1;
-                    special_result_q <= op_div ? operand_a : '0;
                 end else begin
                     special_q     <= 1'b0;
                     cycles_left_q <= DIV_LATENCY[5:0];

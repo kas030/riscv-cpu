@@ -20,6 +20,7 @@ module mycpu_mem_wb_reg #(
     input  logic                    MEM_RegWrite   ,
     input  logic [2:0]              MEM_MemToReg   ,
     input  logic [2:0]              MEM_funct3     ,
+    input  logic                    MEM_bram_access,
     input  logic                    clk            ,
     input  logic                    rst            ,
     input  logic                    Flush_MEM_WB   ,
@@ -33,7 +34,8 @@ module mycpu_mem_wb_reg #(
     output logic [31:0]             WB_rd_oh       ,
     output logic                    WB_RegWrite    ,
     output logic [2:0]              WB_MemToReg    ,
-    output logic [2:0]              WB_funct3
+    output logic [2:0]              WB_funct3      ,
+    output logic                    WB_bram_access
 );
     always_ff @(posedge clk) begin
         if (rst || Flush_MEM_WB) begin
@@ -41,6 +43,7 @@ module mycpu_mem_wb_reg #(
             WB_MemToReg <= '0;
             WB_rd_oh    <= 32'b0;
             WB_funct3   <= '0;
+            WB_bram_access <= 1'b0;
         end else begin
             WB_pcadd4     <= MEM_pcadd4;
             WB_alu_result <= MEM_alu_result;
@@ -52,6 +55,7 @@ module mycpu_mem_wb_reg #(
             WB_MemToReg   <= MEM_MemToReg;
             WB_csr_wb     <= MEM_csr_wb;
             WB_funct3     <= MEM_funct3;
+            WB_bram_access <= MEM_bram_access;
         end
     end
 endmodule

@@ -48,6 +48,7 @@ module mycpu (
     logic        Stall_Hazard, EX_busy, EX_any_busy, Stall_Front, Flush_ID_EX_comb;
     logic        Flush_EX_MEM;
     logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
+    logic [31:0] ForwardAData, ForwardBData, ForwardAData_S1, ForwardBData_S1;
     logic        BranchTaken, BranchTaken_raw;
 `ifndef SYNTHESIS
     logic        BranchTaken_stat_q, BranchTaken_stat_pending_q;
@@ -155,6 +156,12 @@ module mycpu (
     logic [4:0]  EX_csr_zimm;
     logic [5:0]  EX_CSRControll;
     logic        EX_pred_taken;
+    logic        EX_pipe_valid, EX_S1_pipe_valid;
+    logic        EX_RegWrite_eff, EX_MemWrite_eff, EX_MemRead_eff;
+    logic        EX_S1_RegWrite_eff, EX_S1_MemWrite_eff, EX_S1_MemRead_eff;
+    logic [`ALU_OP_WIDTH - 1:0] EX_ALUControl_eff, EX_S1_ALUControl_eff;
+    logic [1:0]  EX_NpcOp_eff;
+    logic [5:0]  EX_CSRControll_eff;
     logic [31:0] EX_pred_target;
     logic [31:0] EX_S1_pc, EX_S1_imm, EX_S1_rR1_data, EX_S1_rR2_data;
     logic [4:0]  EX_S1_rs1, EX_S1_rs2, EX_S1_rd;
@@ -168,6 +175,17 @@ module mycpu (
     logic [5:0]  EX_S1_CSRControll;
     logic        EX_S1_pred_taken;
     logic [31:0] EX_S1_pred_target;
+
+    assign EX_RegWrite_eff = EX_pipe_valid && EX_RegWrite;
+    assign EX_MemWrite_eff = EX_pipe_valid && EX_MemWrite;
+    assign EX_MemRead_eff  = EX_pipe_valid && EX_MemRead;
+    assign EX_S1_RegWrite_eff = EX_S1_pipe_valid && EX_S1_RegWrite;
+    assign EX_S1_MemWrite_eff = EX_S1_pipe_valid && EX_S1_MemWrite;
+    assign EX_S1_MemRead_eff  = EX_S1_pipe_valid && EX_S1_MemRead;
+    assign EX_ALUControl_eff = EX_pipe_valid ? EX_ALUControl : '0;
+    assign EX_S1_ALUControl_eff = EX_S1_pipe_valid ? EX_S1_ALUControl : '0;
+    assign EX_NpcOp_eff = EX_pipe_valid ? EX_NpcOp : 2'b0;
+    assign EX_CSRControll_eff = EX_pipe_valid ? EX_CSRControll : 6'b0;
 
     // -------------------------------------------------------------------------
     // EX 级输出
@@ -234,6 +252,7 @@ module mycpu (
     logic [4:0]  WB_rd;
     logic [31:0] WB_rd_oh;
     logic        WB_RegWrite;
+    logic        WB_bram_access, WB_S1_bram_access;
     logic [2:0]  WB_MemToReg, WB_funct3;
     logic [31:0] WB_csr_wb;
     logic [31:0] WB_S1_pcadd4, WB_S1_alu_result, WB_S1_mdata, WB_S1_imm;
@@ -364,10 +383,10 @@ module mycpu (
         .IF_ID_uses_rs2_1(ID_S1_uses_rs2),
         .IF_ID_valid_1 (ID_issue_dual   ),
         .ID_EX_rd      (EX_rd          ),
-        .ID_EX_MemRead (EX_MemRead     ),
+        .ID_EX_MemRead (EX_MemRead_eff ),
         .ID_EX_LoadReady(EX_cache_ready0),
         .ID_EX_rd_1    (EX_S1_rd       ),
-        .ID_EX_MemRead_1(EX_S1_MemRead ),
+        .ID_EX_MemRead_1(EX_S1_MemRead_eff),
         .ID_EX_LoadReady_1(EX_cache_ready1),
         .EX_MEM_rd     (MEM_rd         ),
         .EX_MEM_MemRead(MEM_MemRead    ),
@@ -428,9 +447,9 @@ module mycpu (
             end else if (BranchMispredict_raw) begin
                 redirect_valid_q  <= 1'b1;
                 // 只有分支（非 jal/jalr）才需要更新预测器历史
-                redirect_bp_update_q <= (EX_NpcOp == 2'b01);
+                redirect_bp_update_q <= (EX_NpcOp_eff == 2'b01);
             // [优先级 3] 普通分支（预测正确），只需更新预测器，不需要重定向
-            end else if (!EX_any_busy && (EX_NpcOp == 2'b01)) begin
+            end else if (!EX_any_busy && (EX_NpcOp_eff == 2'b01)) begin
                 redirect_bp_update_q <= 1'b1;
             end
         end
@@ -478,12 +497,12 @@ module mycpu (
     forwarding_unit u_forwarding_unit (
         .ID_EX_rs1       (EX_rs1      ),
         .ID_EX_rs2       (EX_rs2      ),
+        .ID_EX_data1     (EX_rR1_data ),
+        .ID_EX_data2     (EX_rR2_data ),
         .EX_MEM_rd0      (MEM_rd      ),
-        .EX_MEM_valid0   (MEM_RegWrite && (!MEM_MemRead || MEM_early_cache_hit0) &&
-                          (MEM_rd != 5'd0)),
+        .EX_MEM_valid0   (MEM_RegWrite && (MEM_rd != 5'd0)),
         .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (!MEM_S1_MemRead || MEM_early_cache_hit1) &&
-                          (MEM_S1_rd != 5'd0)),
+        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
         .MEM2_rd0        (MEM2_rd     ),
         .MEM2_valid0     (MEM2_RegWrite && (!MEM2_MemRead || MEM2_cache_hit) &&
                           (MEM2_rd != 5'd0)),
@@ -494,19 +513,27 @@ module mycpu (
         .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
         .MEM_WB_rd1      (WB_S1_rd    ),
         .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
+        .EX_MEM_data0    (MEM_forward_data_effective),
+        .EX_MEM_data1    (MEM_S1_forward_data_effective),
+        .MEM2_data0      (MEM2_forward_data),
+        .MEM2_data1      (MEM2_S1_forward_data),
+        .MEM_WB_data0    (WB_wdata),
+        .MEM_WB_data1    (WB_S1_wdata),
         .ForwardA        (ForwardA    ),
-        .ForwardB        (ForwardB    )
+        .ForwardB        (ForwardB    ),
+        .ForwardAData    (ForwardAData),
+        .ForwardBData    (ForwardBData)
     );
 
     forwarding_unit u_forwarding_unit_s1 (
         .ID_EX_rs1       (EX_S1_rs1   ),
         .ID_EX_rs2       (EX_S1_rs2   ),
+        .ID_EX_data1     (EX_S1_rR1_data),
+        .ID_EX_data2     (EX_S1_rR2_data),
         .EX_MEM_rd0      (MEM_rd      ),
-        .EX_MEM_valid0   (MEM_RegWrite && (!MEM_MemRead || MEM_early_cache_hit0) &&
-                          (MEM_rd != 5'd0)),
+        .EX_MEM_valid0   (MEM_RegWrite && (MEM_rd != 5'd0)),
         .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (!MEM_S1_MemRead || MEM_early_cache_hit1) &&
-                          (MEM_S1_rd != 5'd0)),
+        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
         .MEM2_rd0        (MEM2_rd     ),
         .MEM2_valid0     (MEM2_RegWrite && (!MEM2_MemRead || MEM2_cache_hit) &&
                           (MEM2_rd != 5'd0)),
@@ -517,8 +544,16 @@ module mycpu (
         .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
         .MEM_WB_rd1      (WB_S1_rd    ),
         .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
+        .EX_MEM_data0    (MEM_forward_data_effective),
+        .EX_MEM_data1    (MEM_S1_forward_data_effective),
+        .MEM2_data0      (MEM2_forward_data),
+        .MEM2_data1      (MEM2_S1_forward_data),
+        .MEM_WB_data0    (WB_wdata),
+        .MEM_WB_data1    (WB_S1_wdata),
         .ForwardA        (ForwardA_S1 ),
-        .ForwardB        (ForwardB_S1 )
+        .ForwardB        (ForwardB_S1 ),
+        .ForwardAData    (ForwardAData_S1),
+        .ForwardBData    (ForwardBData_S1)
     );
 
     // =========================================================================
@@ -684,7 +719,8 @@ module mycpu (
         .EX_csr_zimm     (EX_csr_zimm    ),
         .EX_CSRControll  (EX_CSRControll ),
         .EX_pred_taken   (EX_pred_taken  ),
-        .EX_pred_target  (EX_pred_target )
+        .EX_pred_target  (EX_pred_target ),
+        .EX_pipe_valid   (EX_pipe_valid  )
     );
 
     mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg_s1 (
@@ -735,7 +771,8 @@ module mycpu (
         .EX_csr_zimm     (EX_S1_csr_zimm ),
         .EX_CSRControll  (EX_S1_CSRControll),
         .EX_pred_taken   (EX_S1_pred_taken),
-        .EX_pred_target  (EX_S1_pred_target)
+        .EX_pred_target  (EX_S1_pred_target),
+        .EX_pipe_valid   (EX_S1_pipe_valid)
     );
 
     // =========================================================================
@@ -754,14 +791,16 @@ module mycpu (
         .EX_imm           (EX_imm          ),
         .EX_rR1_data      (EX_rR1_data     ),
         .EX_rR2_data      (EX_rR2_data     ),
-        .EX_ALUControl    (EX_ALUControl   ),
-        .EX_NpcOp         (EX_NpcOp        ),
+        .EX_ALUControl    (EX_ALUControl_eff),
+        .EX_NpcOp         (EX_NpcOp_eff    ),
         .EX_OffsetOrigin  (EX_OffsetOrigin ),
         .EX_csr_idx       (EX_csr_idx      ),
         .EX_csr_zimm      (EX_csr_zimm     ),
-        .EX_CSRControll   (EX_CSRControll  ),
+        .EX_CSRControll   (EX_CSRControll_eff),
         .ForwardA         (ForwardA        ),
         .ForwardB         (ForwardB        ),
+        .ForwardAData     (ForwardAData    ),
+        .ForwardBData     (ForwardBData    ),
         .EX_ALUSrcA       (EX_ALUSrcA      ),
         .EX_ALUSrcB       (EX_ALUSrcB      ),
         .EX_pred_taken    (EX_pred_taken   ),
@@ -791,7 +830,7 @@ module mycpu (
         .EX_imm           (EX_S1_imm       ),
         .EX_rR1_data      (EX_S1_rR1_data  ),
         .EX_rR2_data      (EX_S1_rR2_data  ),
-        .EX_ALUControl    (EX_S1_ALUControl),
+        .EX_ALUControl    (EX_S1_ALUControl_eff),
         // lane1 只接收 IF 级筛选后的普通整数/M/单访存指令，
         // 静态关闭不可达的控制流与 CSR 通路，便于综合删除冗余状态。
         .EX_NpcOp         (2'b00           ),
@@ -801,6 +840,8 @@ module mycpu (
         .EX_CSRControll   (6'b0            ),
         .ForwardA         (ForwardA_S1     ),
         .ForwardB         (ForwardB_S1     ),
+        .ForwardAData     (ForwardAData_S1 ),
+        .ForwardBData     (ForwardBData_S1 ),
         .EX_ALUSrcA       (EX_S1_ALUSrcA   ),
         .EX_ALUSrcB       (EX_S1_ALUSrcB   ),
         .EX_pred_taken    (1'b0            ),
@@ -828,9 +869,9 @@ module mycpu (
         .EX_imm           (EX_imm          ),
         .EX_csr_wb        (EX_csr_wb       ),
         .EX_rd            (EX_rd           ),
-        .EX_RegWrite      (EX_RegWrite     ),
-        .EX_MemWrite      (EX_MemWrite     ),
-        .EX_MemRead       (EX_MemRead      ),
+        .EX_RegWrite      (EX_RegWrite_eff ),
+        .EX_MemWrite      (EX_MemWrite_eff ),
+        .EX_MemRead       (EX_MemRead_eff  ),
         .EX_MemToReg      (EX_MemToReg     ),
         .EX_funct3        (EX_funct3       ),
         .EX_cache_hit     (EX_cache_ready0 ),
@@ -866,9 +907,9 @@ module mycpu (
         .EX_imm           (EX_S1_imm       ),
         .EX_csr_wb        (EX_S1_csr_wb    ),
         .EX_rd            (EX_S1_rd        ),
-        .EX_RegWrite      (EX_S1_RegWrite  ),
-        .EX_MemWrite      (EX_S1_MemWrite  ),
-        .EX_MemRead       (EX_S1_MemRead   ),
+        .EX_RegWrite      (EX_S1_RegWrite_eff),
+        .EX_MemWrite      (EX_S1_MemWrite_eff),
+        .EX_MemRead       (EX_S1_MemRead_eff),
         .EX_MemToReg      (EX_S1_MemToReg  ),
         .EX_funct3        (EX_S1_funct3    ),
         .EX_cache_hit     (EX_cache_ready1 ),
@@ -952,22 +993,22 @@ module mycpu (
     // 零气泡路径，否则会形成 MEM2/WB -> ALU -> L0 -> hazard 的长组合链。
     assign EX_cache_probe_addr0 = EX_rR1_data + EX_imm;
     assign EX_cache_probe_addr1 = EX_S1_rR1_data + EX_S1_imm;
-    assign EX_cache_probe_addr = EX_MemRead ? EX_cache_probe_addr0 :
-                                 EX_S1_MemRead ? EX_cache_probe_addr1 : 32'b0;
+    assign EX_cache_probe_addr = EX_MemRead_eff ? EX_cache_probe_addr0 :
+                                 EX_S1_MemRead_eff ? EX_cache_probe_addr1 : 32'b0;
     assign EX_cache_probe_raw = select_load_raw(
         EX_cache_probe_data,
-        EX_MemRead ? EX_funct3 : EX_S1_funct3,
+        EX_MemRead_eff ? EX_funct3 : EX_S1_funct3,
         EX_cache_probe_addr[1:0]
     );
     load_mask #(DATAWIDTH) u_ex_cache_load_mask (
-        .mask  (EX_MemRead ? EX_funct3 : EX_S1_funct3),
+        .mask  (EX_MemRead_eff ? EX_funct3 : EX_S1_funct3),
         .dout  (EX_cache_probe_raw),
         .mdata (EX_cache_probe_load_data)
     );
 
     // 提前探测 EX load。若同拍有更老的同地址 store，则必须按 miss 处理，
     // 避免消费者前递到 store 之前的旧缓存数据。
-    assign EX_cache_ready0 = EX_MemRead && (ForwardA == 3'd0) &&
+    assign EX_cache_ready0 = EX_MemRead_eff && (ForwardA == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr0) &&
                              EX_cache_probe_hit &&
                              !(MEM_cache_fill_en &&
@@ -975,7 +1016,7 @@ module mycpu (
                                (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2])) &&
                              !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
                                (MEM_bus_addr[17:2] == EX_cache_probe_addr0[17:2]));
-    assign EX_cache_ready1 = EX_S1_MemRead && (ForwardA_S1 == 3'd0) &&
+    assign EX_cache_ready1 = EX_S1_MemRead_eff && (ForwardA_S1 == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr1) &&
                              EX_cache_probe_hit &&
                              !(MEM_cache_fill_en &&
@@ -985,10 +1026,8 @@ module mycpu (
                                (MEM_bus_addr[17:2] == EX_cache_probe_addr1[17:2]));
 
     // 零气泡 load 的前递值来自 EX/MEM 中的寄存副本。
-    assign MEM_forward_data_effective = MEM_early_cache_hit0 ? MEM_early_cache_data0 :
-                                                            MEM_forward_data;
-    assign MEM_S1_forward_data_effective = MEM_early_cache_hit1 ? MEM_early_cache_data1 :
-                                                               MEM_S1_forward_data;
+    assign MEM_forward_data_effective = MEM_forward_data;
+    assign MEM_S1_forward_data_effective = MEM_S1_forward_data;
 
     logic [31:0] MEM_cache_raw0, MEM_cache_raw1;
     logic [31:0] MEM_cache_load_data0, MEM_cache_load_data1;
@@ -1081,11 +1120,9 @@ module mycpu (
     );
 
     assign MEM2_mdata = (MEM2_MemRead && MEM2_bram_access) ?
-                        select_load_raw(perip_rdata, MEM2_funct3,
-                                        MEM2_alu_result[1:0]) : MEM2_mmio_mdata;
+                        perip_rdata : MEM2_mmio_mdata;
     assign MEM2_S1_mdata = (MEM2_S1_MemRead && MEM2_S1_bram_access) ?
-                           select_load_raw(perip_rdata, MEM2_S1_funct3,
-                                           MEM2_S1_alu_result[1:0]) : MEM2_S1_mmio_mdata;
+                           perip_rdata : MEM2_S1_mmio_mdata;
 
     // ---- MEM/WB 流水寄存器 ----
     mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg (
@@ -1099,6 +1136,7 @@ module mycpu (
         .MEM_RegWrite   (MEM2_RegWrite   ),
         .MEM_MemToReg   (MEM2_MemToReg   ),
         .MEM_funct3     (MEM2_funct3     ),
+        .MEM_bram_access(MEM2_bram_access),
         .clk            (clk           ),
         .rst            (rst           ),
         .Flush_MEM_WB   (1'b0          ),
@@ -1111,7 +1149,8 @@ module mycpu (
         .WB_rd_oh       (WB_rd_oh      ),
         .WB_RegWrite    (WB_RegWrite   ),
         .WB_MemToReg    (WB_MemToReg   ),
-        .WB_funct3      (WB_funct3     )
+        .WB_funct3      (WB_funct3     ),
+        .WB_bram_access (WB_bram_access)
     );
 
     mycpu_mem_wb_reg #(DATAWIDTH, ADDR_WIDTH) u_mem_wb_reg_s1 (
@@ -1125,6 +1164,7 @@ module mycpu (
         .MEM_RegWrite   (MEM2_S1_RegWrite   ),
         .MEM_MemToReg   (MEM2_S1_MemToReg   ),
         .MEM_funct3     (MEM2_S1_funct3     ),
+        .MEM_bram_access(MEM2_S1_bram_access),
         .clk            (clk                ),
         .rst            (rst                ),
         .Flush_MEM_WB   (1'b0               ),
@@ -1137,7 +1177,8 @@ module mycpu (
         .WB_rd_oh       (WB_S1_rd_oh        ),
         .WB_RegWrite    (WB_S1_RegWrite     ),
         .WB_MemToReg    (WB_S1_MemToReg     ),
-        .WB_funct3      (WB_S1_funct3       )
+        .WB_funct3      (WB_S1_funct3       ),
+        .WB_bram_access (WB_S1_bram_access  )
     );
 
     // =========================================================================
@@ -1152,6 +1193,7 @@ module mycpu (
         .WB_csr_wb     (WB_csr_wb    ),
         .WB_MemToReg   (WB_MemToReg  ),
         .WB_funct3     (WB_funct3    ),
+        .WB_bram_access(WB_bram_access),
         .WB_wdata      (WB_wdata     )
     );
 
@@ -1163,6 +1205,7 @@ module mycpu (
         .WB_csr_wb     (WB_S1_csr_wb    ),
         .WB_MemToReg   (WB_S1_MemToReg  ),
         .WB_funct3     (WB_S1_funct3    ),
+        .WB_bram_access(WB_S1_bram_access),
         .WB_wdata      (WB_S1_wdata     )
     );
 
