@@ -55,6 +55,7 @@ CPU_SRCS := \
   $(SRC_DATAPATH)/rv32m_unit.sv \
   $(SRC_HAZARD)/forwarding_unit.sv \
   $(SRC_HAZARD)/hazard_unit.sv \
+  $(SRC_MEMORY)/load_l0_cache.sv \
   $(SRC_MEMORY)/load_mask.sv \
   $(SRC_MEMORY)/mycpu_lsu.sv \
   $(SRC_PIPE_REG)/mycpu_if_id_reg.sv \

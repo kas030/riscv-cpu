@@ -60,10 +60,11 @@ module mycpu_id_ex_reg #(
     output logic [5:0]              EX_CSRControll  ,
     output logic                    EX_pred_taken   ,
     output logic [DATAWIDTH - 1:0]  EX_pred_target
+    ,output logic                   EX_pipe_valid
 );
     always_ff @(posedge clk) begin
-        if (rst || Flush_ID_EX) begin
-            // 复位 / 注气泡：所有控制信号清零，相当于一条无副作用的 NOP
+        if (rst) begin
+            // 复位时完整初始化，便于仿真和上板行为确定。
             EX_RegWrite     <= 1'b0;
             EX_MemWrite     <= 1'b0;
             EX_MemRead      <= 1'b0;
@@ -86,9 +87,37 @@ module mycpu_id_ex_reg #(
             EX_csr_zimm     <= '0;
             EX_pred_taken   <= 1'b0;
             EX_pred_target  <= '0;
+            EX_pipe_valid   <= 1'b0;
+        end else if (Flush_ID_EX) begin
+            // 注气泡只清一个有效位；数据和控制字段照常推进，副作用由顶层
+            // 使用EX_pipe_valid统一屏蔽，缩短cache/hazard高扇出路径。
+            EX_pipe_valid   <= 1'b0;
+            EX_pc           <= ID_pc;
+            EX_imm          <= ID_imm;
+            EX_rR1_data     <= ID_rR1_data;
+            EX_rR2_data     <= ID_rR2_data;
+            EX_rs1          <= ID_rs1;
+            EX_rs2          <= ID_rs2;
+            EX_rd           <= ID_rd;
+            EX_csr_idx      <= ID_csr_idx;
+            EX_csr_zimm     <= ID_csr_zimm;
+            EX_pred_target  <= ID_pred_target;
+            EX_RegWrite     <= ID_RegWrite;
+            EX_MemWrite     <= ID_MemWrite;
+            EX_MemRead      <= ID_MemRead;
+            EX_MemToReg     <= ID_MemToReg;
+            EX_funct3       <= ID_funct3;
+            EX_ALUSrcA      <= ID_ALUSrcA;
+            EX_ALUSrcB      <= ID_ALUSrcB;
+            EX_ALUControl   <= ID_ALUControl;
+            EX_NpcOp        <= ID_NpcOp;
+            EX_OffsetOrigin <= ID_OffsetOrigin;
+            EX_CSRControll  <= ID_CSRControll;
+            EX_pred_taken   <= ID_pred_taken;
         end else if (Stall_ID_EX) begin
             // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
         end else begin
+            EX_pipe_valid   <= 1'b1;
             // 正常推进：把 ID 级所有信号锁存进 EX 级
             EX_pc           <= ID_pc;
             EX_imm          <= ID_imm;

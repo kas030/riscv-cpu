@@ -11,7 +11,7 @@ set project_name digital_twin
 set project_dir  [file join $repo_root vivado]
 set project_path [file join $project_dir ${project_name}.xpr]
 set bram_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip BRAM]
-set bram_xci     [file join $bram_ip_dir BRAM.xci]
+set bram_xci     [file join $bram_ip_dir BRAM BRAM.xci]
 set bram_coe     [file normalize [file join $repo_root sim coe mext dram.coe]]
 set legacy_ip_name [format "%s%s" D RAM]
 set legacy_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip $legacy_ip_name]
@@ -80,6 +80,11 @@ file delete -force $legacy_ip_dir
 file delete -force $bram_ip_dir
 file mkdir $bram_ip_dir
 
+# Vivado keeps an IP module-name reservation in the current in-memory project
+# after remove_files. Reopen the project before recreating the same BRAM name.
+close_project
+open_project $project_path
+
 create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 \
     -module_name BRAM -dir $bram_ip_dir
 
@@ -113,9 +118,19 @@ set_property -dict [list \
     CONFIG.Use_RSTB_Pin {false} \
 ] $bram_ip
 
+# Use global synthesis for BRAM. blk_mem_gen otherwise emits a default 20 ns
+# BRAM_ooc.xdc, while this design drives clka/clkb with the 5 ns cpu clock.
+set bram_xci_files [get_files -quiet -all [string map {\\ /} $bram_xci]]
+if {[llength $bram_xci_files] == 0} {
+    puts "ERROR: BRAM XCI not found after create_ip"
+    close_project
+    exit 1
+}
+set_property GENERATE_SYNTH_CHECKPOINT false $bram_xci_files
+
 generate_target all $bram_ip
 export_ip_user_files -of_objects $bram_ip -no_script -sync -force -quiet
 update_compile_order -fileset sources_1
 
 close_project
-puts "INFO: recreated BRAM as blk_mem_gen true dual-port BRAM: $bram_xci"
+puts "INFO: recreated BRAM as globally synthesized blk_mem_gen true dual-port BRAM: $bram_xci"

@@ -165,6 +165,17 @@ proc create_bram_ip {project_dir project_name repo_root} {
         CONFIG.Use_RSTA_Pin {false} \
         CONFIG.Use_RSTB_Pin {false} \
     ] $bram_ip
+
+    # blk_mem_gen 8.4 does not expose a reliable native-port OOC clock-period
+    # property: its generated BRAM_ooc.xdc can remain at the 20 ns default even
+    # when Port_A/B_Clock are set to 200 MHz. Synthesize BRAM with the top level
+    # so clka/clkb inherit the real 5 ns cpu clock and no stale 50 MHz DCP is used.
+    set bram_xci_path [string map {\\ /} [file join $bram_ip_dir BRAM BRAM.xci]]
+    set bram_xci [get_files -quiet -all $bram_xci_path]
+    if {[llength $bram_xci] == 0} {
+        error "BRAM XCI not found after create_ip"
+    }
+    set_property GENERATE_SYNTH_CHECKPOINT false $bram_xci
 }
 
 if {[llength [get_projects -quiet]] != 0} {

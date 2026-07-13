@@ -40,12 +40,14 @@ module rv32m_unit #(
     logic [DATAWIDTH-1:0] mul_operand_a_q, mul_operand_b_q;
     logic [63:0] product_uu_fast;
     logic signed [63:0] product_ss_fast, product_su_fast;
+    logic [31:0] product_hi_uu_q, product_hi_ss_q, product_hi_su_q;
     logic [32:0] remainder_q, rem_shift, rem_next;
     logic [31:0] quotient_q, quotient_next, quotient_final, divisor_q;
     logic        rem_ge_divisor;
     logic        signed_a, signed_b;
     logic        div_by_zero, div_overflow;
     logic [DATAWIDTH-1:0] quot_signed, rem_signed;
+    logic [DATAWIDTH-1:0] special_result_start;
 
     assign op_mul    = alu_control[14];
     assign op_mulh   = alu_control[15];
@@ -76,6 +78,9 @@ module rv32m_unit #(
     assign rem_next       = rem_ge_divisor ? (rem_shift - {1'b0, divisor_q}) : rem_shift;
     assign quot_signed    = negate_quot_q ? (~quotient_final + 1'b1) : quotient_final;
     assign rem_signed     = negate_rem_q ? (~rem_next[31:0] + 1'b1) : rem_next[31:0];
+    assign special_result_start = div_by_zero ?
+                                  ((op_div || op_divu) ? {DATAWIDTH{1'b1}} : operand_a) :
+                                  (div_overflow ? (op_div ? operand_a : '0) : '0);
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -91,19 +96,31 @@ module rv32m_unit #(
             special_result_q <= '0;
             mul_operand_a_q  <= '0;
             mul_operand_b_q  <= '0;
+            product_hi_uu_q  <= '0;
+            product_hi_ss_q  <= '0;
+            product_hi_su_q  <= '0;
             remainder_q      <= '0;
             quotient_q       <= '0;
             divisor_q        <= '0;
         end else if (start && !busy_q) begin
             done_q <= 1'b0;
             busy_q <= 1'b1;
+            // 启动时无条件初始化迭代除法状态。即使本条是乘法或特殊除法，
+            // 这些值也不会被使用；统一写入可避免 div_by_zero/overflow 将
+            // 操作数数据扇出到 quotient/remainder/divisor 的 CE/R 控制端。
+            remainder_q <= '0;
+            quotient_q  <= (op_div || op_rem) ? abs_a : operand_a;
+            divisor_q   <= (op_div || op_rem) ? abs_b : operand_b;
+            special_result_q <= special_result_start;
             if (op_mul || op_mulh || op_mulhsu || op_mulhu) begin
                 mode_mul_q      <= 1'b1;
                 special_q       <= 1'b0;
                 op_sel_q        <= op_mul ? OP_MUL :
                                    op_mulh ? OP_MULH :
                                    op_mulhsu ? OP_MULHSU : OP_MULHU;
-                cycles_left_q   <= 6'd1;
+                // 普通 MUL 仅取低 32 位，保持原延迟；三种高位乘法
+                // 增加一级结果寄存，切断 DSP/符号修正长路径。
+                cycles_left_q   <= op_mul ? 6'd1 : 6'd2;
                 mul_operand_a_q <= operand_a;
                 mul_operand_b_q <= operand_b;
             end else begin
@@ -116,17 +133,12 @@ module rv32m_unit #(
                 if (div_by_zero) begin
                     special_q        <= 1'b1;
                     cycles_left_q    <= 6'd1;
-                    special_result_q <= (op_div || op_divu) ? {DATAWIDTH{1'b1}} : operand_a;
                 end else if (div_overflow) begin
                     special_q        <= 1'b1;
                     cycles_left_q    <= 6'd1;
-                    special_result_q <= op_div ? operand_a : '0;
                 end else begin
                     special_q     <= 1'b0;
                     cycles_left_q <= DIV_LATENCY[5:0];
-                    remainder_q   <= '0;
-                    quotient_q    <= (op_div || op_rem) ? abs_a : operand_a;
-                    divisor_q     <= (op_div || op_rem) ? abs_b : operand_b;
                 end
             end
         end else if (busy_q) begin
@@ -136,14 +148,19 @@ module rv32m_unit #(
                 special_q <= 1'b0;
                 result_q  <= special_result_q;
             end else if (mode_mul_q) begin
-                if (cycles_left_q == 6'd1) begin
+                if (cycles_left_q == 6'd2) begin
+                    product_hi_uu_q <= product_uu_fast[63:32];
+                    product_hi_ss_q <= product_ss_fast[63:32];
+                    product_hi_su_q <= product_su_fast[63:32];
+                    cycles_left_q   <= 6'd1;
+                end else if (cycles_left_q == 6'd1) begin
                     busy_q <= 1'b0;
                     done_q <= 1'b1;
                     case (op_sel_q)
                         OP_MUL:    result_q <= product_uu_fast[31:0];
-                        OP_MULH:   result_q <= product_ss_fast[63:32];
-                        OP_MULHSU: result_q <= product_su_fast[63:32];
-                        default:   result_q <= product_uu_fast[63:32];
+                        OP_MULH:   result_q <= product_hi_ss_q;
+                        OP_MULHSU: result_q <= product_hi_su_q;
+                        default:   result_q <= product_hi_uu_q;
                     endcase
                 end
             end else begin

@@ -47,8 +47,13 @@ module tb_cpu_only;
     longint unsigned cnt_dual_issue = 64'd0;
     longint unsigned cnt_stall_front = 64'd0;
     longint unsigned cnt_stall_hazard = 64'd0;
+    longint unsigned cnt_load_use_ex = 64'd0;
+    longint unsigned cnt_load_use_mem = 64'd0;
+    longint unsigned cnt_stall_both = 64'd0;
     longint unsigned cnt_ex_busy = 64'd0;
-    longint unsigned approx_inst;
+    longint unsigned cnt_l0_hit = 64'd0;
+    longint unsigned cnt_bram_load = 64'd0;
+    longint unsigned cnt_retired = 64'd0;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
@@ -339,7 +344,6 @@ module tb_cpu_only;
             if (!sim_done) begin
                 sim_done = 1'b1;
                 stop_reason = reason;
-                approx_inst = cnt_writeback + cnt_store + cnt_branch;
                 led_ok = (virtual_led != FAIL_LED) &&
                          ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
                           (!HAS_EXPECTED_LED && virtual_led == PASS_LED));
@@ -373,10 +377,20 @@ module tb_cpu_only;
                 $display(" dual issue packets: %0d", cnt_dual_issue);
                 $display(" front stall cycles: %0d", cnt_stall_front);
                 $display(" load/use stalls   : %0d", cnt_stall_hazard);
+                $display(" load/use EX stalls: %0d", cnt_load_use_ex);
+                $display(" load/use MEM stalls: %0d", cnt_load_use_mem);
+                $display(" hazard+EX busy    : %0d", cnt_stall_both);
                 $display(" ex busy cycles    : %0d", cnt_ex_busy);
-                $display(" approx total inst : %0d", approx_inst);
-                if (approx_inst > 0)
-                    $display(" CPI (approx)      : %0.3f", cycles * 1.0 / approx_inst);
+                $display(" L0 load hits      : %0d", cnt_l0_hit);
+                $display(" BRAM loads        : %0d", cnt_bram_load);
+                if (cnt_bram_load > 0)
+                    $display(" L0 hit rate       : %0.3f%%",
+                             100.0 * cnt_l0_hit / cnt_bram_load);
+                $display(" retired inst      : %0d", cnt_retired);
+                if (cnt_retired > 0) begin
+                    $display(" CPI               : %0.3f", cycles * 1.0 / cnt_retired);
+                    $display(" MIPS              : %0.3f", CPU_FREQ_MHZ * cnt_retired / cycles);
+                end
                 $display(" pc                : 0x%08X", irom_addr);
                 $display(" sim_time_ns       : %0d", $time);
                 $display("==================================================");
@@ -403,8 +417,34 @@ module tb_cpu_only;
                 cnt_stall_front <= cnt_stall_front + 1;
             if (dut.Stall_Hazard)
                 cnt_stall_hazard <= cnt_stall_hazard + 1;
+            if (dut.LoadUseEX)
+                cnt_load_use_ex <= cnt_load_use_ex + 1;
+            if (dut.LoadUseMEM)
+                cnt_load_use_mem <= cnt_load_use_mem + 1;
+            if (dut.Stall_Hazard && dut.EX_any_busy)
+                cnt_stall_both <= cnt_stall_both + 1;
             if (dut.EX_any_busy)
                 cnt_ex_busy <= cnt_ex_busy + 1;
+            cnt_l0_hit <= cnt_l0_hit +
+                          ((dut.MEM_valid && dut.MEM_cache_hit0) ? 1 : 0) +
+                          ((dut.MEM_S1_valid && dut.MEM_cache_hit1) ? 1 : 0);
+            cnt_bram_load <= cnt_bram_load +
+                             ((dut.MEM_valid && dut.MEM_MemRead &&
+                               dut.MEM_bram_access) ? 1 : 0) +
+                             ((dut.MEM_S1_valid && dut.MEM_S1_MemRead &&
+                               dut.MEM_S1_bram_access) ? 1 : 0);
+
+            // 若完成 store 位于 slot0，同包 slot1 在程序顺序上更年轻，不纳入截止统计。
+            if (led_written &&
+                ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
+                 virtual_led == PASS_LED || virtual_led == FAIL_LED) &&
+                dut.WB_retire_store0) begin
+                cnt_retired <= cnt_retired + (dut.WB_retire_valid0 ? 1 : 0);
+            end else begin
+                cnt_retired <= cnt_retired +
+                               (dut.WB_retire_valid0 ? 1 : 0) +
+                               (dut.WB_retire_valid1 ? 1 : 0);
+            end
         end
     end
 
@@ -412,7 +452,8 @@ module tb_cpu_only;
         if (!rst && led_written &&
             ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
              virtual_led == PASS_LED ||
-             virtual_led == FAIL_LED)) begin
+             virtual_led == FAIL_LED) &&
+            (dut.WB_retire_store0 || dut.WB_retire_store1)) begin
             finish_sim("led");
         end
     end

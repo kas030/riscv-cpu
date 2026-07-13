@@ -1,54 +1,62 @@
 # AGENTS.md
 
-本仓库是一个 Vivado/FPGA 工程中的 RV32I 五级流水 CPU。后续 agent 在分析、
-修改或验证代码时，请优先遵循本文约定。
+本仓库是一个面向 Vivado/FPGA 的 32 位 RISC-V CPU 工程。当前 CPU 支持 RV32I、RV32M 和项目测试所需的 Zicsr/陷阱返回功能，采用双槽顺序发射，流水后端为 `MEM1/MEM2` 两级。分析、修改或验证代码时，以当前 RTL 和本文约定为准。
 
 ## 项目结构
 
-- `rtl/core/mycpu.sv`：CPU 核心顶层，串接 `IF -> ID -> EX -> MEM -> WB`
-  五级流水、流水寄存器、冒险检测、前递和寄存器堆。
-- `rtl/pipeline/stage/`：五个流水级实现：
-  `mycpu_if_stage`、`mycpu_id_stage`、`mycpu_ex_stage`、
-  `mycpu_mem_stage`、`mycpu_wb_stage`。
-- `rtl/pipeline/register/`：级间流水寄存器：
-  `mycpu_if_id_reg`、`mycpu_id_ex_reg`、`mycpu_ex_mem_reg`、
-  `mycpu_mem_wb_reg`。
-- `rtl/control/`：译码与控制逻辑，包括 `main_ctrl.sv`、`alu_ctrl.sv`、
-  `imm_gen.sv`、`csr_ctrl_decode.sv`、`csr_file.sv`、`npc_calc.sv`。
-- `rtl/datapath/`：`alu.sv`、`pc_reg.sv`、`reg_file.sv` 等数据通路基础模块。
-- `rtl/hazard/`：`hazard_unit.sv` 与 `forwarding_unit.sv`。
-- `rtl/memory/`：BRAM 访问与 load 数据 mask/扩展相关模块。
-- `rtl/bus/perip_bridge.sv`：当前 RTL 的 BRAM/MMIO 地址译码权威来源。
-- `rtl/soc/student_top.sv`：实例化 `mycpu`、IROM 和 `perip_bridge`。
-- `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 与
-  `student_top`。
-- `tb/`：CPU/top/UART 的 SystemVerilog testbench。
-- `vivado/tests/`：RV32I 汇编测试、链接脚本和 `.coe`/`.mif` 生成工具。
-- `ip/`：Vivado IP 描述文件，如 PLL、IROM、BRAM。
-- `constraints/`：板级约束文件。
+- `rtl/core/mycpu.sv`：CPU 核心顶层，连接双槽流水线、冒险检测、前递、寄存器堆、分支重定向、L0 load 缓存和访存通路。
+- `rtl/pipeline/stage/`：`IF`、`ID`、`EX`、`MEM`、`WB` 的组合逻辑。 `mycpu_mem_stage.sv` 对应 MEM1 处理，MEM2 数据由级间寄存器继续传递。
+- `rtl/pipeline/register/`：级间寄存器。当前包括 `IF/ID`、`ID/EX`、 `EX/MEM1`、`MEM1/MEM2` 和 `MEM2/WB`。
+- `rtl/control/`：主译码、ALU/CSR 控制、立即数生成、下一 PC、统一译码封装和重定向控制。
+- `rtl/datapath/`：ALU、PC、双写口寄存器堆和 `rv32m_unit.sv`。
+- `rtl/hazard/`：双槽 load-use 冒险检测和多级前递选择。
+- `rtl/memory/`：LSU、BRAM 驱动、load mask/扩展和 `load_l0_cache.sv`。
+- `rtl/bus/perip_bridge.sv`：BRAM/MMIO 地址译码及板级访存时序的权威来源。
+- `rtl/soc/student_top.sv`：实例化 CPU、双路 IROM 读口和外设桥。
+- `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 和 `student_top`。
+- `sim_cpu_only/`：不依赖 Vivado IP 的 CPU-only Verilator/Icarus 仿真环境。
+- `tb/`：Vivado CPU、板级和 UART testbench。
+- `vivado/tests/`：分层汇编测试、链接脚本和镜像生成工具。
+- `ip/`、`constraints/`：Vivado IP 配置和板级约束。
 
-## 架构要点
+## 当前微架构
 
-- CPU 复位入口 PC 在 `rtl/core/mycpu.sv` 中定义为 `32'h8000_0000`。
-- `student_top.sv` 使用 `inst_addr = pc[13:2]` 访问 IROM，高位 PC 被有意
-  忽略，用于把 `0x8000_0000` 附近的取指映射到 IROM 索引。
-- 分支、`jal`、`jalr`、`ecall`、`mret` 均在 EX 级解析。跳转成立时，
-  `hazard_unit` 同时冲刷 IF/ID 与 ID/EX。
-- load-use 冒险会停顿 PC 与 IF/ID 一拍，并冲刷 ID/EX 注入气泡。
-- `forwarding_unit` 产生 EX/MEM 与 MEM/WB 两路前递选择，优先级为
-  EX/MEM 高于 MEM/WB。
-- `mycpu_mem_stage.sv` 根据 `MemToReg` 预先生成 `MEM_forward_data`，使
-  `lui`、`jal`、`jalr`、csr_file 等非普通 ALU 写回值也能走前递路径。
-- `reg_file.sv` 内置 WB 到 ID 的同周期旁路，并屏蔽对 `x0` 的写入。
-- ALU 使用 14 位一热 `ALUControl`，由 `alu_ctrl.sv` 译码生成。
-- 流水寄存器在 reset/flush 时注入 NOP 或清零控制信号。修改冒险、冲刷
-  或控制逻辑时必须保持该无副作用气泡语义。
+### 流水线与双发射
+
+- 对外仍按 `IF -> ID -> EX -> MEM -> WB` 模块组织，实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`。
+- 每拍最多顺序发射两条指令。第一槽沿用 `IF_`、`ID_`、`EX_`、`MEM_`、 `MEM2_`、`WB_` 前缀，第二槽使用 `_S1` 后缀。
+- 第二槽只在包内无 RAW/WAW 依赖且资源允许时有效。控制流、CSR、双访存、双 RV32M 等组合会退化为单发射；提交顺序始终是第一槽先于第二槽。
+- 流水有效性由 valid 信号和副作用控制共同约束。reset、flush 或气泡必须保证寄存器写、存储器写、CSR 写和重定向均无副作用。
+- 任一槽的 RV32M 单元忙时，前端和 ID/EX 保持。普通 `MUL` 使用一个等待周期，高位乘法使用两个等待周期，普通除法/余数使用 32 次迭代；除零和有符号溢出按 RISC-V 语义单独处理。
+
+### 取指与控制流
+
+- CPU 复位入口为 `32'h8000_0000`。
+- `student_top.sv` 使用 `pc[13:2]` 和相邻字地址访问双路 IROM，高位 PC 被有意忽略。
+- IF 内含直接映射的双发射提示表。冷启动或 tag 未命中时先单发射，再根据同步 IROM 返回的两条指令训练对应表项。
+- 条件分支预测使用 64 项 2 位饱和计数 BHT；未训练条件分支采用 BTFNT。 `jal` 在 IF 预测跳转，`jalr`、异常入口和 `mret` 由 EX 解析。
+- EX 比较实际结果和预测结果。预测错误时重定向 PC，并冲刷 IF/ID 与 ID/EX；预测正确时不冲刷流水线。
+
+### 冒险、前递与寄存器堆
+
+- `hazard_unit.sv` 同时检查两个消费者槽对 ID/EX 和 EX/MEM1 两槽 load 的依赖，并分别统计 EX、MEM 阶段造成的 load-use 停顿。
+- `forwarding_unit.sv` 为两个 EX 槽直接选择前递数据。阶段优先级为较新的 MEM1 高于 MEM2，高于 WB；同一阶段内第二槽结果比第一槽更新。
+- `reg_file.sv` 提供两路写回和两组读端口，包含 WB 到 ID 的同周期旁路，屏蔽对 `x0` 的写入。实例名 `rf_inst` 受 testbench 层次引用约束。
+- 非普通 ALU 写回值必须在各阶段统一形成可前递数据，不能只更新最终 WB mux。
+
+### Load/store 与 L0
+
+- CPU 对外只有一组数据访问接口，因此同拍最多发射一条访存指令。
+- BRAM 为同步读取。load 请求经 MEM1/MEM2 返回，完整 32 位原始字进入后端， byte/half 选择及符号扩展在写回路径完成；MMIO 读取保持独立的数据时序。
+- `load_l0_cache.sv` 是 64 项直接映射的 BRAM load 结果缓存，缓存完整 32 位字。 EX 提前探测命中后，可让紧随其后的依赖指令从 MEM1 获得数据。
+- L0 仅覆盖 BRAM 地址，不缓存 MMIO。store 仍写穿到 BRAM，并失效同一字地址的缓存行。
+- 字节、半字访问由 `mycpu_lsu.sv`、`load_mask.sv`、`bram_driver.sv` 和 CPU 后端共同完成，修改时必须保持地址低位、mask、拼接和符号扩展一致。
 
 ## 地址映射
 
-当前 RTL 行为以 `rtl/bus/perip_bridge.sv` 为准：
+当前行为以 `rtl/bus/perip_bridge.sv` 为准：
 
-- BRAM：`0x8010_0000 <= addr < 0x8013_FFFF`
+- BRAM：`0x8010_0000`—`0x8013_FFFF`
 - SW0：`0x8020_0000`
 - SW1：`0x8020_0004`
 - KEY：`0x8020_0010`
@@ -56,96 +64,94 @@
 - LED：`0x8020_0040`
 - COUNTER：`0x8020_0050`
 
-注意：`vivado/tests/linker/link.ld` 与部分旧汇编测试中的注释/地址看起来
-和当前 `perip_bridge.sv` 不完全一致。涉及测试、链接脚本或外设访问时，
-先核对 RTL，再成组调整测试与 testbench。
+COUNTER 写入 `0x8000_0000` 开始计数，写入 `0xFFFF_FFFF` 停止计数。链接脚本、汇编注释或旧测试若与 RTL 不一致，先按 `perip_bridge.sv` 核对实际行为。
 
-## 编码约定
+## 接口与编码约定
 
-- 延续现有 SystemVerilog 风格，优先使用 `logic`、`always_comb`、
-  `always_ff`。
-- CPU 核心修改边界：`rtl/core/mycpu.sv` 的对外端口列表视为固定接口，
-  不允许增删端口、改名、改宽度、改方向或改变接口时序语义。功能实现必须
-  接入 `mycpu` 已定义的 IROM 与外设/BRAM 访问接口。
-- 除非任务明确要求改 SoC、外设地址映射、板级集成、testbench 或 Vivado
-  IP，否则只能修改隶属于 `mycpu` 的 CPU 核心实现模块，例如
-  `rtl/core/mycpu.sv` 的内部连线、流水级、流水寄存器、控制、数据通路、
-  冒险/前递以及 CPU 内存访问辅助逻辑。不要为了适配 CPU 功能去修改
-  `rtl/soc/student_top.sv`、`rtl/top/top.sv`、`rtl/bus/perip_bridge.sv`、
-  `tb/`、`constraints/`、`ip/` 或 Vivado 生成目录。
-- 流水信号命名保持 `IF_`、`ID_`、`EX_`、`MEM_`、`WB_` 前缀。
-- 保持被 testbench 依赖的层次名稳定。例如 `mycpu.sv` 中寄存器堆实例名
-  为 `rf_inst`，`tb/tb_myCPU.sv` 会层次化引用它。
-- 不要随意把现有一热译码/一热 mux 风格改成大规模无关重构。
-- 中文注释较多，文件应保持 UTF-8。新增注释要简洁，解释设计意图或
-  易错点即可。
-- 不要编辑 Vivado 生成目录、`.runs`、`.cache`、`.sim`、日志或
-  `cpu_core_files.md`。
-- `.xci` 属于 IP 配置产物，只有在任务明确要求改 Vivado IP 时才修改。
+- `rtl/core/mycpu.sv` 的端口列表是固定接口：不得增删、改名、改宽度、改方向，也不得改变双路 IROM 与数据总线的时序语义。
+- 延续现有 SystemVerilog 风格，优先使用 `logic`、`always_comb`、`always_ff`。
+- 保持双槽命名、流水级前缀和 testbench 依赖的实例层次稳定。
+- 保持现有 ALU 一热控制编码。新增或调整运算时，同步核对 `defines.sv`、 `alu_ctrl.sv`、译码器、流水寄存器和 RV32M 单元。
+- 中文源码和文档保持 UTF-8；新增注释只说明设计意图、接口时序或易错约束。
+- 未明确要求 SoC、外设、板级、测试或 IP 变更时，CPU 功能修改仅限 `mycpu` 所属模块。不要通过修改 `student_top.sv`、`top.sv`、 `perip_bridge.sv`、testbench 或 IP 来掩盖核心问题。
+- 不编辑 Vivado 生成目录、`.runs`、`.cache`、`.sim` 或日志。`.xci` 仅在任务明确要求修改 Vivado IP 时变更。
 
-## Commit Message 规范
+## 测试镜像
 
-- 沿用仓库历史中的 Conventional Commits 风格：`type(scope): 中文摘要`。
-- `scope` 可省略；涉及明确子系统时使用小写范围，例如 `cpu`、`vivado`。
-- 常用 `type`：
-  `docs` 文档、`fix` 修复、`feat` 功能、`refactor` 重构、`style` 仅风格或
-  注释命名、`chore` 工程维护。
-- 摘要使用简短中文动宾短语，说明本次提交做了什么，不以句号结尾。
-- 示例：`docs: 添加 5 级流水线 CPU 性能优化设计文档`、
-  `fix(cpu): 修正 load-use 冒险冲刷逻辑`。
-
-## 测试与验证
-
-具备 RISC-V 裸机工具链和 Python 3 时，可在 `vivado/tests/` 下生成测试
-镜像：
+`vivado/tests/Makefile` 当前以 `-march=rv32im -mabi=ilp32` 编译四个 tier 的汇编测试，并生成 `.elf`、`.bin`、`.coe`、`.mif` 和反汇编文件：
 
 ```sh
+cd vivado/tests
 make
 make t10_fibonacci
+make t18_m_ext_basic
+make t19_zicsr_trap
 make clean
 ```
 
-Makefile 会尝试 `riscv32-unknown-elf-`、`riscv-none-embed-`、
-`riscv64-unknown-elf-` 等前缀，生成物位于 `vivado/tests/build/`。
+Makefile 会依次尝试 `riscv32-unknown-elf-`、`riscv-none-embed-` 和 `riscv64-unknown-elf-` 工具链前缀。生成物位于 `vivado/tests/build/`。
 
-Vivado 仿真入口：
+测试分层如下：
 
-- `tb/tb_myCPU.sv`：CPU/性能测试，带周期、写回、store、taken branch 计数。
-- `tb/tb_top.sv`：顶层 UART/twin-controller 集成行为。
-- `tb/tb_uart.sv`：独立 UART 行为。
+- `tier1_basic/`：RV32I 基础、load/store、CSR/外设、RV32M、Zicsr/陷阱。
+- `tier2_hazard/`：前递、load-use 和分支冒险。
+- `tier3_perf/`：算法性能负载。
+- `tier4_bench/`：综合 benchmark。
 
-`tb/tb_myCPU.sv` 会引用 `uut.student_top_inst.Core_cpu` 下的内部层次来统计
-性能。如果修改顶层层次或实例名，请同步更新 testbench。
+## CPU-only 仿真
 
-`tb/tb_myCPU.sv` 当前等待 `virtual_led` 写入 `32'hC0DEC0DE` 或
-`32'hDEADBEEF` 后结束。确保 IROM 中加载的程序遵循同一完成约定；否则 CPU
-可能已执行到预期位置，但仿真仍会超时。
+`sim_cpu_only/` 使用行为 IROM、BRAM 和 MMIO 模型直接编译 CPU RTL，不依赖 Vivado 工程。常用命令：
 
-## 修改检查清单
+```sh
+./sim_cpu_only/run_verilator.sh
+./sim_cpu_only/run_regression.sh
+./sim_cpu_only/run_regression_t05_t08.sh
+```
 
-- 改指令译码：同步检查 `defines.sv`、`main_ctrl.sv`、`alu_ctrl.sv`、
-  `imm_gen.sv`、`csr_ctrl_decode.sv` 与相关汇编测试。
-- 新增写回来源：同步更新 `MemToReg` 编码、ID/EX、EX/MEM、MEM/WB、
-  `mycpu_mem_stage.sv`、`mycpu_wb_stage.sv`。
-- 改冒险/前递：重点验证 `t07_forwarding.S`、`t08_load_use.S`、
-  `t09_branch_hazard.S`。
-- 改分支/csr_file：检查 `npc_calc.sv`、`csr_file.sv`、`csr_ctrl_decode.sv`、`main_ctrl.sv`，以及
-  IF/ID 与 ID/EX 的冲刷行为。
-- 改 load/store：同时核对 `load_mask.sv`、`bram_driver.sv`、
-  `mycpu_mem_stage.sv`、`perip_bridge.sv` 的宽度、符号扩展、字节偏移和
-  地址译码。
-- 改顶层：保持 `top.sv`、`student_top.sv`、约束、testbench、Vivado IP 的
-  时钟/复位极性一致。
+也可在目录内覆盖镜像和完成值：
 
-## 已知易错点
+```sh
+cd sim_cpu_only
+make sim-verilator \
+  IROM_COE=../vivado/tests/build/t10_fibonacci.coe \
+  PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF EXPECTED_LED=C0DEC0DE
+```
 
-- PowerShell 不指定 UTF-8 时可能把中文注释显示成乱码。读写源码时使用
-  UTF-8 感知工具。
-- 当前仓库可能被 Git 判定为 dubious ownership。除非任务需要 Git 操作，
-  不要擅自修改全局 Git 配置。
-- 地址映射、链接脚本和旧测试注释之间存在不一致迹象。以当前 RTL 为准，
-  再有意识地修正测试侧。
-- `load_mask.sv` 与 `bram_driver.sv` 分担了字节/半字选择、符号扩展和读写拼接
-  责任；不要只改其中一侧。
-- IROM 测试镜像的完成约定必须和 testbench 匹配，否则会出现“CPU 正常跑、
-  仿真不结束”的假失败。
+- 输入支持 `.coe`、`.mif` 和逐行 32 位 word 的 `.mem`。
+- 默认配置位于 `sim_cpu_only/config.mk`，包括镜像、LED 完成值、时限、频率、波形和日志详细度。
+- testbench 可按 LED 完成值、仿真时限或 `$finish` 结束。通用汇编测试使用 `0xC0DEC0DE` 表示通过、`0xDEADBEEF` 表示失败；默认竞赛镜像可在 `config.mk` 中使用另一组完成值。
+- 性能输出包括周期、写回、双发射包、前端停顿、load-use EX/MEM 停顿、 RV32M busy、L0 命中、退休指令、CPI 和 MIPS。统计信号依赖 `uut`/`Core_cpu` 下的内部层次，相关信号改名时必须同步维护 testbench。
+
+## Vivado 验证
+
+- `tb/tb_myCPU.sv`：CPU 功能和性能仿真，等待 LED 写入 `32'hC0DEC0DE` 或 `32'hDEADBEEF` 后结束并打印统计。
+- `tb/tb_top.sv`：板级 UART/twin-controller 集成行为。
+- `tb/tb_uart.sv`：UART 独立行为。
+- 综合和实现结果以当前 Vivado run 的 utilization、timing summary 和 route status 报告为准。不要把 `.runs` 内生成报告或 bitstream 直接当作 RTL 源文件编辑。
+
+## 修改时的一致性检查
+
+- 改指令译码：同步检查 `defines.sv`、`main_ctrl.sv`、`alu_ctrl.sv`、 `imm_gen.sv`、`mycpu_decoder.sv`、CSR 控制和相关汇编测试。
+- 改写回来源：同步检查 `MemToReg` 编码、五组流水寄存器、MEM1/MEM2 前递数据和 WB mux，两槽定义必须一致。
+- 改冒险或前递：至少覆盖 `t07_forwarding`、`t08_load_use`、 `t09_branch_hazard`，并检查两槽生产者/消费者组合。
+- 改分支、跳转、CSR 或陷阱：同步检查预测元数据、EX 重定向、valid、 IF/ID 与 ID/EX 冲刷以及 `t19_zicsr_trap`。
+- 改 load/store：同步检查 LSU、L0、load mask、BRAM driver、MEM1/MEM2、 MMIO 时序和地址译码。
+- 改双发射判定：保持 IF 提示表训练、ID 第二槽有效性、包内依赖、单访存、单 RV32M 和顺序提交约束一致。
+- 改顶层或时钟复位：保持 `top.sv`、`student_top.sv`、约束、testbench 和 Vivado IP 的时钟、复位极性及 IROM/BRAM 延迟一致。
+
+## Git 约定
+
+- 工作区可能包含用户尚未提交的修改；不要覆盖、回退或顺带整理无关文件。
+- 分支默认使用 `codex/` 前缀。
+- Commit message 使用 Conventional Commits：`type(scope): 中文摘要`。
+- 常用类型为 `feat`、`fix`、`refactor`、`docs`、`style`、`chore`；摘要使用简短中文动宾短语，不以句号结尾。
+- 示例：`docs: 更新 CPU 工程协作说明`、 `fix(cpu): 修正双槽 load-use 冒险判断`。
+
+## 已知注意事项
+
+- PowerShell 读取中文文件时显式使用 UTF-8，避免误判源码乱码。
+- Verilator 不支持在过程块的 `for` 循环中对大数组元素使用延迟（非阻塞）赋值进行复位，可能报 `BLKLOOPINIT`；此类复位循环应沿用当前已验证的阻塞赋值写法，并保证综合语义不变。
+- Git 可能报告 dubious ownership；除非 Git 操作确实需要且获得授权，不修改用户的全局 Git 配置。
+- 同步 IROM 和同步 BRAM 的返回拍数是核心接口语义，行为模型与 Vivado IP 必须保持一致。
+- 程序完成值必须匹配所用 testbench/config；否则可能出现程序已结束但仿真继续运行至超时的假失败。
+- `vivado/tests/build/` 中可能存在历史生成物。判断测试源码和编译参数时，以 tier 目录、Makefile 和本次重新生成的文件为准。
