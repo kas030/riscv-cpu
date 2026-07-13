@@ -21,7 +21,9 @@ module load_l0_cache #(
     input  logic [31:0] fill_addr,
     input  logic [31:0] fill_data,
     input  logic        store_en,
-    input  logic [31:0] store_addr
+    input  logic [31:0] store_addr,
+    input  logic [31:0] store_data,
+    input  logic [1:0]  store_mask
 );
     localparam ENTRIES = 1 << INDEX_WIDTH;
     // BRAM 使用 addr[17:2] 作为 16 位字地址，其中低 INDEX_WIDTH 位为索引。
@@ -54,18 +56,25 @@ module load_l0_cache #(
     always_ff @(posedge clk) begin
         if (rst) begin
             for (i = 0; i < ENTRIES; i = i + 1) begin
-                valid_array[i] <= 1'b0;
+                valid_array[i] = 1'b0;
             end
         end else begin
             if (fill_en) begin
                 data_array[fill_index]   <= fill_data;
                 tag_array[fill_index]    <= fill_tag;
                 valid_array[fill_index]  <= 1'b1;
+            end else if (store_en && (store_mask == 2'b10) &&
+                         valid_array[store_index] &&
+                         (tag_array[store_index] == store_tag)) begin
+                data_array[store_index] <= store_data;
             end
-            if (store_en &&
-                ((valid_array[store_index] &&
-                  (tag_array[store_index] == store_tag)) ||
-                 (fill_en && (fill_addr[17:2] == store_addr[17:2])))) begin
+
+            if (store_en && fill_en &&
+                (fill_addr[17:2] == store_addr[17:2])) begin
+                valid_array[fill_index] <= 1'b0;
+            end else if (store_en && valid_array[store_index] &&
+                         (tag_array[store_index] == store_tag) &&
+                         ((store_mask != 2'b10) || fill_en)) begin
                 valid_array[store_index] <= 1'b0;
             end
         end

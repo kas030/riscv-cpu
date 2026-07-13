@@ -254,12 +254,14 @@ module mycpu (
     logic        WB_RegWrite;
     logic        WB_bram_access, WB_S1_bram_access;
     logic [2:0]  WB_MemToReg, WB_funct3;
+    logic [4:0]  WB_wb_sel;
     logic [31:0] WB_csr_wb;
     logic [31:0] WB_S1_pcadd4, WB_S1_alu_result, WB_S1_mdata, WB_S1_imm;
     logic [4:0]  WB_S1_rd;
     logic [31:0] WB_S1_rd_oh;
     logic        WB_S1_RegWrite;
     logic [2:0]  WB_S1_MemToReg, WB_S1_funct3;
+    logic [4:0]  WB_S1_wb_sel;
     logic [31:0] WB_S1_csr_wb;
 
     // -------------------------------------------------------------------------
@@ -281,6 +283,7 @@ module mycpu (
 `endif
 
     localparam logic [31:0] NOP_INSTR = 32'h0000_0013;
+    localparam int L0_INDEX_WIDTH = 7;
 
     assign ID_instr1_effective = ID_issue_dual ? ID_instr1 : NOP_INSTR;
 
@@ -964,9 +967,9 @@ module mycpu (
     assign perip_addr  = (MEM_MemWrite || MEM_MemRead ||
                           MEM_S1_MemWrite || MEM_S1_MemRead) ? MEM_bus_addr : 32'b0;
 
-    // 64 项 BRAM load 结果缓存。外部访问保持不变；EX 提前探测命中时允许
+    // 128 项 BRAM load 结果缓存。外部访问保持不变；EX 提前探测命中时允许
     // 下一拍从 MEM1 前递，miss 仍沿原 BRAM→WB 路径返回。
-    load_l0_cache #(.INDEX_WIDTH(6)) u_load_l0_cache (
+    load_l0_cache #(.INDEX_WIDTH(L0_INDEX_WIDTH)) u_load_l0_cache (
         .clk          (clk),
         .rst          (rst),
         .lookup_addr  (MEM_use_s1_bus ? MEM_S1_perip_bus_addr : MEM_perip_bus_addr),
@@ -979,7 +982,9 @@ module mycpu (
         .fill_addr    (MEM_cache_fill_addr),
         .fill_data    (perip_rdata),
         .store_en     (MEM_bus_wen && is_bram_addr(MEM_bus_addr)),
-        .store_addr   (MEM_bus_addr)
+        .store_addr   (MEM_bus_addr),
+        .store_data   (MEM_bus_wdata),
+        .store_mask   (MEM_bus_mask)
     );
 
     assign MEM_cache_fill_en = (MEM2_MemRead && MEM2_bram_access) ||
@@ -1012,7 +1017,8 @@ module mycpu (
                              is_bram_addr(EX_cache_probe_addr0) &&
                              EX_cache_probe_hit &&
                              !(MEM_cache_fill_en &&
-                               (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr0[7:2]) &&
+                               (MEM_cache_fill_addr[L0_INDEX_WIDTH+1:2] ==
+                                EX_cache_probe_addr0[L0_INDEX_WIDTH+1:2]) &&
                                (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2])) &&
                              !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
                                (MEM_bus_addr[17:2] == EX_cache_probe_addr0[17:2]));
@@ -1020,7 +1026,8 @@ module mycpu (
                              is_bram_addr(EX_cache_probe_addr1) &&
                              EX_cache_probe_hit &&
                              !(MEM_cache_fill_en &&
-                               (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr1[7:2]) &&
+                               (MEM_cache_fill_addr[L0_INDEX_WIDTH+1:2] ==
+                                EX_cache_probe_addr1[L0_INDEX_WIDTH+1:2]) &&
                                (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr1[17:2])) &&
                              !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
                                (MEM_bus_addr[17:2] == EX_cache_probe_addr1[17:2]));
@@ -1149,6 +1156,7 @@ module mycpu (
         .WB_rd_oh       (WB_rd_oh      ),
         .WB_RegWrite    (WB_RegWrite   ),
         .WB_MemToReg    (WB_MemToReg   ),
+        .WB_wb_sel      (WB_wb_sel     ),
         .WB_funct3      (WB_funct3     ),
         .WB_bram_access (WB_bram_access)
     );
@@ -1177,36 +1185,37 @@ module mycpu (
         .WB_rd_oh       (WB_S1_rd_oh        ),
         .WB_RegWrite    (WB_S1_RegWrite     ),
         .WB_MemToReg    (WB_S1_MemToReg     ),
+        .WB_wb_sel      (WB_S1_wb_sel       ),
         .WB_funct3      (WB_S1_funct3       ),
         .WB_bram_access (WB_S1_bram_access  )
     );
 
     // =========================================================================
     // STAGE 5：WB（写回）
-    //   5 路 MemToReg 选择；输出直接接到 reg_file 写口与 forwarding_unit 的候选源
+    //   5 路写回选择；输出直接接到 reg_file 写口与 forwarding_unit 的候选源
     // =========================================================================
     mycpu_wb_stage #(DATAWIDTH) u_wb_stage (
-        .WB_pcadd4     (WB_pcadd4    ),
-        .WB_alu_result (WB_alu_result),
-        .WB_mdata      (WB_mdata     ),
-        .WB_imm        (WB_imm       ),
-        .WB_csr_wb     (WB_csr_wb    ),
-        .WB_MemToReg   (WB_MemToReg  ),
-        .WB_funct3     (WB_funct3    ),
-        .WB_bram_access(WB_bram_access),
-        .WB_wdata      (WB_wdata     )
+        .WB_pcadd4      (WB_pcadd4),
+        .WB_alu_result  (WB_alu_result),
+        .WB_mdata       (WB_mdata),
+        .WB_imm         (WB_imm),
+        .WB_csr_wb      (WB_csr_wb),
+        .WB_wb_sel      (WB_wb_sel),
+        .WB_funct3      (WB_funct3),
+        .WB_bram_access (WB_bram_access),
+        .WB_wdata       (WB_wdata)
     );
 
     mycpu_wb_stage #(DATAWIDTH) u_wb_stage_s1 (
-        .WB_pcadd4     (WB_S1_pcadd4    ),
-        .WB_alu_result (WB_S1_alu_result),
-        .WB_mdata      (WB_S1_mdata     ),
-        .WB_imm        (WB_S1_imm       ),
-        .WB_csr_wb     (WB_S1_csr_wb    ),
-        .WB_MemToReg   (WB_S1_MemToReg  ),
-        .WB_funct3     (WB_S1_funct3    ),
-        .WB_bram_access(WB_S1_bram_access),
-        .WB_wdata      (WB_S1_wdata     )
+        .WB_pcadd4      (WB_S1_pcadd4),
+        .WB_alu_result  (WB_S1_alu_result),
+        .WB_mdata       (WB_S1_mdata),
+        .WB_imm         (WB_S1_imm),
+        .WB_csr_wb      (WB_S1_csr_wb),
+        .WB_wb_sel      (WB_S1_wb_sel),
+        .WB_funct3      (WB_S1_funct3),
+        .WB_bram_access (WB_S1_bram_access),
+        .WB_wdata       (WB_S1_wdata)
     );
 
 endmodule

@@ -34,6 +34,7 @@ module mycpu_mem_wb_reg #(
     output logic [31:0]             WB_rd_oh       ,
     output logic                    WB_RegWrite    ,
     output logic [2:0]              WB_MemToReg    ,
+    output logic [4:0]              WB_wb_sel      ,
     output logic [2:0]              WB_funct3      ,
     output logic                    WB_bram_access
 );
@@ -41,6 +42,7 @@ module mycpu_mem_wb_reg #(
         if (rst || Flush_MEM_WB) begin
             WB_RegWrite <= 1'b0;
             WB_MemToReg <= '0;
+            WB_wb_sel   <= '0;
             WB_rd_oh    <= 32'b0;
             WB_funct3   <= '0;
             WB_bram_access <= 1'b0;
@@ -53,6 +55,14 @@ module mycpu_mem_wb_reg #(
             WB_rd_oh      <= MEM_rd_oh;
             WB_RegWrite   <= MEM_RegWrite;
             WB_MemToReg   <= MEM_MemToReg;
+            case (MEM_MemToReg)
+                3'b000: WB_wb_sel <= 5'b00001;
+                3'b001: WB_wb_sel <= 5'b00010;
+                3'b010: WB_wb_sel <= 5'b00100;
+                3'b011: WB_wb_sel <= 5'b01000;
+                3'b100: WB_wb_sel <= 5'b10000;
+                default: WB_wb_sel <= '0;
+            endcase
             WB_csr_wb     <= MEM_csr_wb;
             WB_funct3     <= MEM_funct3;
             WB_bram_access <= MEM_bram_access;

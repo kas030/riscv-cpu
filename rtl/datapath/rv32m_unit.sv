@@ -3,8 +3,8 @@
 // =============================================================================
 // rv32m_unit.sv
 //   RV32M multiply/divide unit used by EX stage.
-//   Multiplication keeps the current fast one-wait-cycle path; division and
-//   remainder keep the 32-cycle iterative path.
+//   Low MUL commits directly from the registered-operand product after one
+//   wait cycle. High-half multiplication and division keep registered results.
 // =============================================================================
 module rv32m_unit #(
     parameter DATAWIDTH = 32,
@@ -48,6 +48,7 @@ module rv32m_unit #(
     logic        div_by_zero, div_overflow;
     logic [DATAWIDTH-1:0] quot_signed, rem_signed;
     logic [DATAWIDTH-1:0] special_result_start;
+    logic                 fast_mul_done;
 
     assign op_mul    = alu_control[14];
     assign op_mulh   = alu_control[15];
@@ -81,6 +82,8 @@ module rv32m_unit #(
     assign special_result_start = div_by_zero ?
                                   ((op_div || op_divu) ? {DATAWIDTH{1'b1}} : operand_a) :
                                   (div_overflow ? (op_div ? operand_a : '0) : '0);
+    assign fast_mul_done = busy_q && mode_mul_q &&
+                           (cycles_left_q == 6'd1) && (op_sel_q == OP_MUL);
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -155,7 +158,7 @@ module rv32m_unit #(
                     cycles_left_q   <= 6'd1;
                 end else if (cycles_left_q == 6'd1) begin
                     busy_q <= 1'b0;
-                    done_q <= 1'b1;
+                    done_q <= (op_sel_q != OP_MUL);
                     case (op_sel_q)
                         OP_MUL:    result_q <= product_uu_fast[31:0];
                         OP_MULH:   result_q <= product_hi_ss_q;
@@ -190,6 +193,6 @@ module rv32m_unit #(
     end
 
     assign busy   = busy_q;
-    assign done   = done_q;
-    assign result = result_q;
+    assign done   = done_q || fast_mul_done;
+    assign result = fast_mul_done ? product_uu_fast[31:0] : result_q;
 endmodule
