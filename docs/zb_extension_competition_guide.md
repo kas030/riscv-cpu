@@ -5,6 +5,7 @@
 
 配套材料：
 
+- [RV32 Zb 可能考查指令总表](zb_all_candidate_instructions.md)
 - [比赛现场速查表](zb_competition_cheatsheet.md)
 - [12 道训练题](zb_training_exercises.md)
 - `vivado/tests/zb_training/` 中的汇编示例和参考工具
@@ -95,8 +96,12 @@ python3 vivado/tests/zb_training/tools/zb_tool.py encode-r \
 
 ### 第三步：给 ALU 分配一个新控制位
 
-当前 `ALUControl` 有 22 位，而且已经全部使用。先在 `defines.sv` 中把宽度从 22
-改为 23。已有信号大多使用宏定义，会自动一起变宽。
+在尚未实现任何 Zb 指令的原始基线中，`ALUControl` 有 22 位且已经全部使用，
+因此要先在 `defines.sv` 中把宽度从 22 改为 23。已有信号大多使用宏定义，会
+自动一起变宽。
+
+若当前工作树已经包含本教程演示的 `sh1add`，bit 22 已被占用，不要再次分配；
+添加下一条指令时应查找当前最高已用位，并把宽度继续增加 1。
 
 然后在 `alu_ctrl.sv` 中增加 bit 22：
 

@@ -4,9 +4,10 @@
 顺序使用材料：
 
 1. 阅读 `docs/zb_extension_competition_guide.md`，跟着 `sh1add` 做完整流程。
-2. 从 `docs/zb_training_exercises.md` 选择一道题练习。
-3. 独立完成后，用 `docs/zb_competition_cheatsheet.md` 做限时模拟。
-4. 用 `tools/zb_tool.py` 计算编码和参考结果，避免测试与 RTL 写出同一个错误。
+2. 用 `docs/zb_all_candidate_instructions.md` 核对完整候选范围。
+3. 从 `docs/zb_training_exercises.md` 选择一道题练习。
+4. 独立完成后，用 `docs/zb_competition_cheatsheet.md` 做限时模拟。
+5. 用 `tools/zb_tool.py` 计算编码和参考结果，避免测试与 RTL 写出同一个错误。
 
 实际练习时，把一个 `.S` 文件复制到 `vivado/tests/tier1_basic/`，再执行：
 

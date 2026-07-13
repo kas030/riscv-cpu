@@ -12,32 +12,34 @@ module alu_ctrl(
     input  logic [9:0]                    funct     ,      // {funct7, funct3}
     output logic [`ALU_OP_WIDTH - 1:0]   ALUControl        // 独热 alu 操作码
 );
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_ADD    = 22'h000001;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SUB    = 22'h000002;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_AND    = 22'h000004;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_OR     = 22'h000008;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_XOR    = 22'h000010;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SLL    = 22'h000020;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SRL    = 22'h000040;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SRA    = 22'h000080;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BEQ    = 22'h000100;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BNE    = 22'h000200;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BLT    = 22'h000400;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BGE    = 22'h000800;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BGEU   = 22'h001000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BLTU   = 22'h002000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MUL    = 22'h004000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULH   = 22'h008000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULHSU = 22'h010000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULHU  = 22'h020000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIV    = 22'h040000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIVU   = 22'h080000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_REM    = 22'h100000;
-    localparam logic [`ALU_OP_WIDTH - 1:0] OP_REMU   = 22'h200000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_ADD    = 23'h000001;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SUB    = 23'h000002;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_AND    = 23'h000004;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_OR     = 23'h000008;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_XOR    = 23'h000010;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SLL    = 23'h000020;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SRL    = 23'h000040;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SRA    = 23'h000080;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BEQ    = 23'h000100;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BNE    = 23'h000200;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BLT    = 23'h000400;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BGE    = 23'h000800;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BGEU   = 23'h001000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_BLTU   = 23'h002000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MUL    = 23'h004000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULH   = 23'h008000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULHSU = 23'h010000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_MULHU  = 23'h020000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIV    = 23'h040000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIVU   = 23'h080000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_REM    = 23'h100000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_REMU   = 23'h200000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_SH1ADD = 23'h400000;
 
     logic do_add , do_sub , do_and , do_or  , do_xor , do_sll , do_srl;
     logic do_sra , do_beq , do_bne , do_blt , do_bge , do_bgeu, do_bltu;
     logic do_mul , do_mulh, do_mulhsu, do_mulhu, do_div, do_divu, do_rem, do_remu;
+    logic do_sh1add;
 
     assign ALUControl = {`ALU_OP_WIDTH{do_add   }} & OP_ADD    |
                         {`ALU_OP_WIDTH{do_sub   }} & OP_SUB    |
@@ -60,7 +62,8 @@ module alu_ctrl(
                         {`ALU_OP_WIDTH{do_div   }} & OP_DIV    |
                         {`ALU_OP_WIDTH{do_divu  }} & OP_DIVU   |
                         {`ALU_OP_WIDTH{do_rem   }} & OP_REM    |
-                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU;
+                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU   |
+                        {`ALU_OP_WIDTH{do_sh1add}} & OP_SH1ADD;
 
     logic kind_r, kind_i, kind_load, kind_store, kind_jalr, kind_auipc, kind_branch;
     logic [6:0] funct7;
@@ -118,4 +121,7 @@ module alu_ctrl(
     assign do_divu   = r_mext && funct3 == 3'b101;
     assign do_rem    = r_mext && funct3 == 3'b110;
     assign do_remu   = r_mext && funct3 == 3'b111;
+
+    // sh1add rd, rs1, rs2：rd = (rs1 << 1) + rs2。
+    assign do_sh1add = kind_r && funct7 == 7'b0010000 && funct3 == 3'b010;
 endmodule

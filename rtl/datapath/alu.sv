@@ -3,6 +3,7 @@
 //   位于 EX 级，根据 alu_ctrl 译码出的独热 ALUControl 选择本次运算：
 //     [0] add  [1] sub  [2] and [3] or  [4] xor [5] sll [6] srl [7] sra
 //     [8] beq  [9] bne [10] blt [11] bge [12] bgeu [13] bltu
+//     [22] sh1add
 //   设计要点：
 //     - add/sub/blt/bge/bgeu/bltu 共享同一加减法器，减法/比较时通过
 //       B 端取反 + cin=1 实现 A - B。
@@ -23,11 +24,13 @@ module alu #(
 );
     logic m_add , m_sub , m_and , m_or  , m_xor , m_sll , m_srl;
     logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu;
+    logic m_sh1add;
     logic [DATAWIDTH-1:0] add_lhs, add_rhs;
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
     logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra;
     logic [DATAWIDTH-1:0] r_slt, r_sltu;
+    logic [DATAWIDTH-1:0] r_sh1add;
     logic                 cmp_eq, cmp_lt, cmp_ltu;
 
     assign m_add  = ALUControl[ 0];
@@ -44,6 +47,7 @@ module alu #(
     assign m_bge  = ALUControl[11];
     assign m_bgeu = ALUControl[12];
     assign m_bltu = ALUControl[13];
+    assign m_sh1add = ALUControl[22];
 
     assign add_lhs = A;
     assign add_rhs = (m_sub | m_blt | m_bge | m_bgeu | m_bltu) ? ~B : B;
@@ -59,6 +63,7 @@ module alu #(
     assign r_sll  = A << B[4:0];
     assign r_srl  = A >> B[4:0];
     assign r_sra  = ($signed(A)) >>> B[4:0];
+    assign r_sh1add = (A << 1) + B;
 
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
@@ -81,5 +86,6 @@ module alu #(
                     {DATAWIDTH{m_srl        }} & r_srl    |
                     {DATAWIDTH{m_sra        }} & r_sra    |
                     {DATAWIDTH{m_blt        }} & r_slt    |
-                    {DATAWIDTH{m_bltu       }} & r_sltu;
+                    {DATAWIDTH{m_bltu       }} & r_sltu   |
+                    {DATAWIDTH{m_sh1add     }} & r_sh1add;
 endmodule

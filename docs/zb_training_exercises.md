@@ -13,9 +13,10 @@
 这份文件是练习册，不建议直接从第一页硬啃到最后。更容易理解的顺序是：
 
 1. 先读[主教程](zb_extension_competition_guide.md)，跟着 `sh1add` 完整做一遍。
-2. 按下表由易到难做题，每次只实现一条指令。
-3. 能独立完成后，使用[比赛速查表](zb_competition_cheatsheet.md)限时模拟。
-4. 用 `vivado/tests/zb_training/tools/zb_tool.py` 独立计算机器码和期望结果。
+2. 浏览[可能考查指令总表](zb_all_candidate_instructions.md)，建立完整范围概念。
+3. 按下表由易到难做题，每次只实现一条指令。
+4. 能独立完成后，使用[比赛速查表](zb_competition_cheatsheet.md)限时模拟。
+5. 用 `vivado/tests/zb_training/tools/zb_tool.py` 独立计算机器码和期望结果。
 
 | 阶段 | 建议题目 | 学习目标 |
 |---|---|---|
@@ -27,14 +28,17 @@
 
 ## 1. 先熟悉现场工作流
 
-当前基线中，`rtl/control/alu_ctrl.sv` 根据 `opcode` 和 `{funct7, funct3}`
-产生 22 位独热 `ALUControl`，`rtl/datapath/alu.sv` 在 EX 级计算普通整数结果。
+原始未实现 Zb 的基线中，`rtl/control/alu_ctrl.sv` 根据 `opcode` 和
+`{funct7, funct3}` 产生 22 位独热 `ALUControl`，`rtl/datapath/alu.sv` 在 EX 级
+计算普通整数结果。若当前代码已经完成 `sh1add` 演示，则宽度和最高已用位已经
+增加，后续练习必须从新的空闲位继续分配。
 一条不访存、不跳转、单周期完成的 Zb 指令，通常按下列顺序接入：
 
 1. 写出精确语义，确认两个输入分别来自 `rs1`、`rs2` 还是立即数字段。
 2. 按题面匹配完整编码。若多条指令共享 `funct7/funct3`，必须进一步检查
    `instr[24:20]` 等字段，不能放宽成会误收保留编码的条件。
-3. 扩展 `ALU_OP_WIDTH`，给新操作分配一个独热位；当前已有位为 `[21:0]`。
+3. 扩展 `ALU_OP_WIDTH`，在当前最高已用位之后给新操作分配一个独热位；原始
+   基线已有位为 `[21:0]`。
 4. 在 ALU 控制译码中增加 `do_xxx`，在 ALU 中增加 `m_xxx` 和 `r_xxx`。
 5. 将新结果接入现有独热结果汇总，不要改变其他操作的结果和分支 `isTrue`。
 6. 检查新控制位没有被 RV32M 多周期启动条件误认为乘除法操作。

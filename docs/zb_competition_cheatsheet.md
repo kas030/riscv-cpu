@@ -1,14 +1,16 @@
 # RV32 Zb 指令比赛现场速查表
 
 > 这是一张“照着做”的检查单，不代替入门讲解。第一次练习请先读
-> [Zb 扩展指令教程](zb_extension_competition_guide.md)。**编码和语义永远以比赛题面为准。**
+> [Zb 扩展指令教程](zb_extension_competition_guide.md)，完整范围见
+> [可能考查指令总表](zb_all_candidate_instructions.md)。**编码和语义永远以比赛题面为准。**
 
 ## 一、拿到题目后的七步
 
 1. **写语义**：先写成 32 位伪代码，圈出符号、回绕、移位量、索引和越界规则。
 2. **拆机器码**：确认 `opcode`、`funct7`、`funct3`、`rs2/imm[4:0]`，判断 B 是寄存器还是立即数。
 3. **定数据路**：普通 OP/OP-IMM 指令走现有 ALU 写回，通常不用改流水寄存器、前递或 WB。
-4. **加控制位**：扩大 `ALU_OP_WIDTH`，从 bit 22 起分配一个新的独热位。
+4. **加控制位**：扩大 `ALU_OP_WIDTH`，从当前最高已用位之后分配新的独热位；
+   原始 22 位基线的第一个空闲位才是 bit 22。
 5. **加译码和运算**：严格匹配题面编码，在 ALU 中计算局部结果并接入 `Result`。
 6. **先小后大地测**：先测纯运算，再测覆盖写、前递、load-use、x0 和两个发射槽。
 7. **查机器码和波形**：先确认 `.dump`，再沿 `ID 控制 -> EX 输入 -> ALU 结果 -> WB` 排查。
@@ -46,7 +48,7 @@ python3 vivado/tests/zb_training/tools/zb_tool.py encode-r \
 | `rtl/control/alu_ctrl.sv` | 新增 `OP_XXX`、`do_xxx` 和 OR 汇总项 | 只在目标机器码上置位，且保持独热 |
 | `rtl/datapath/alu.sv` | 新增 `m_xxx`、`r_xxx` 和 `Result` 汇总项 | `r_xxx` 是完整 32 位结果，未选中时不影响输出 |
 
-独热控制的最小写法（bit 22 对应 `23'h400000`）：
+独热控制的最小写法（以下用原始基线的 bit 22、`23'h400000` 举例）：
 
 ```systemverilog
 // alu_ctrl.sv
@@ -86,8 +88,9 @@ assign r_xxx = /* 32 位运算 */;
 assign is_m_op = |EX_ALUControl[21:14];
 ```
 
-bit 14～21 专属于现有乘除法。Zb 控制位从 bit 22 起分配，**不要**把范围写成
-`[ALU_OP_WIDTH-1:14]`，否则新指令会启动多周期 RV32M 单元。
+bit 14～21 专属于现有乘除法。Zb 控制位应分配在这个范围之外，原始基线从
+bit 22 起使用；**不要**把范围写成 `[ALU_OP_WIDTH-1:14]`，否则新指令会启动
+多周期 RV32M 单元。
 
 ## 五、常用 SystemVerilog 运算模板
 
