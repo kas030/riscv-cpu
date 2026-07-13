@@ -68,6 +68,20 @@ module mycpu (
     logic [31:0] EX_cache_probe_data, EX_cache_probe_raw, EX_cache_probe_load_data;
     logic        MEM_cache_fill_en;
     logic [31:0] MEM_cache_fill_addr;
+    logic        MEM_bus_active;
+    logic        MEM_l0_hit, EX_l0_probe_hit;
+    logic [31:0] MEM_l0_data, EX_l0_probe_data;
+    logic        MEM_prefetch_hit, EX_prefetch_probe_hit;
+    logic        MEM_cache_miss;
+    logic        prefetch_pending_valid, prefetch_issue, prefetch_resp_valid;
+    logic        prefetch_bus_safe;
+    logic        prefetch_buffer_valid;
+    logic        prefetch_miss_valid, prefetch_miss2_valid;
+    logic [31:0] prefetch_pending_addr, prefetch_resp_addr;
+    logic [31:0] prefetch_buffer_addr, prefetch_buffer_data;
+    logic [15:0] prefetch_last_miss_word, prefetch_prev_miss_word;
+    logic [15:0] prefetch_current_miss_word, prefetch_stride_now;
+    logic [15:0] prefetch_stride_prev, prefetch_next_word;
     logic        LoadUseEX, LoadUseMEM;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
@@ -962,10 +976,17 @@ module mycpu (
     assign perip_wdata = MEM_bus_wdata;
     assign MEM_bram_load = (MEM_MemRead && MEM_bram_access) ||
                            (MEM_S1_MemRead && MEM_S1_bram_access);
+    assign MEM_bus_active = MEM_MemWrite || MEM_MemRead ||
+                            MEM_S1_MemWrite || MEM_S1_MemRead;
+    // 预取返回拍不能与 MMIO 组合读重叠，因此还要求 EX 中没有下一拍访存。
+    assign prefetch_bus_safe = !MEM_bus_active &&
+                               !EX_MemRead_eff && !EX_MemWrite_eff &&
+                               !EX_S1_MemRead_eff && !EX_S1_MemWrite_eff;
+    assign prefetch_issue = prefetch_pending_valid && prefetch_bus_safe;
     // BRAM load 始终读取完整字；store 与 MMIO 保持原 mask 语义。
-    assign perip_mask  = MEM_bram_load ? 2'b10 : MEM_bus_mask;
-    assign perip_addr  = (MEM_MemWrite || MEM_MemRead ||
-                          MEM_S1_MemWrite || MEM_S1_MemRead) ? MEM_bus_addr : 32'b0;
+    assign perip_mask  = (prefetch_issue || MEM_bram_load) ? 2'b10 : MEM_bus_mask;
+    assign perip_addr  = prefetch_issue ? prefetch_pending_addr :
+                         MEM_bus_active ? MEM_bus_addr : 32'b0;
 
     // 128 项 BRAM load 结果缓存。外部访问保持不变；EX 提前探测命中时允许
     // 下一拍从 MEM1 前递，miss 仍沿原 BRAM→WB 路径返回。
@@ -973,11 +994,11 @@ module mycpu (
         .clk          (clk),
         .rst          (rst),
         .lookup_addr  (MEM_use_s1_bus ? MEM_S1_perip_bus_addr : MEM_perip_bus_addr),
-        .lookup_hit   (MEM_cache_hit),
-        .lookup_data  (MEM_cache_data),
+        .lookup_hit   (MEM_l0_hit),
+        .lookup_data  (MEM_l0_data),
         .probe_addr   (EX_cache_probe_addr),
-        .probe_hit    (EX_cache_probe_hit),
-        .probe_data   (EX_cache_probe_data),
+        .probe_hit    (EX_l0_probe_hit),
+        .probe_data   (EX_l0_probe_data),
         .fill_en      (MEM_cache_fill_en),
         .fill_addr    (MEM_cache_fill_addr),
         .fill_data    (perip_rdata),
@@ -987,10 +1008,81 @@ module mycpu (
         .store_mask   (MEM_bus_mask)
     );
 
+    // 单项 stride 预取只使用需求访存空拍。响应进入独立一行缓冲，避免
+    // 错误预测替换 L0 中仍有价值的数据。
+    assign MEM_prefetch_hit = prefetch_buffer_valid && MEM_bram_load &&
+                              (prefetch_buffer_addr[17:2] == MEM_bus_addr[17:2]);
+    assign EX_prefetch_probe_hit = prefetch_buffer_valid &&
+                                   (prefetch_buffer_addr[17:2] ==
+                                    EX_cache_probe_addr[17:2]);
+    assign MEM_cache_hit = MEM_l0_hit || MEM_prefetch_hit;
+    assign MEM_cache_data = MEM_prefetch_hit ? prefetch_buffer_data : MEM_l0_data;
+    assign EX_cache_probe_hit = EX_l0_probe_hit || EX_prefetch_probe_hit;
+    assign EX_cache_probe_data = EX_prefetch_probe_hit ? prefetch_buffer_data :
+                                                        EX_l0_probe_data;
+
     assign MEM_cache_fill_en = (MEM2_MemRead && MEM2_bram_access) ||
                                (MEM2_S1_MemRead && MEM2_S1_bram_access);
     assign MEM_cache_fill_addr = MEM2_MemRead ? MEM2_alu_result :
                                                    MEM2_S1_alu_result;
+    assign MEM_cache_miss = MEM_bram_load && !MEM_cache_hit;
+    assign prefetch_current_miss_word = MEM_bus_addr[17:2];
+    assign prefetch_stride_now = prefetch_current_miss_word -
+                                 prefetch_last_miss_word;
+    assign prefetch_stride_prev = prefetch_last_miss_word -
+                                  prefetch_prev_miss_word;
+    assign prefetch_next_word = prefetch_current_miss_word +
+                                prefetch_stride_now;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            prefetch_pending_valid  <= 1'b0;
+            prefetch_resp_valid     <= 1'b0;
+            prefetch_buffer_valid   <= 1'b0;
+            prefetch_miss_valid     <= 1'b0;
+            prefetch_miss2_valid    <= 1'b0;
+            prefetch_pending_addr   <= 32'b0;
+            prefetch_resp_addr      <= 32'b0;
+            prefetch_buffer_addr    <= 32'b0;
+            prefetch_buffer_data    <= 32'b0;
+            prefetch_last_miss_word <= 16'b0;
+            prefetch_prev_miss_word <= 16'b0;
+        end else begin
+            prefetch_resp_valid <= prefetch_issue;
+            if (prefetch_issue) begin
+                prefetch_resp_addr     <= prefetch_pending_addr;
+                prefetch_pending_valid <= 1'b0;
+            end
+
+            // 预取命中也沿用当前 stride 训练，才能连续生成流中的下一项。
+            if (MEM_cache_miss || MEM_prefetch_hit) begin
+                if (prefetch_miss2_valid &&
+                    (prefetch_stride_now == prefetch_stride_prev) &&
+                    (prefetch_stride_now != 16'b0)) begin
+                    prefetch_pending_addr  <= {BRAM_ADDR_TAG,
+                                               prefetch_next_word, 2'b00};
+                    prefetch_pending_valid <= 1'b1;
+                end
+                prefetch_prev_miss_word <= prefetch_last_miss_word;
+                prefetch_last_miss_word <= prefetch_current_miss_word;
+                prefetch_miss2_valid    <= prefetch_miss_valid;
+                prefetch_miss_valid     <= 1'b1;
+            end
+
+            if (prefetch_resp_valid) begin
+                prefetch_buffer_addr <= prefetch_resp_addr;
+                prefetch_buffer_data <= perip_rdata;
+                prefetch_buffer_valid <= !(MEM_bus_wen &&
+                                           is_bram_addr(MEM_bus_addr) &&
+                                           (MEM_bus_addr[17:2] ==
+                                            prefetch_resp_addr[17:2]));
+            end else if (MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
+                         prefetch_buffer_valid &&
+                         (MEM_bus_addr[17:2] == prefetch_buffer_addr[17:2])) begin
+                prefetch_buffer_valid <= 1'b0;
+            end
+        end
+    end
 
     // EX 提前读取完整缓存字，并随 load 一起打入 EX/MEM。下一拍消费者仅
     // 前递寄存后的数据，避免 MEM 异步 L0 读取直接串入 EX ALU。
