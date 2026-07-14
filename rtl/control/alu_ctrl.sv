@@ -33,10 +33,12 @@ module alu_ctrl(
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIVU   = 22'h080000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_REM    = 22'h100000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_REMU   = 22'h200000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_PACKH = 23'h400000;
 
     logic do_add , do_sub , do_and , do_or  , do_xor , do_sll , do_srl;
     logic do_sra , do_beq , do_bne , do_blt , do_bge , do_bgeu, do_bltu;
     logic do_mul , do_mulh, do_mulhsu, do_mulhu, do_div, do_divu, do_rem, do_remu;
+    logic do_packh;
 
     logic [6:0] opcode;
     logic [6:0] funct7;
@@ -63,7 +65,8 @@ module alu_ctrl(
                         {`ALU_OP_WIDTH{do_div   }} & OP_DIV    |
                         {`ALU_OP_WIDTH{do_divu  }} & OP_DIVU   |
                         {`ALU_OP_WIDTH{do_rem   }} & OP_REM    |
-                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU;
+                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU |
+                        {`ALU_OP_WIDTH{do_packh}} & OP_PACKH;
 
     logic kind_r, kind_i, kind_load, kind_store, kind_jalr, kind_auipc, kind_branch;
     logic       r_base, r_mext, i_shift_base;
@@ -120,4 +123,5 @@ module alu_ctrl(
     assign do_divu   = r_mext && funct3 == 3'b101;
     assign do_rem    = r_mext && funct3 == 3'b110;
     assign do_remu   = r_mext && funct3 == 3'b111;
+    assign do_packh = kind_r && funct7 == 7'h04 && funct3 == 3'h7;
 endmodule
