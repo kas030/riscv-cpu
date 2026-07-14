@@ -50,6 +50,9 @@ python3 zb_training/tools/zb_branch.py verify-set pass
 分支存在、实现标记完成且验证结果为 `pass` 时，该指令才计入已完成。进度保存在
 Git 公共目录的 `zb-branch-status.json` 中，供同仓库 worktree 共享但不提交。完整
 命令、安全检查和别名规则见 [分支管理脚本说明](tools/zb_branch.md)。
+在 Linux 环境批量实现全部候选时，按
+[39 条指令实施工作流](../../../docs/zb_39_instruction_implementation_workflow.md)
+执行。
 
 ## 使用题面编码
 
