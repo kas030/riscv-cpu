@@ -1,0 +1,60 @@
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage{caption}
+\usepackage{indentfirst}
+\usepackage{enumitem}
+
+\newCJKfontfamily\reportheiti{SimHei}[AutoFakeBold=2]
+
+\AtBeginDocument{%
+  \zihao{-4}%
+  \setstretch{1.5}%
+  \setlength{\parindent}{2em}%
+  \setlength{\parskip}{0pt}%
+  \pagenumbering{Roman}%
+  \pagestyle{plain}%
+}
+
+\titleformat{\section}
+  {\singlespacing\centering\reportheiti\bfseries\zihao{3}}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\singlespacing\raggedright\reportheiti\bfseries\zihao{4}}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\singlespacing\raggedright\reportheiti\bfseries\zihao{-4}}
+  {\thesubsubsection}{1em}{}
+
+\titlespacing*{\section}{0pt}{0.5\baselineskip}{0.5\baselineskip}
+\titlespacing*{\subsection}{0pt}{0.5\baselineskip}{0.5\baselineskip}
+\titlespacing*{\subsubsection}{0pt}{0.5\baselineskip}{0.5\baselineskip}
+
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+
+\renewcommand{\figurename}{图}
+\renewcommand{\tablename}{表}
+\DeclareCaptionLabelFormat{reportlabel}{#1#2}
+\DeclareCaptionLabelSeparator{reporthyphen}{-}
+\captionsetup{
+  labelformat=reportlabel,
+  labelsep=reporthyphen,
+  justification=centering,
+  singlelinecheck=false,
+  position=bottom,
+  font={small,stretch=1.0}
+}
+
+\setlist{nosep}
+
+\makeatletter
+\@ifundefined{CSLReferences}{}{%
+  \renewenvironment{CSLReferences}[2]
+    {\begin{list}{}{%
+       \setlength{\itemindent}{0pt}%
+       \setlength{\leftmargin}{0pt}%
+       \setlength{\itemsep}{0pt}%
+       \setlength{\parsep}{0pt}}}
+    {\end{list}}%
+}
+\makeatother
