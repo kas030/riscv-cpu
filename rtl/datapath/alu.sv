@@ -23,11 +23,13 @@ module alu #(
 );
     logic m_add , m_sub , m_and , m_or  , m_xor , m_sll , m_srl;
     logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu;
+    logic m_rev8;
     logic [DATAWIDTH-1:0] add_lhs, add_rhs;
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
     logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra;
     logic [DATAWIDTH-1:0] r_slt, r_sltu;
+    logic [DATAWIDTH-1:0] r_rev8;
     logic                 cmp_eq, cmp_lt, cmp_ltu;
 
     assign m_add  = ALUControl[ 0];
@@ -44,6 +46,7 @@ module alu #(
     assign m_bge  = ALUControl[11];
     assign m_bgeu = ALUControl[12];
     assign m_bltu = ALUControl[13];
+    assign m_rev8 = ALUControl[22];
 
     assign add_lhs = A;
     assign add_rhs = (m_sub | m_blt | m_bge | m_bgeu | m_bltu) ? ~B : B;
@@ -59,6 +62,7 @@ module alu #(
     assign r_sll  = A << B[4:0];
     assign r_srl  = A >> B[4:0];
     assign r_sra  = ($signed(A)) >>> B[4:0];
+    assign r_rev8 = {A[7:0], A[15:8], A[23:16], A[31:24]};
 
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
@@ -81,5 +85,6 @@ module alu #(
                     {DATAWIDTH{m_srl        }} & r_srl    |
                     {DATAWIDTH{m_sra        }} & r_sra    |
                     {DATAWIDTH{m_blt        }} & r_slt    |
-                    {DATAWIDTH{m_bltu       }} & r_sltu;
+                    {DATAWIDTH{m_bltu       }} & r_sltu |
+                    {DATAWIDTH{m_rev8}} & r_rev8;
 endmodule
