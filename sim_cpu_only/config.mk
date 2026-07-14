@@ -5,7 +5,7 @@ BRAM_COE := ../sim/coe/mext/dram.coe
 
 # 留空则按 PASS_LED / FAIL_LED 判定；非空时额外要求最终 LED 等于 EXPECTED_LED。
 EXPECTED_LED :=
-PASS_LED := 078B7323
+PASS_LED := 01221C08
 FAIL_LED := 24181824
 
 # TRACE := 1 时生成 FST 波形：sim_cpu_only/build/wave.fst。

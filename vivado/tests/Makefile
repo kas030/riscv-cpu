@@ -27,7 +27,7 @@ OBJCOPY = $(CROSS)objcopy
 OBJDUMP = $(CROSS)objdump
 PYTHON ?= python3
 
-CFLAGS  = -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
+CFLAGS  = -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
           -ffreestanding -fno-builtin -O1 -g
 LDFLAGS = -T linker/link.ld -Wl,-Map=$(@:.elf=.map)
 

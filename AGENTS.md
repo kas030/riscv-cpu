@@ -78,7 +78,7 @@ COUNTER 写入 `0x8000_0000` 开始计数，写入 `0xFFFF_FFFF` 停止计数。
 
 ## 测试镜像
 
-`vivado/tests/Makefile` 当前以 `-march=rv32im -mabi=ilp32` 编译四个 tier 的汇编测试，并生成 `.elf`、`.bin`、`.coe`、`.mif` 和反汇编文件：
+`vivado/tests/Makefile` 当前以 `-march=rv32im_zicsr -mabi=ilp32` 编译四个 tier 的汇编测试，并生成 `.elf`、`.bin`、`.coe`、`.mif` 和反汇编文件：
 
 ```sh
 cd vivado/tests
