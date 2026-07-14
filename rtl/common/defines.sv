@@ -21,6 +21,6 @@
 `define CSR_TYPE 7'b111_0011             // csr_file / ecall / mret
 
 `define OPCODE_LEN 7                     // opcode 字段宽度
-`define ALU_OP_WIDTH 23                  // alu 独热操作码宽度
+`define ALU_OP_WIDTH 22                  // alu 独热操作码宽度
 
 `endif
