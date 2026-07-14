@@ -32,6 +32,25 @@ Makefile 默认使用 `python3`。环境只有 `python` 命令时可执行：
 make zb-test ZB_INSN=ror PYTHON=python
 ```
 
+## 分支与验证进度
+
+公共基线为 `zb/base`，每条指令在首次开发时按需创建独立分支，命名为
+`zb/<扩展>-<指令>`，例如 `zb/zba-sh1add`、`zb/zbb-sext-b`。使用分支管理脚本
+可以避免误从另一条已实现指令的分支派生：
+
+```sh
+python3 zb_training/tools/zb_branch.py status --filter incomplete
+python3 zb_training/tools/zb_branch.py open sh1add
+python3 zb_training/tools/zb_branch.py mark implemented
+python3 zb_training/tools/zb_branch.py verify
+python3 zb_training/tools/zb_branch.py verify-set pass
+```
+
+`verify` 只显示针对该指令展开的验证流程，不会替代需要人工运行的编译和仿真。
+分支存在、实现标记完成且验证结果为 `pass` 时，该指令才计入已完成。进度保存在
+Git 公共目录的 `zb-branch-status.json` 中，供同仓库 worktree 共享但不提交。完整
+命令、安全检查和别名规则见 `tools/README.md`。
+
 ## 使用题面编码
 
 默认编码来自 `docs/zb_all_candidate_instructions.md`。若题面编码不同，把题面给出的
