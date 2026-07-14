@@ -2,7 +2,7 @@ from: markdown+raw_tex+citations+footnotes+implicit_figures
 to: pdf
 standalone: true
 pdf-engine: xelatex
-table-of-contents: true
+table-of-contents: false
 toc-depth: 3
 number-sections: true
 section-divs: true

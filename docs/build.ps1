@@ -51,42 +51,6 @@ function Invoke-Checked {
     }
 }
 
-function Merge-Cover {
-    param(
-        [Parameter(Mandatory)][string]$CoverPath,
-        [Parameter(Mandatory)][string]$BodyPath,
-        [Parameter(Mandatory)][string]$OutputPath,
-        [Parameter(Mandatory)][string]$TempDir
-    )
-
-    if (-not (Test-Path -LiteralPath $CoverPath -PathType Leaf)) {
-        throw "Cover file does not exist: $CoverPath"
-    }
-
-    $coverForTex = $CoverPath.Replace("\", "/")
-    $bodyForTex = $BodyPath.Replace("\", "/")
-    $mergeTex = Join-Path $TempDir "merge.tex"
-    $mergeSource = @"
-\documentclass[a4paper]{article}
-\usepackage{pdfpages}
-\pagestyle{empty}
-\begin{document}
-\includepdf[pages=-,fitpaper=true,pagecommand={\thispagestyle{empty}}]{\detokenize{$coverForTex}}
-\includepdf[pages=-,fitpaper=true,pagecommand={\thispagestyle{empty}}]{\detokenize{$bodyForTex}}
-\end{document}
-"@
-    Set-Content -LiteralPath $mergeTex -Value $mergeSource -Encoding UTF8
-
-    Invoke-Checked -Command "xelatex" -Arguments @(
-        "-interaction=nonstopmode",
-        "-halt-on-error",
-        "-output-directory=$TempDir",
-        $mergeTex
-    )
-
-    Move-Item -LiteralPath (Join-Path $TempDir "merge.pdf") -Destination $OutputPath -Force
-}
-
 function Build-Report {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -107,28 +71,27 @@ function Build-Report {
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
     try {
-        $bodyPath = Join-Path $tempDir "$Name-body.pdf"
+        $temporaryOutputPath = Join-Path $tempDir "$Name.pdf"
         $outputPath = Join-Path $BuildDir "$Name.pdf"
+        $coverPath = Get-CoverPath -SourcePath $sourcePath
+
+        if ($coverPath -and -not (Test-Path -LiteralPath $coverPath -PathType Leaf)) {
+            throw "Cover file does not exist: $coverPath"
+        }
 
         Push-Location $DocsDir
         try {
             Invoke-Checked -Command "pandoc" -Arguments @(
                 "$Name.md",
                 "--defaults=$DefaultsFile",
-                "--output=$bodyPath"
+                "--output=$temporaryOutputPath"
             )
         }
         finally {
             Pop-Location
         }
 
-        $coverPath = Get-CoverPath -SourcePath $sourcePath
-        if ($coverPath) {
-            Merge-Cover -CoverPath $coverPath -BodyPath $bodyPath -OutputPath $outputPath -TempDir $tempDir
-        }
-        else {
-            Move-Item -LiteralPath $bodyPath -Destination $outputPath -Force
-        }
+        Move-Item -LiteralPath $temporaryOutputPath -Destination $outputPath -Force
 
         Write-Host "Generated: $outputPath"
     }

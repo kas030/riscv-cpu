@@ -4,10 +4,28 @@ local function latex_block(text)
   return pandoc.RawBlock("latex", text)
 end
 
+local function front_matter(doc)
+  local blocks = pandoc.List()
+  local cover = doc.meta.cover and pandoc.utils.stringify(doc.meta.cover) or ""
+
+  if cover ~= "" then
+    cover = cover:gsub("\\", "/")
+    blocks:insert(latex_block(
+      "\\includepdf[pages=-,fitpaper=true,pagecommand={\\thispagestyle{empty}}]" ..
+      "{\\detokenize{" .. cover .. "}}\n\\clearpage"
+    ))
+  end
+
+  blocks:insert(latex_block(
+    "\\pagenumbering{Roman}\n\\setcounter{page}{1}\n\\tableofcontents"
+  ))
+  return blocks
+end
+
 function Pandoc(doc)
   doc = pandoc.utils.citeproc(doc)
 
-  local blocks = pandoc.List()
+  local blocks = front_matter(doc)
   local reference_page_started = false
   for _, block in ipairs(doc.blocks) do
     if not body_started and block.t == "Header" and block.level == 1 then
