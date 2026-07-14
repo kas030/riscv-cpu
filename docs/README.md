@@ -1,6 +1,8 @@
 # 报告文档构建说明
 
-`docs/` 中的报告使用 Markdown 编写，通过 Pandoc 和 XeLaTeX 生成 PDF。当前支持 `design-report.md`，并为后续的 `test-report.md` 预留了同一套构建入口。
+`docs/` 中的报告使用 Markdown 编写，通过 Pandoc 和 XeLaTeX 生成 PDF。
+
+当前支持 `design-report.md` 和 `test-report.md`。
 
 ## 环境要求
 
@@ -27,7 +29,7 @@ xelatex --version
 .\docs\build.ps1 -Target clean
 ```
 
-默认目标为 `all`。如果尚未创建 `test-report.md`，默认构建会提示并跳过；显式构建 `test` 则会报错。PDF 输出到 `docs/build/`。
+默认目标为 `all`，会依次构建设计报告和测试报告。PDF 输出到 `docs/build/`。
 
 报告 YAML 元数据可用 `cover` 指定相对于 `docs/` 的封面：
 

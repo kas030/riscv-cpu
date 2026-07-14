@@ -52,17 +52,10 @@ function Invoke-Checked {
 }
 
 function Build-Report {
-    param(
-        [Parameter(Mandatory)][string]$Name,
-        [switch]$AllowMissing
-    )
+    param([Parameter(Mandatory)][string]$Name)
 
     $sourcePath = Join-Path $DocsDir "$Name.md"
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-        if ($AllowMissing) {
-            Write-Warning "$Name.md was not found; skipping it."
-            return
-        }
         throw "Report source file does not exist: $sourcePath"
     }
 
@@ -127,6 +120,6 @@ switch ($Target) {
     "test" { Build-Report -Name "test-report" }
     "all" {
         Build-Report -Name "design-report"
-        Build-Report -Name "test-report" -AllowMissing
+        Build-Report -Name "test-report"
     }
 }
