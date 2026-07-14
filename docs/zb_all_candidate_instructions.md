@@ -89,8 +89,8 @@ P = A 与 B 的 64 位无进位乘积
 | `ctz` | 单目 | 从最低位起连续 0 的数量 | `A=0` 时结果为 32 |
 | `cpop` | 单目 | `A` 中 1 的总数 | 结果范围 0～32 |
 
-这三条常共享 `opcode/funct7/funct3`，再由 `instr[24:20]` 区分。当前
-`alu_ctrl` 若只看到 `{funct7, funct3}`，就必须先扩展接口以接收完整指令。
+这三条常共享 `opcode/funct7/funct3`，再由 `instr[24:20]` 区分。公共基线中的
+`alu_ctrl` 已接收完整指令，单指令分支必须继续匹配该字段或完整 `imm12`。
 
 ### 4.3 有符号与无符号最值
 
@@ -395,9 +395,9 @@ assign do_xxx = /* 完整编码匹配 */;
 如果宽度增加后旧 `OP_*` 常量仍写着旧位宽，功能上会零扩展，但 Verilator 会产生
 宽度告警。应把常量字面量一起改成新宽度。
 
-### 第三步：必要时让 `alu_ctrl` 接收完整指令
+### 第三步：使用完整指令严格译码
 
-只依赖 `opcode/funct7/funct3` 的 R 型指令可以沿用当前接口。以下类型通常还需要
+公共基线中的 `alu_ctrl` 已经接收完整 `instr`。以下类型通常还需要
 `instr[24:20]` 或完整 `imm12`：
 
 ```text
@@ -406,27 +406,17 @@ rori orc.b rev8 brev8 zip unzip
 bclri bexti binvi bseti
 ```
 
-稳妥做法是把 `alu_ctrl` 改为接收完整 `instr`：
+实现目标指令时，在模块内按需补充字段：
 
 ```systemverilog
-module alu_ctrl(
-    input  logic [31:0] instr,
-    output logic [`ALU_OP_WIDTH-1:0] ALUControl
-);
-    logic [6:0] opcode;
-    logic [6:0] funct7;
-    logic [2:0] funct3;
-    logic [4:0] field_24_20;
-    logic [11:0] imm12;
+logic [4:0]  field_24_20;
+logic [11:0] imm12;
 
-    assign opcode      = instr[6:0];
-    assign funct7      = instr[31:25];
-    assign funct3      = instr[14:12];
-    assign field_24_20 = instr[24:20];
-    assign imm12       = instr[31:20];
+assign field_24_20 = instr[24:20];
+assign imm12       = instr[31:20];
 ```
 
-然后在 `rtl/control/mycpu_decoder.sv` 中改为：
+`mycpu_decoder.sv` 已完成如下连接，无需在单指令分支重复修改：
 
 ```systemverilog
 alu_ctrl u_alu_ctrl (

@@ -1,6 +1,6 @@
 // =============================================================================
 // alu_ctrl.sv —— alu 控制译码
-//   位于 ID 级，根据 opcode + funct7/funct3 译码出独热 ALUControl，
+//   位于 ID 级，从完整指令中提取 opcode/funct7/funct3 并译码独热 ALUControl，
 //   每一位对应 alu 的一种运算（RV32I 算术逻辑/比较 + RV32M 乘除余）。
 //   一热编码使得 alu 内部可以用按位与 + 或汇总，避免使用 case，
 //   有利于布局布线时分散到多 LUT 上从而缩短关键路径。
@@ -8,8 +8,7 @@
 `include "../common/defines.sv"
 
 module alu_ctrl(
-    input  logic [6:0]                    opcode    ,      // 指令 opcode
-    input  logic [9:0]                    funct     ,      // {funct7, funct3}
+    input  logic [31:0]                   instr     ,      // 完整指令，便于严格匹配扩展编码
     output logic [`ALU_OP_WIDTH - 1:0]   ALUControl        // 独热 alu 操作码
 );
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_ADD    = 22'h000001;
@@ -39,6 +38,10 @@ module alu_ctrl(
     logic do_sra , do_beq , do_bne , do_blt , do_bge , do_bgeu, do_bltu;
     logic do_mul , do_mulh, do_mulhsu, do_mulhu, do_div, do_divu, do_rem, do_remu;
 
+    logic [6:0] opcode;
+    logic [6:0] funct7;
+    logic [2:0] funct3;
+
     assign ALUControl = {`ALU_OP_WIDTH{do_add   }} & OP_ADD    |
                         {`ALU_OP_WIDTH{do_sub   }} & OP_SUB    |
                         {`ALU_OP_WIDTH{do_and   }} & OP_AND    |
@@ -63,10 +66,11 @@ module alu_ctrl(
                         {`ALU_OP_WIDTH{do_remu  }} & OP_REMU;
 
     logic kind_r, kind_i, kind_load, kind_store, kind_jalr, kind_auipc, kind_branch;
-    logic [6:0] funct7;
-    logic [2:0] funct3;
     logic       r_base, r_mext, i_shift_base;
 
+    assign opcode       = instr[6:0];
+    assign funct7       = instr[31:25];
+    assign funct3       = instr[14:12];
     assign kind_r       = (opcode == `R_TYPE );
     assign kind_i       = (opcode == `I_TYPE );
     assign kind_load    = (opcode == `IL_TYPE);
@@ -74,8 +78,6 @@ module alu_ctrl(
     assign kind_jalr    = (opcode == `IJ_TYPE);
     assign kind_auipc   = (opcode == `UA_TYPE);
     assign kind_branch  = (opcode == `B_TYPE );
-    assign funct7       = funct[9:3];
-    assign funct3       = funct[2:0];
     assign r_base       = kind_r && (funct7 == 7'b0000000 || funct7 == 7'b0100000);
     assign r_mext       = kind_r && (funct7 == 7'b0000001);
     assign i_shift_base = kind_i && (funct7 == 7'b0000000 || funct7 == 7'b0100000);

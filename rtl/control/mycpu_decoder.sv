@@ -51,9 +51,8 @@ module mycpu_decoder #(
     );
 
     alu_ctrl u_alu_ctrl (
-        .opcode     (ID_instr[6:0]              ),
-        .funct      ({ID_instr[31:25], ID_funct3}),
-        .ALUControl (ID_ALUControl              )
+        .instr      (ID_instr     ),
+        .ALUControl (ID_ALUControl)
     );
 
     csr_ctrl_decode u_csr_ctrl_decode (

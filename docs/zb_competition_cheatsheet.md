@@ -69,15 +69,14 @@ assign r_xxx = /* 32 位运算 */;
 
 ## 四、两个最容易丢分的陷阱
 
-### 1. 译码没有看到完整 `instr`
+### 1. 忽略完整 `instr` 中的区分字段
 
-当前 `alu_ctrl` 只接收 `opcode` 和 `{instr[31:25], instr[14:12]}`，**看不到
-`instr[24:20]`**。`clz/ctz/cpop/sext.b/sext.h` 等指令可能拥有相同
-`funct7/funct3`，仅靠现有 `funct` 会误译。
+公共基线中的 `alu_ctrl` 已接收完整 `ID_instr`。`clz/ctz/cpop/sext.b/sext.h`
+等指令可能拥有相同 `funct7/funct3`，必须继续检查 `instr[24:20]` 或完整
+`imm12`，否则会误译。
 
-- 若题目只需 `funct7/funct3`：沿用现有接口。
-- 若题目还规定了 `instr[24:20]`：给 `alu_ctrl` 增加完整 `instr` 输入，并在
-  `mycpu_decoder.sv` 中连接 `ID_instr`；译码条件必须匹配题面要求的全部固定位。
+- 若题目只需 `funct7/funct3`：直接使用模块内已有的字段。
+- 若题目还规定了 `instr[24:20]`：从 `instr` 提取该字段，并匹配题面要求的全部固定位。
 - 不要把 `instr[24:20]` 一律当作 `rs2`：OP-IMM 或单目指令中它可能是编码常量。
 
 ### 2. 新指令被误当成 RV32M
