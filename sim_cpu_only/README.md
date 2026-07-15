@@ -9,7 +9,7 @@ Vivado IROM/BRAM IP 和板级外设，便于快速验证 CPU 核。
 IROM_COE := ../sim/coe/mext/irom-v2.coe
 BRAM_COE := ../sim/coe/mext/dram.coe
 EXPECTED_LED :=
-PASS_LED := 01221C08
+PASS_LED := 078B7323
 FAIL_LED := 24181824
 TRACE := 0
 STOP_NS := 400000000
@@ -25,7 +25,7 @@ QUIET := 1
 - 本流程直接编译 `rtl/` 下的 CPU 核心模块，不依赖 Vivado 工程。
 - IROM/BRAM 输入支持 Vivado `.coe`、Quartus-style `.mif`，以及每行一个
   32 位 hex/binary word 的 `.mem` 文本。
-- 默认 LED 判定值为 `PASS_LED=01221C08`、`FAIL_LED=24181824`。程序写入
+- 默认竞赛镜像判定值为 `PASS_LED=078B7323`、`FAIL_LED=24181824`。程序写入
   其中任意一个值都会触发 `stop_reason: led` 并结束仿真；`EXPECTED_LED`
   非空时会额外要求最终 LED 精确等于该值。
 - 降噪参数由 `QUIET` 控制。`QUIET=1` 时，Makefile 会自动探测当前
@@ -44,18 +44,12 @@ make sim-verilator \
 
   若新版本仍不支持运行时 `+verilator+quiet`，保持 `VERILATOR_RUNTIME_ARGS`
   为空即可；编译期降噪会继续按能力探测自动启用。
-- 如果要验证新增的 RV32M 基础测试，可以先生成镜像：
+- 正确性、RV32M、流水线和存储测试统一由独立验证目录构建：
 
 ```sh
-python3 vivado/tests/tools/gen_t18_m_ext_basic_coe.py vivado/tests/build/t18_m_ext_basic.coe
-./sim_cpu_only/run_verilator.sh \
-  IROM_COE=../vivado/tests/build/t18_m_ext_basic.coe \
-  BRAM_COE=../sim/coe/mext/dram.coe \
-  PASS_LED=C0DEC0DE \
-  FAIL_LED=DEADBEEF \
-  EXPECTED_LED=C0DEC0DE \
-  STOP_NS=20000000 \
-  PROGRESS_NS=1000000
+cd verification
+make check
+make regression
 ```
 
 在仓库根目录运行：
@@ -64,16 +58,17 @@ python3 vivado/tests/tools/gen_t18_m_ext_basic_coe.py vivado/tests/build/t18_m_e
 ./sim_cpu_only/run_verilator.sh
 ```
 
-批量运行默认镜像和当前已有的 4 个测试镜像，并生成简略报告：
+运行可信开源白名单或竞赛镜像：
 
 ```sh
-./sim_cpu_only/run_regression.sh
+cd verification
+make run-open-source
+make competition
 ```
 
 也可以直接进入目录运行：
 
 ```sh
-cd sim_cpu_only
-make sim-verilator IROM_COE=../vivado/tests/build/t10_fibonacci.coe PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF EXPECTED_LED=C0DEC0DE
-make clean
+cd verification
+make run TEST=rv32i
 ```

@@ -96,7 +96,7 @@ proc create_pll_ip {project_dir project_name} {
         CONFIG.PRIM_IN_FREQ {200.000} \
         CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {50.000} \
         CONFIG.CLKOUT2_USED {true} \
-        CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {200.000} \
+        CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {240.000} \
         CONFIG.NUM_OUT_CLKS {2} \
         CONFIG.USE_RESET {false} \
         CONFIG.USE_LOCKED {true} \
@@ -158,8 +158,8 @@ proc create_bram_ip {project_dir project_name repo_root} {
         CONFIG.Register_PortB_Output_of_Memory_Core {false} \
         CONFIG.Load_Init_File {true} \
         CONFIG.Coe_File $bram_coe \
-        CONFIG.Port_A_Clock {200} \
-        CONFIG.Port_B_Clock {200} \
+        CONFIG.Port_A_Clock {240} \
+        CONFIG.Port_B_Clock {240} \
         CONFIG.Fill_Remaining_Memory_Locations {true} \
         CONFIG.Remaining_Memory_Locations {0} \
         CONFIG.Use_RSTA_Pin {false} \
@@ -168,8 +168,8 @@ proc create_bram_ip {project_dir project_name repo_root} {
 
     # blk_mem_gen 8.4 does not expose a reliable native-port OOC clock-period
     # property: its generated BRAM_ooc.xdc can remain at the 20 ns default even
-    # when Port_A/B_Clock are set to 200 MHz. Synthesize BRAM with the top level
-    # so clka/clkb inherit the real 5 ns cpu clock and no stale 50 MHz DCP is used.
+    # when Port_A/B_Clock are set to 240 MHz. Synthesize BRAM with the top level
+    # so clka/clkb inherit the real 4.167 ns cpu clock and no stale 50 MHz DCP is used.
     set bram_xci_path [string map {\\ /} [file join $bram_ip_dir BRAM BRAM.xci]]
     set bram_xci [get_files -quiet -all $bram_xci_path]
     if {[llength $bram_xci] == 0} {

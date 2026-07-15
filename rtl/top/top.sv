@@ -30,7 +30,7 @@ module top(
     output wire [39:0] virtual_seg
 );
 
-    wire w_clk_50Mhz, cpu_clk;
+    wire w_clk_50Mhz, cpu_clk; // PLL 输出：外设 50 MHz，CPU 240 MHz
     wire w_clk_rst;
 
     wire [7:0] virtual_key;
@@ -90,4 +90,3 @@ module top(
     );
 
 endmodule
-

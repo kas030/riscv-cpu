@@ -24,7 +24,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
   - 专门用于把 Vivado 工程内的 `BRAM` IP 重建为 `blk_mem_gen`
     True Dual Port BRAM。
   - 关闭 BRAM 的 OOC 综合 DCP，使 `clka/clkb` 在全局综合时直接继承
-    CPU 的 5 ns 时钟约束，避免默认 20 ns `BRAM_ooc.xdc` 导致
+    CPU 的 4.167 ns 时钟约束，避免默认 20 ns `BRAM_ooc.xdc` 导致
     `[Timing 38-316]` 警告和不一致网表。
   - 适用于综合报旧 `BRAM_stub.v` 端口不匹配，例如 RTL 连接了
     `clka/ena/wea/addra/douta/clkb/enb/web/addrb/dinb`，但 Vivado 仍看到
@@ -118,7 +118,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs synth
    - 使用 `sim/coe/mext/dram.coe` 初始化。
 6. 执行 `generate_target all` 生成新的 output products。
 7. 设置 `GENERATE_SYNTH_CHECKPOINT=false`，让 BRAM 随顶层按实际
-   200 MHz 时钟全局综合。
+   240 MHz 时钟全局综合。
 8. 更新 `sources_1` 编译顺序并关闭工程。
 
 ### 与 `create_project.tcl` 的关系

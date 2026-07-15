@@ -25,6 +25,7 @@ CC      = $(CROSS)gcc
 LD      = $(CROSS)ld
 OBJCOPY = $(CROSS)objcopy
 OBJDUMP = $(CROSS)objdump
+PYTHON ?= python3
 
 CFLAGS  = -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
           -ffreestanding -fno-builtin -O1 -g
@@ -32,6 +33,14 @@ LDFLAGS = -T linker/link.ld -Wl,-Map=$(@:.elf=.map)
 
 BUILD   = build
 TOOLS   = tools
+
+# 按名称生成并构建单条 Zb 指令测试；不加入默认 all。
+ZB_INSN ?=
+ZB_ENCODING ?=
+ZB_SLUG = $(subst .,_,$(ZB_INSN))
+ZB_NAME = zb_$(ZB_SLUG)
+ZB_SRC = $(BUILD)/$(ZB_NAME).S
+ZB_ENCODING_ARG = $(if $(strip $(ZB_ENCODING)),--encoding $(ZB_ENCODING),)
 
 # 收集所有 .S
 SRCS := $(wildcard tier1_basic/*.S tier2_hazard/*.S tier3_perf/*.S tier4_bench/*.S)
@@ -42,7 +51,7 @@ COES := $(addprefix $(BUILD)/, $(addsuffix .coe, $(NAMES)))
 MIFS := $(addprefix $(BUILD)/, $(addsuffix .mif, $(NAMES)))
 DUMPS := $(addprefix $(BUILD)/, $(addsuffix .dump, $(NAMES)))
 
-.PHONY: all clean install help dirs $(NAMES)
+.PHONY: all clean install help dirs zb-test $(NAMES)
 
 all: dirs $(COES) $(MIFS) $(DUMPS)
 	@echo ""
@@ -73,13 +82,33 @@ $(BUILD)/%.bin: $(BUILD)/%.elf
 	           --only-section=.rodata $< $@
 
 $(BUILD)/%.coe: $(BUILD)/%.bin
-	python3 $(TOOLS)/bin2coe.py $< $@ --depth 4096
+	$(PYTHON) $(TOOLS)/bin2coe.py $< $@ --depth 4096
 
 $(BUILD)/%.mif: $(BUILD)/%.bin
-	python3 $(TOOLS)/bin2coe.py $< $@ --mif --depth 4096
+	$(PYTHON) $(TOOLS)/bin2coe.py $< $@ --mif --depth 4096
 
 $(BUILD)/%.dump: $(BUILD)/%.elf
 	$(OBJDUMP) -d -M no-aliases $< > $@
+
+# 示例：make zb-test ZB_INSN=ror
+# 题面编码不同时：make zb-test ZB_INSN=ror ZB_ENCODING=0x6062d3b3
+zb-test: dirs
+	@if [ -z "$(strip $(ZB_INSN))" ]; then \
+		echo "error: set ZB_INSN, for example: make zb-test ZB_INSN=ror"; \
+		exit 2; \
+	fi
+	$(PYTHON) zb_training/tools/zb_tool.py generate "$(ZB_INSN)" \
+		--output "$(ZB_SRC)" $(ZB_ENCODING_ARG)
+	$(CC) $(CFLAGS) -T linker/link.ld -Wl,-Map=$(BUILD)/$(ZB_NAME).map \
+		-o $(BUILD)/$(ZB_NAME).elf $(ZB_SRC)
+	$(OBJCOPY) -O binary --only-section=.text.init --only-section=.text \
+		--only-section=.rodata $(BUILD)/$(ZB_NAME).elf $(BUILD)/$(ZB_NAME).bin
+	$(PYTHON) $(TOOLS)/bin2coe.py $(BUILD)/$(ZB_NAME).bin \
+		$(BUILD)/$(ZB_NAME).coe --depth 4096
+	$(PYTHON) $(TOOLS)/bin2coe.py $(BUILD)/$(ZB_NAME).bin \
+		$(BUILD)/$(ZB_NAME).mif --mif --depth 4096
+	$(OBJDUMP) -d -M no-aliases $(BUILD)/$(ZB_NAME).elf > $(BUILD)/$(ZB_NAME).dump
+	@echo "Built Zb test: $(BUILD)/$(ZB_NAME).coe"
 
 # 拷贝指定 testcase 的 irom.coe 到 IP 目录，覆盖现有 mem init
 TARGET ?= t10_fibonacci
@@ -97,5 +126,6 @@ help:
 	@echo "Targets:"
 	@echo "  make             - build all .coe/.mif/.dump"
 	@echo "  make tNN_xxxxx   - build a single test (any name in tier*)"
+	@echo "  make zb-test ZB_INSN=ror [ZB_ENCODING=0x...] - build one Zb test"
 	@echo "  make install TARGET=t10_fibonacci  - copy chosen .coe to IROM IP dir"
 	@echo "  make clean       - remove build/"
