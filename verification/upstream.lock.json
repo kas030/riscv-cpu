@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "resolved_at": "2026-07-15",
+  "sources": [
+    {
+      "name": "riscv-arch-test",
+      "url": "https://github.com/riscv/riscv-arch-test.git",
+      "commit": "18b803cb4eea318db611ca87138ee9d3ad662d24",
+      "license": "BSD-3-Clause",
+      "role": "ACT4/Sail architectural certification source",
+      "enabled": false,
+      "reason": "Requires a reviewed ACT4 UDB and rvmodel adapter before tests may be enabled"
+    },
+    {
+      "name": "riscv-tests",
+      "url": "https://github.com/riscv-software-src/riscv-tests.git",
+      "commit": "34e6b6d1e7936b526075432fb730d89148623484",
+      "license": "BSD-3-Clause",
+      "role": "RV32UI/RV32UM instruction tests",
+      "enabled": true,
+      "allowlist": {
+        "rv32ui-p": [
+          "add", "addi", "and", "andi", "auipc", "beq", "bge", "bgeu", "blt",
+          "bltu", "bne", "jal", "jalr", "lb", "lbu", "lh", "lhu", "lui", "lw",
+          "or", "ori", "sb", "sh", "sll", "slli", "slt", "slti", "sltiu", "sltu",
+          "sra", "srai", "srl", "srli", "sub", "sw", "xor", "xori"
+        ],
+        "rv32um-p": ["mul", "mulh", "mulhsu", "mulhu", "div", "divu", "rem", "remu"]
+      },
+      "denylist": ["fence_i", "ma_data", "ma_fetch", "rv32mi", "rv32si", "rv64"]
+    },
+    {
+      "name": "embench-iot",
+      "url": "https://github.com/embench/embench-iot.git",
+      "commit": "09c2ed8c3b7008c95d08b038de4a3f6dc103ed70",
+      "license": "mixed-open-source-see-upstream",
+      "role": "Optional performance workloads after capability audit",
+      "enabled": false,
+      "reason": "Each workload must pass size, disassembly and freestanding checks before enablement"
+    }
+  ]
+}

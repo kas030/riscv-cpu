@@ -5,10 +5,27 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Callable
 
 
 MASK32 = 0xFFFF_FFFF
+R_MASK = 0xFE00_707F
+FIXED_I_MASK = 0xFFF0_707F
+
+
+@dataclass(frozen=True)
+class InstructionSpec:
+    """生成单条 Zb 指令测试所需的最小 ISA 描述。"""
+
+    name: str
+    extension: str
+    form: str
+    match: int
+    mask: int
+    vectors: tuple[tuple[int, int | None], ...]
+    aliases: tuple[str, ...] = ()
 
 
 def u32(value: int) -> int:
@@ -190,6 +207,158 @@ BINARY_OPS: dict[str, BinaryOp] = {
 }
 
 
+def r_match(funct7: int, funct3: int) -> int:
+    return (funct7 << 25) | (funct3 << 12) | 0x33
+
+
+def i_match(imm12: int, funct3: int) -> int:
+    return (imm12 << 20) | (funct3 << 12) | 0x13
+
+
+def i_shamt_match(funct7: int, funct3: int) -> int:
+    return (funct7 << 25) | (funct3 << 12) | 0x13
+
+
+LOGIC_VECTORS = (
+    (0x0000_0000, 0x0000_0000),
+    (0xFFFF_FFFF, 0x0000_0000),
+    (0xAA55_AA55, 0x0F0F_F0F0),
+    (0x8000_0001, 0xFFFF_FFFF),
+)
+MINMAX_VECTORS = (
+    (0xFFFF_FFFF, 1),
+    (0x8000_0000, 0x7FFF_FFFF),
+    (7, 7),
+    (0, 0xFFFF_FFFF),
+)
+ROTATE_VECTORS = (
+    (0x8000_0001, 0),
+    (0x8000_0001, 1),
+    (0x8000_0001, 31),
+    (0x0123_4567, 32),
+)
+ROTATE_IMM_VECTORS = (
+    (0x8000_0001, 0),
+    (0x8000_0001, 1),
+    (0x0123_4567, 15),
+    (0x8000_0001, 31),
+)
+CLMUL_VECTORS = (
+    (0, 0xFFFF_FFFF),
+    (0xB, 0x6),
+    (0x8000_0000, 2),
+    (0xFFFF_FFFF, 0xFFFF_FFFF),
+)
+BIT_REG_VECTORS = (
+    (0x8000_0001, 0),
+    (0x8000_0001, 31),
+    (0x0123_4567, 32),
+    (0x89AB_CDEF, 63),
+)
+BIT_IMM_VECTORS = (
+    (0x8000_0001, 0),
+    (0x8000_0001, 1),
+    (0x0123_4567, 15),
+    (0x89AB_CDEF, 31),
+)
+
+
+SPECS = (
+    # Zba
+    InstructionSpec("sh1add", "Zba", "r", r_match(0x10, 2), R_MASK,
+                    ((0, 0), (3, 100), (0x4000_0001, 3), (0xFFFF_FFFF, 1))),
+    InstructionSpec("sh2add", "Zba", "r", r_match(0x10, 4), R_MASK,
+                    ((0, 0), (3, 100), (0x2000_0001, 3), (0xFFFF_FFFF, 1))),
+    InstructionSpec("sh3add", "Zba", "r", r_match(0x10, 6), R_MASK,
+                    ((0, 0), (3, 100), (0x1000_0001, 3), (0xFFFF_FFFF, 1))),
+
+    # Zbb
+    InstructionSpec("andn", "Zbb", "r", r_match(0x20, 7), R_MASK, LOGIC_VECTORS),
+    InstructionSpec("orn", "Zbb", "r", r_match(0x20, 6), R_MASK, LOGIC_VECTORS),
+    InstructionSpec("xnor", "Zbb", "r", r_match(0x20, 4), R_MASK, LOGIC_VECTORS),
+    InstructionSpec("clz", "Zbb", "i_fixed", i_match(0x600, 1), FIXED_I_MASK,
+                    ((0, None), (1, None), (0x8000_0000, None), (0x00F0_0000, None))),
+    InstructionSpec("ctz", "Zbb", "i_fixed", i_match(0x601, 1), FIXED_I_MASK,
+                    ((0, None), (1, None), (0x8000_0000, None), (0x0010_0000, None))),
+    InstructionSpec("cpop", "Zbb", "i_fixed", i_match(0x602, 1), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0xAAAA_AAAA, None),
+                     (0xF0F0_000F, None))),
+    InstructionSpec("min", "Zbb", "r", r_match(0x05, 4), R_MASK, MINMAX_VECTORS),
+    InstructionSpec("max", "Zbb", "r", r_match(0x05, 6), R_MASK, MINMAX_VECTORS),
+    InstructionSpec("minu", "Zbb", "r", r_match(0x05, 5), R_MASK, MINMAX_VECTORS),
+    InstructionSpec("maxu", "Zbb", "r", r_match(0x05, 7), R_MASK, MINMAX_VECTORS),
+    InstructionSpec("sext.b", "Zbb", "i_fixed", i_match(0x604, 1), FIXED_I_MASK,
+                    ((0, None), (0x7F, None), (0x80, None), (0x0000_8080, None))),
+    InstructionSpec("sext.h", "Zbb", "i_fixed", i_match(0x605, 1), FIXED_I_MASK,
+                    ((0, None), (0x7FFF, None), (0x8000, None), (0x1234_8080, None))),
+    InstructionSpec("zext.h", "Zbb", "r_fixed", r_match(0x04, 4), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0x8000, None),
+                     (0x1234_8080, None))),
+    InstructionSpec("rol", "Zbb", "r", r_match(0x30, 1), R_MASK, ROTATE_VECTORS),
+    InstructionSpec("ror", "Zbb", "r", r_match(0x30, 5), R_MASK, ROTATE_VECTORS),
+    InstructionSpec("rori", "Zbb", "i_shamt", i_shamt_match(0x30, 5),
+                    R_MASK, ROTATE_IMM_VECTORS),
+    InstructionSpec("orc.b", "Zbb", "i_fixed", i_match(0x287, 5), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0x0012_0080, None),
+                     (0x0100_FF00, None))),
+    InstructionSpec("rev8", "Zbb", "i_fixed", i_match(0x698, 5), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0x0123_4567, None),
+                     (0x8000_0001, None))),
+
+    # Zbc
+    InstructionSpec("clmul", "Zbc", "r", r_match(0x05, 1), R_MASK, CLMUL_VECTORS),
+    InstructionSpec("clmulh", "Zbc", "r", r_match(0x05, 3), R_MASK, CLMUL_VECTORS),
+    InstructionSpec("clmulr", "Zbc", "r", r_match(0x05, 2), R_MASK, CLMUL_VECTORS),
+
+    # Zbs
+    InstructionSpec("bclr", "Zbs", "r", r_match(0x24, 1), R_MASK, BIT_REG_VECTORS),
+    InstructionSpec("bclri", "Zbs", "i_shamt", i_shamt_match(0x24, 1),
+                    R_MASK, BIT_IMM_VECTORS),
+    InstructionSpec("bext", "Zbs", "r", r_match(0x24, 5), R_MASK, BIT_REG_VECTORS),
+    InstructionSpec("bexti", "Zbs", "i_shamt", i_shamt_match(0x24, 5),
+                    R_MASK, BIT_IMM_VECTORS),
+    InstructionSpec("binv", "Zbs", "r", r_match(0x34, 1), R_MASK, BIT_REG_VECTORS),
+    InstructionSpec("binvi", "Zbs", "i_shamt", i_shamt_match(0x34, 1),
+                    R_MASK, BIT_IMM_VECTORS),
+    InstructionSpec("bset", "Zbs", "r", r_match(0x14, 1), R_MASK, BIT_REG_VECTORS),
+    InstructionSpec("bseti", "Zbs", "i_shamt", i_shamt_match(0x14, 1),
+                    R_MASK, BIT_IMM_VECTORS),
+
+    # Zbkb 中不与 Zbb 重复的 RV32 指令
+    InstructionSpec("pack", "Zbkb", "r", r_match(0x04, 4), R_MASK,
+                    ((0, 0), (0xAAAA_BBBB, 0xCCCC_DDDD),
+                     (0xFFFF_0000, 0x0000_FFFF), (0x1234_5678, 0x9ABC_DEF0))),
+    InstructionSpec("packh", "Zbkb", "r", r_match(0x04, 7), R_MASK,
+                    ((0, 0), (0xAAAA_BBCC, 0xDDDD_EEFF),
+                     (0xFFFF_0000, 0x0000_FFFF), (0x1234_5678, 0x9ABC_DEF0))),
+    InstructionSpec("brev8", "Zbkb", "i_fixed", i_match(0x687, 5), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0x0123_4567, None),
+                     (0x8000_0001, None)), aliases=("rev.b",)),
+    InstructionSpec("zip", "Zbkb", "i_fixed", i_match(0x08F, 1), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0x0000_FFFF, None),
+                     (0x0123_4567, None))),
+    InstructionSpec("unzip", "Zbkb", "i_fixed", i_match(0x08F, 5), FIXED_I_MASK,
+                    ((0, None), (0xFFFF_FFFF, None), (0x5555_5555, None),
+                     (0x0123_4567, None))),
+
+    # Zbkx
+    InstructionSpec("xperm4", "Zbkx", "r", r_match(0x14, 2), R_MASK,
+                    ((0x7654_3210, 0x0123_4567), (0x7654_3210, 0x7654_3210),
+                     (0x7654_3210, 0xFFFF_FFFF), (0x7654_3210, 0xF120_4567)),
+                    aliases=("xperm.n",)),
+    InstructionSpec("xperm8", "Zbkx", "r", r_match(0x14, 4), R_MASK,
+                    ((0x4433_2211, 0x0001_0203), (0x4433_2211, 0x0302_0100),
+                     (0x4433_2211, 0xFFFF_FFFF), (0x4433_2211, 0x0401_0203)),
+                    aliases=("xperm.b",)),
+)
+
+SPEC_BY_NAME: dict[str, InstructionSpec] = {}
+for _spec in SPECS:
+    SPEC_BY_NAME[_spec.name] = _spec
+    for _alias in _spec.aliases:
+        SPEC_BY_NAME[_alias] = _spec
+
+
 def evaluate(name: str, a: int, b: int | None = None) -> int:
     name = name.lower()
     if name in UNARY_OPS:
@@ -205,6 +374,236 @@ def evaluate(name: str, a: int, b: int | None = None) -> int:
 
 def format_word(word: int) -> str:
     return f"0x{u32(word):08X}  .word 0x{u32(word):08X}"
+
+
+def resolve_spec(name: str) -> InstructionSpec:
+    try:
+        return SPEC_BY_NAME[name.lower()]
+    except KeyError as error:
+        choices = " ".join(spec.name for spec in SPECS)
+        raise ValueError(f"未知指令 {name!r}；可用指令：{choices}") from error
+
+
+def override_encoding(spec: InstructionSpec, sample_word: int) -> InstructionSpec:
+    """从题面样例机器码提取该指令形式中的固定编码位。"""
+    if not 0 <= sample_word <= MASK32:
+        raise ValueError("--encoding 必须是 0..0xFFFFFFFF 的 32 位机器码")
+    if (sample_word & 0b11) != 0b11:
+        raise ValueError("--encoding 不是标准 32 位指令（最低两位必须为 11）")
+    return replace(spec, match=sample_word & spec.mask)
+
+
+def encode_instruction(spec: InstructionSpec, rd: int, rs1: int,
+                       operand: int | None = None) -> int:
+    """按描述编码一条目标指令；operand 是 rs2 或 5 位立即数。"""
+    check_unsigned("rd", rd, 5)
+    check_unsigned("rs1", rs1, 5)
+    word = spec.match & spec.mask
+    word |= rd << 7
+    word |= rs1 << 15
+    if spec.form == "r":
+        if operand is None:
+            raise ValueError(f"{spec.name} 需要 rs2")
+        check_unsigned("rs2", operand, 5)
+        word |= operand << 20
+    elif spec.form == "i_shamt":
+        if operand is None:
+            raise ValueError(f"{spec.name} 需要 5 位立即数")
+        check_unsigned("shamt/index", operand, 5)
+        word |= operand << 20
+    elif spec.form not in ("i_fixed", "r_fixed"):
+        raise ValueError(f"{spec.name} 使用未知指令形式 {spec.form!r}")
+    elif operand is not None:
+        raise ValueError(f"{spec.name} 是单源固定编码指令，不接受第二操作数")
+    return u32(word)
+
+
+def target_word(spec: InstructionSpec, rd: int, rs1: int,
+                operand_value: int | None) -> int:
+    if spec.form == "r":
+        # 测试程序固定以 x6 承载第二源，值由 operand_value 初始化。
+        return encode_instruction(spec, rd, rs1, 6)
+    if spec.form == "i_shamt":
+        if operand_value is None:
+            raise ValueError(f"{spec.name} 缺少立即数测试值")
+        return encode_instruction(spec, rd, rs1, operand_value)
+    return encode_instruction(spec, rd, rs1)
+
+
+def emit_target(spec: InstructionSpec, rd: int, rs1: int,
+                operand_value: int | None, indent: str = "    ") -> str:
+    word = target_word(spec, rd, rs1, operand_value)
+    return f"{indent}.word 0x{word:08X}    /* {spec.name} */"
+
+
+def emit_inputs(spec: InstructionSpec, a: int, b: int | None,
+                lines: list[str]) -> None:
+    lines.append(f"    li      x5, 0x{u32(a):08X}")
+    if spec.form == "r":
+        if b is None:
+            raise ValueError(f"{spec.name} 的 R 型向量缺少第二操作数")
+        lines.append(f"    li      x6, 0x{u32(b):08X}")
+
+
+def emit_compare(register: int, expected: int, lines: list[str]) -> None:
+    lines.append(f"    li      x28, 0x{u32(expected):08X}")
+    lines.append(f"    bne     x{register}, x28, fail")
+
+
+def collision_test_lines(spec: InstructionSpec) -> list[str]:
+    """生成与目标 funct3 接近的 RV32I 运算及一条 RV32M 基线。"""
+    funct3 = (spec.match >> 12) & 0x7
+    lines = [
+        "", "    /* ---------- 邻近译码与 RV32M 基线 ---------- */",
+        "    li      x5, 0x80000001",
+    ]
+    if spec.form in ("r", "r_fixed"):
+        r_ops = {
+            0: ("add", 0x8000_0002),
+            1: ("sll", 0x0000_0002),
+            2: ("slt", 0x0000_0001),
+            3: ("sltu", 0x0000_0000),
+            4: ("xor", 0x8000_0000),
+            5: ("srl", 0x4000_0000),
+            6: ("or", 0x8000_0001),
+            7: ("and", 0x0000_0001),
+        }
+        mnemonic, expected = r_ops[funct3]
+        lines.extend((
+            "    li      x6, 1",
+            f"    {mnemonic:<7} x7, x5, x6",
+        ))
+    else:
+        i_ops = {
+            0: ("addi", 0x8000_0002),
+            1: ("slli", 0x0000_0002),
+            2: ("slti", 0x0000_0001),
+            3: ("sltiu", 0x0000_0000),
+            4: ("xori", 0x8000_0000),
+            5: ("srli", 0x4000_0000),
+            6: ("ori", 0x8000_0001),
+            7: ("andi", 0x0000_0001),
+        }
+        mnemonic, expected = i_ops[funct3]
+        lines.append(f"    {mnemonic:<7} x7, x5, 1")
+    emit_compare(7, expected, lines)
+    lines.extend((
+        "    li      x5, 7",
+        "    li      x6, 9",
+        "    mul     x7, x5, x6",
+    ))
+    emit_compare(7, 63, lines)
+    return lines
+
+
+def render_test_program(spec: InstructionSpec) -> str:
+    """生成只依赖 RV32IM 汇编器的完整自检程序。"""
+    lines = [
+        "/* =============================================================",
+        f" * 自动生成：{spec.extension} {spec.name} 单指令 CPU 测试",
+        f" * 固定编码：match=0x{spec.match:08X}, mask=0x{spec.mask:08X}",
+        " * 目标指令均使用 .word，汇编器无需支持 Zb 助记符。",
+        " * ============================================================= */",
+        "    .option norvc",
+        "    .section .text.init",
+        "    .globl _start",
+        "_start:",
+        "    /* ---------- 定向功能向量 ---------- */",
+    ]
+
+    for index, (a, b) in enumerate(spec.vectors, start=1):
+        expected = evaluate(spec.name, a, b)
+        lines.append(f"    /* vector {index}: A=0x{u32(a):08X}" +
+                     (" */" if b is None else f", B=0x{u32(b):08X} */"))
+        emit_inputs(spec, a, b, lines)
+        lines.append(emit_target(spec, 7, 5, b))
+        emit_compare(7, expected, lines)
+
+    a, b = spec.vectors[-1]
+    expected = evaluate(spec.name, a, b)
+
+    lines.extend(("", "    /* ---------- rd 与源寄存器重叠 ---------- */"))
+    emit_inputs(spec, a, b, lines)
+    lines.append(emit_target(spec, 5, 5, b))
+    emit_compare(5, expected, lines)
+    if spec.form == "r":
+        emit_inputs(spec, a, b, lines)
+        lines.append(emit_target(spec, 6, 5, b))
+        emit_compare(6, expected, lines)
+
+    lines.extend(("", "    /* ---------- 写 x0 必须无副作用 ---------- */"))
+    emit_inputs(spec, a, b, lines)
+    lines.append(emit_target(spec, 0, 5, b))
+    lines.append("    li      x28, 0")
+    lines.append("    bne     x0, x28, fail")
+
+    lines.extend(("", "    /* ---------- 生产者前递与结果立即消费 ---------- */"))
+    if spec.form == "r":
+        if b is None:
+            raise ValueError(f"{spec.name} 的 R 型向量缺少第二操作数")
+        lines.append(f"    li      x6, 0x{u32(b):08X}")
+    lines.append(f"    li      x5, 0x{u32(a - 1):08X}")
+    lines.append("    addi    x5, x5, 1")
+    lines.append(emit_target(spec, 7, 5, b))
+    lines.append("    addi    x8, x7, 0")
+    emit_compare(8, expected, lines)
+
+    lines.extend(("", "    /* ---------- BRAM load-use ---------- */",
+                  "    lui     x29, 0x80100",
+                  "    addi    x29, x29, 0x200",
+                  f"    li      x5, 0x{u32(a):08X}",
+                  "    sw      x5, 0(x29)"))
+    if spec.form == "r":
+        lines.append(f"    li      x6, 0x{u32(b if b is not None else 0):08X}")
+    lines.append("    lw      x5, 0(x29)")
+    lines.append(emit_target(spec, 7, 5, b))
+    emit_compare(7, expected, lines)
+
+    lines.extend(("", "    /* ---------- 双发射：目标位于槽 0 ---------- */"))
+    emit_inputs(spec, a, b, lines)
+    lines.extend((
+        "    li      x29, 3",
+        "    li      x30, 0",
+        "    .balign 8",
+        "dual_slot0_loop:",
+        emit_target(spec, 7, 5, b),
+        "    addi    x30, x30, 1",
+        "    addi    x29, x29, -1",
+        "    bne     x29, x0, dual_slot0_loop",
+    ))
+    emit_compare(7, expected, lines)
+    emit_compare(30, 3, lines)
+
+    lines.extend(("", "    /* ---------- 双发射：目标位于槽 1 ---------- */"))
+    emit_inputs(spec, a, b, lines)
+    lines.extend((
+        "    li      x29, 3",
+        "    li      x30, 0",
+        "    .balign 8",
+        "dual_slot1_loop:",
+        "    addi    x30, x30, 1",
+        emit_target(spec, 7, 5, b),
+        "    addi    x29, x29, -1",
+        "    bne     x29, x0, dual_slot1_loop",
+    ))
+    emit_compare(7, expected, lines)
+    emit_compare(30, 3, lines)
+
+    lines.extend(collision_test_lines(spec))
+    lines.extend((
+        "", "pass:",
+        "    li      a0, 0xC0DEC0DE",
+        "    j       report",
+        "fail:",
+        "    li      a0, 0xDEADBEEF",
+        "report:",
+        "    lui     t0, 0x80200",
+        "    addi    t0, t0, 0x40",
+        "    sw      a0, 0(t0)",
+        "1:  j       1b",
+        "",
+    ))
+    return "\n".join(lines)
 
 
 def run_selftest() -> None:
@@ -240,7 +639,62 @@ def run_selftest() -> None:
     for value in (0, 1, 0x80000000, 0x01234567, 0xFFFFFFFF):
         assert unzip_bits(zip_bits(value)) == u32(value)
         assert rol(ror(value, 7), 7) == u32(value)
-    print(f"自测通过：{len(cases)} 个定向向量、2 个编码向量及互逆性质检查")
+
+    assert len(SPECS) == 39
+    assert len({spec.name for spec in SPECS}) == 39
+    vector_count = 0
+    for spec in SPECS:
+        assert (spec.match & ~spec.mask) == 0
+        assert (spec.match & 0b11) == 0b11
+        for a, b in spec.vectors:
+            evaluate(spec.name, a, b)
+            vector_count += 1
+            operand = 6 if spec.form == "r" else b
+            word = encode_instruction(spec, 7, 5, operand)
+            assert (word & spec.mask) == spec.match
+            assert ((word >> 7) & 0x1F) == 7
+            assert ((word >> 15) & 0x1F) == 5
+        generated = render_test_program(spec)
+        assert f"自动生成：{spec.extension} {spec.name}" in generated
+        assert "0xC0DEC0DE" in generated
+        assert "0xDEADBEEF" in generated
+        assert "dual_slot0_loop" in generated
+        assert "dual_slot1_loop" in generated
+        assert "lw      x5, 0(x29)" in generated
+
+    # 与仓库现有 8 个训练样例交叉核对标准机器码。
+    known_words = {
+        "sh1add": 0x2062_A3B3,
+        "ror": 0x6062_D3B3,
+        "cpop": 0x6022_9393,
+        "bset": 0x2862_93B3,
+        "clmulh": 0x0A62_B3B3,
+        "pack": 0x0862_C3B3,
+        "brev8": 0x6872_D393,
+        "xperm8": 0x2862_C3B3,
+    }
+    for name, expected_word in known_words.items():
+        spec = resolve_spec(name)
+        operand = 6 if spec.form == "r" else None
+        assert encode_instruction(spec, 7, 5, operand) == expected_word
+
+    assert resolve_spec("rev.b").name == "brev8"
+    assert resolve_spec("xperm.n").name == "xperm4"
+    assert resolve_spec("xperm.b").name == "xperm8"
+
+    base = resolve_spec("sh1add")
+    sample = encode_instruction(base, 7, 5, 6) ^ (1 << 25)
+    overridden = override_encoding(base, sample)
+    rebuilt = encode_instruction(overridden, 1, 2, 3)
+    assert (rebuilt & overridden.mask) == (sample & overridden.mask)
+    assert ((rebuilt >> 7) & 0x1F) == 1
+    assert ((rebuilt >> 15) & 0x1F) == 2
+    assert ((rebuilt >> 20) & 0x1F) == 3
+
+    print(
+        f"自测通过：39 条候选、{vector_count} 个生成向量、"
+        f"{len(cases)} 个参考向量、8 个样例机器码及编码覆盖检查"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -268,6 +722,15 @@ def build_parser() -> argparse.ArgumentParser:
     calc.add_argument("rs1", type=parse_int)
     calc.add_argument("rs2", type=parse_int, nargs="?")
 
+    generate = sub.add_parser("generate", help="生成指定 Zb 指令的完整 CPU 测试")
+    generate.add_argument("instruction", help="候选指令名或支持的别名")
+    generate.add_argument("--output", type=Path, required=True,
+                          help="输出 .S 文件路径")
+    generate.add_argument(
+        "--encoding", type=parse_int,
+        help="题面给出的任意寄存器实例机器码；仅提取该形式的固定编码位",
+    )
+
     sub.add_parser("list", help="列出支持的参考运算")
     sub.add_parser("selftest", help="运行内置定向自测")
     return parser
@@ -284,9 +747,26 @@ def main() -> int:
                                             args.rd, args.opcode)))
         elif args.command == "eval":
             print(f"0x{evaluate(args.operation, args.rs1, args.rs2):08X}")
+        elif args.command == "generate":
+            spec = resolve_spec(args.instruction)
+            if args.encoding is not None:
+                spec = override_encoding(spec, args.encoding)
+            program = render_test_program(spec)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            with args.output.open("w", encoding="utf-8", newline="\n") as output:
+                output.write(program)
+            print(
+                f"已生成 {spec.extension} {spec.name}: {args.output} "
+                f"(match=0x{spec.match:08X}, mask=0x{spec.mask:08X})"
+            )
         elif args.command == "list":
-            print("单操作数：" + " ".join(sorted(UNARY_OPS)))
-            print("双操作数/立即数：" + " ".join(sorted(BINARY_OPS)))
+            for extension in ("Zba", "Zbb", "Zbc", "Zbs", "Zbkb", "Zbkx"):
+                names = []
+                for spec in SPECS:
+                    if spec.extension == extension:
+                        alias_text = ("/" + "/".join(spec.aliases)) if spec.aliases else ""
+                        names.append(spec.name + alias_text)
+                print(f"{extension}: " + " ".join(names))
         else:
             run_selftest()
     except (ValueError, AssertionError) as error:
