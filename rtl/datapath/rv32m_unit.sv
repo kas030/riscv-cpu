@@ -59,7 +59,8 @@ module rv32m_unit #(
     assign op_remu   = alu_control[21];
 
     assign div_by_zero  = (operand_b == '0);
-    assign div_overflow = (operand_a == {1'b1, {(DATAWIDTH-1){1'b0}}}) &&
+    assign div_overflow = (op_div || op_rem) &&
+                          (operand_a == {1'b1, {(DATAWIDTH-1){1'b0}}}) &&
                           (operand_b == {DATAWIDTH{1'b1}});
     assign signed_a = op_mulh | op_mulhsu | op_div | op_rem;
     assign signed_b = op_mulh | op_div | op_rem;
