@@ -24,7 +24,7 @@ sim_cpu_only/config.mk
 ```make
 IROM_COE := ../sim/coe/mext/irom-v2.coe
 BRAM_COE := ../sim/coe/mext/dram.coe
-EXPECTED_LED := 01221c08
+EXPECTED_LED := 078b7323
 TRACE := 0
 CPU_FREQ_MHZ := 200.0
 STOP_NS := 400000000
@@ -92,7 +92,7 @@ sim_cpu_only/build/verilator-sim.log
 
 ```text
 >>> [PASS] final state matches enabled checks
-virtual_led       : 0x01221c08
+virtual_led       : 0x078b7323
 led_graphic       :
                     .......#
                     ..#...#.
@@ -156,14 +156,15 @@ gtkwave sim_cpu_only/build/wave.fst
 
 ## 7. CPI 统计口径
 
-日志中的 CPI 是近似值：
+CPU-only testbench 使用核心导出的两槽退休有效信号统计 `retired inst`，并计算：
 
 ```text
-CPI = cycles / approx_inst
-approx_inst = writeback(RF) + stores + taken branches
+CPI = cycles / retired inst
 ```
 
-`cycles` 是 CPU 时钟周期数。`writeback(RF)` 统计写回寄存器且目标不是 `x0` 的指令，`stores` 统计写 MMIO/BRAM 的 store，`taken branches` 统计实际跳转或 taken 分支。该口径适合观察性能趋势，但不是严格 retire 计数。
+完成 LED 所在 store 会计入退休数；若它位于第一槽，同包程序序更年轻的第二槽不会计入
+截止统计。写回、store、分支、双发射、停顿和 L0 等计数用于解释 CPI，不应相加作为
+另一种指令数。
 
 ## 8. 何时使用 Vivado
 
@@ -173,108 +174,20 @@ CPU-only 仿真不替代完整 Vivado 仿真。需要验证以下内容时，应
 - PLL、UART、数码管扫描等板级外设；
 - 综合后功能仿真或实现相关问题。
 
-## 9. M 扩展测试经验记录
+## 9. 正确性和性能回归
 
-本仓库已经补充了一份 RV32M 基础自检程序：
-
-```text
-tests/tier1_basic/t18_m_ext_basic.S
-```
-
-它覆盖：
-
-- `mul / mulh / mulhsu / mulhu`
-- `div / divu / rem / remu`
-- 除数为 0 的标准特殊情况
-- `0x80000000 / -1` 的有符号溢出特殊情况
-
-### 9.1 `run_verilator.sh` 与 `tests/Makefile` 的分工
-
-`./sim_cpu_only/run_verilator.sh` 只负责读取现成的 `IROM_COE` / `BRAM_COE`，转换成 `build/*.mem` 后运行 Verilator。它本身不关心测试镜像最初是按 `rv32i` 还是 `rv32im` 编出来的。
-
-真正会限制指令集的是：
-
-```text
-tests/Makefile
-```
-
-如果要从 `tests/tier*/` 下的汇编源码重新生成镜像，编译选项必须允许 M 扩展。当前仓库已将：
-
-```make
--march=rv32i
-```
-
-改成：
-
-```make
--march=rv32im
-```
-
-否则汇编器会拒绝 `mul/div/rem` 等指令。
-
-### 9.2 CPU-only 仿真判定 PASS 的方式
-
-`sim_cpu_only/tb_cpu_only.sv` 监听的是 MMIO LED 地址：
-
-```text
-0x8020_0040
-```
-
-因此测试程序最终应把 `0xC0DEC0DE` 或 `0xDEADBEEF` 写到 LED 地址，而不是只写到旧 testbench 使用的其他“结果地址”。
-
-一个常用收尾模板是：
-
-```asm
-pass:
-    li      a0, 0xC0DEC0DE
-    j       done
-fail:
-    li      a0, 0xDEADBEEF
-done:
-    lui     t0, 0x80200
-    addi    t0, t0, 0x40
-    sw      a0, 0(t0)
-1:  j       1b
-```
-
-另外，当前 CPU-only testbench 不会在 LED 命中后立刻停机，而是等到 `STOP_NS` 后统一打印最终状态并做 `EXPECTED_LED` 检查。所以对这类快速自检程序，建议把 `STOP_NS` 设小一些，例如：
+不要从旧测试目录生成镜像。可信测试统一从 `verification/` 构建，它会固定 ISA、
+链接地址、IROM/BRAM 容量并审计反汇编：
 
 ```sh
-./sim_cpu_only/run_verilator.sh EXPECTED_LED=C0DEC0DE STOP_NS=20000 PROGRESS_NS=0
+cd verification
+make check
+make regression
+make run-open-source
+make competition
 ```
 
-这样既能验证最终 LED，又不会白等很久。
-
-### 9.3 没有 RISC-V 交叉编译器时的替代方案
-
-如果本机缺少：
-
-- `riscv32-unknown-elf-gcc`
-- `riscv-none-embed-gcc`
-- `riscv64-unknown-elf-gcc`
-
-就无法通过 `tests/Makefile` 直接把 `.S` 编成新的 `irom.coe`。这种情况下，不必为了一个小测试临时安装整套工具链，也不建议为了任务本身去“现写一个通用编译器”。
-
-当前仓库已经提供了一个更轻量的兜底脚本：
-
-```text
-tests/tools/gen_t18_m_ext_basic_coe.py
-```
-
-它直接生成 `t18_m_ext_basic` 对应的 RV32IM 指令镜像，不依赖外部 RISC-V 工具链：
-
-```sh
-python3 tests/tools/gen_t18_m_ext_basic_coe.py tests/build/t18_m_ext_basic.coe
-```
-
-然后可直接覆盖 `IROM_COE` 跑 CPU-only 仿真：
-
-```sh
-./sim_cpu_only/run_verilator.sh \
-  IROM_COE=../tests/build/t18_m_ext_basic.coe \
-  EXPECTED_LED=C0DEC0DE \
-  STOP_NS=20000 \
-  PROGRESS_NS=0
-```
-
-这条路径适合“先快速验证某个小功能是否通了”，尤其适合当前这类基础 M 扩展冒烟测试。
+本地自检使用 LED `0xC0DEC0DE`/`0xDEADBEEF`；竞赛 `irom-v2` 使用
+`0x078B7323`/`0x24181824`。testbench 在对应 LED store 退休时立即结束，不必等待
+`STOP_NS`；超时只作为兜底失败条件。完整矩阵和已知结果见
+`docs/tests/cpu_test_plan.md`。

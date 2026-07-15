@@ -1,7 +1,11 @@
 # CPU 定向测试报告
 
+> **历史文档，不作为当前 CPU 测试结论。** 本报告使用的 `vivado/tests/` 已被确认
+> 存在错误并从可信回归中排除。当前计划与结果分别见
+> [`cpu_test_plan.md`](cpu_test_plan.md) 和 [`cpu_test_report.md`](cpu_test_report.md)。
+
 > 执行日期：2026-07-15
-> 能力判定依据：[`cpu_capability_boundaries.md`](cpu_capability_boundaries.md)
+> 能力判定依据：[`cpu_capability_boundaries.md`](../cpu_capability_boundaries.md)
 > RTL 基线：`7aadc28`（分支 `codex/tests`）
 
 ## 1. 结论

@@ -248,4 +248,5 @@ CPU 对外只有一组数据访问端口：`perip_addr`、`perip_wen`、`perip_m
 - Load/store：[`rtl/memory/mycpu_lsu.sv`](../rtl/memory/mycpu_lsu.sv)、[`rtl/memory/bram_driver.sv`](../rtl/memory/bram_driver.sv)
 - 地址映射：[`rtl/bus/perip_bridge.sv`](../rtl/bus/perip_bridge.sv)
 - SoC 取指映射：[`rtl/soc/student_top.sv`](../rtl/soc/student_top.sv)
-- 回归测试：[`vivado/tests/`](../vivado/tests/)
+- 可信回归与测试计划：[`verification/`](../verification/README.md)、
+  [`cpu_test_plan.md`](tests/cpu_test_plan.md)
