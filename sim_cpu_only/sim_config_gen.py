@@ -40,7 +40,7 @@ def hex32_literal(v: str, name: str) -> str:
 def main() -> int:
     out = sys.argv[1]
     expected_led = os.environ.get("EXPECTED_LED", "").strip()
-    pass_led = os.environ.get("PASS_LED", "01221C08").strip()
+    pass_led = os.environ.get("PASS_LED", "078B7323").strip()
     fail_led = os.environ.get("FAIL_LED", "24181824").strip()
     trace = os.environ.get("TRACE", "0").strip()
     cpu_freq_mhz = os.environ.get("CPU_FREQ_MHZ", "200.0").strip()
