@@ -34,7 +34,7 @@ def main() -> int:
         f"IROM_COE={(root / 'sim/coe/mext/irom-v2.coe').resolve()}",
         f"BRAM_COE={(root / 'sim/coe/mext/dram.coe').resolve()}",
         "PASS_LED=078B7323", "FAIL_LED=24181824", "EXPECTED_LED=078B7323",
-        "STOP_NS=4000000000", "PROGRESS_NS=0", "TRACE=0",
+        "CPU_FREQ_MHZ=240.0", "STOP_NS=4000000000", "PROGRESS_NS=0", "TRACE=0",
     ]
     completed = subprocess.run(command, cwd=root, text=True, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT)
