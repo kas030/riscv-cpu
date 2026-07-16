@@ -225,8 +225,8 @@
   \node[shared, fill=writebackfill, minimum width=5cm, rotate=90] (commit) at (27.75,4) {
     {\bfseries In-order Commit}
   };
-  \draw[datapath] (wb0.east) -| (wb0.east -| commit.north);
-  \draw[datapath] (wb1.east) -| (wb1.east -| commit.north);
+  \draw[datapath] (wb0.east) -- (wb0.east -| commit.north);
+  \draw[datapath] (wb1.east) -- (wb1.east -| commit.north);
   \draw[datapath] (commit.west) |- (24.65,-4) -- node[bus label, above=1pt, fill=none, text=ink] {Write ports 0 and 1} (11,-4) -| (regfile.south);
 
   % Hazard, stall, flush, and redirect control
