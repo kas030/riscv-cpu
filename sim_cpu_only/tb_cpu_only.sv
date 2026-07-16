@@ -184,12 +184,12 @@ module tb_cpu_only;
             bram_rdata_q <= 32'd0;
             bram_resp_valid <= 1'b0;
         end else begin
-            bram_resp_valid <= !perip_wen && (perip_addr >= BRAM_BASE && perip_addr < BRAM_END);
-            if (!perip_wen && (perip_addr >= BRAM_BASE && perip_addr < BRAM_END)) begin
+            bram_resp_valid <= !perip_wen && (perip_addr >= BRAM_BASE && perip_addr <= BRAM_END);
+            if (!perip_wen && (perip_addr >= BRAM_BASE && perip_addr <= BRAM_END)) begin
                 bram_rdata_q <= select_load_word(bram[(perip_addr - BRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
             end
             if (perip_wen) begin
-                if (perip_addr >= BRAM_BASE && perip_addr < BRAM_END) begin
+                if (perip_addr >= BRAM_BASE && perip_addr <= BRAM_END) begin
                     bram[(perip_addr - BRAM_BASE) >> 2] <= merge_store_word(
                         bram[(perip_addr - BRAM_BASE) >> 2],
                         perip_wdata,

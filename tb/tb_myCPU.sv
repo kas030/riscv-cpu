@@ -26,7 +26,7 @@ module tb_myCPU;
         .virtual_seg (seg)
     );
 
-    // 200MHz 差分输入时钟（pll 内部分频出 cpu_clk）
+    // 200MHz 差分输入时钟（PLL 生成 240MHz cpu_clk）
     initial clk = 1'b0;
     always  #2.5 clk = ~clk;
 
@@ -36,7 +36,7 @@ module tb_myCPU;
     wire cpu_clk = uut.student_top_inst.w_cpu_clk;
 
     // CPU 时钟频率 (MHz)，按你 PLL 实际配置改
-    localparam real CPU_CLK_MHZ = 200.0;
+    localparam real CPU_CLK_MHZ = 240.0;
 
     integer cnt_cycles    = 0;
     integer cnt_writeback = 0;

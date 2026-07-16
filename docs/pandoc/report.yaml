@@ -1,0 +1,42 @@
+from: markdown+raw_tex+citations+footnotes+implicit_figures
+to: pdf
+standalone: true
+pdf-engine: xelatex
+table-of-contents: false
+toc-depth: 3
+number-sections: true
+section-divs: true
+figure-caption-position: below
+table-caption-position: below
+resource-path:
+  - .
+  - assets
+filters:
+  - pandoc/report.lua
+csl: pandoc/gb-t-7714-2015-numeric.csl
+include-in-header:
+  - pandoc/report-style.tex
+variables:
+  documentclass: ctexart
+  classoption:
+    - UTF8
+    - a4paper
+  papersize: a4
+  fontsize: 12pt
+  mainfont: Times New Roman
+  CJKmainfont: SimSun
+  CJKsansfont: SimHei
+  geometry:
+    - top=2.54cm
+    - bottom=2.54cm
+    - left=3.0cm
+    - right=2.5cm
+  colorlinks: true
+  linkcolor: black
+  urlcolor: black
+  citecolor: black
+  toc-title: 目录
+metadata:
+  lang: zh-CN
+  link-citations: true
+  reference-section-title: 参考文献
