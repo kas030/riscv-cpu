@@ -1,8 +1,8 @@
 # 报告文档构建说明
 
-`docs/` 中的报告使用 Markdown 编写，通过 Pandoc 和 XeLaTeX 生成 PDF。
+`docs/` 中的技术文档使用 Markdown 编写，通过 Pandoc 和 XeLaTeX 生成 PDF。
 
-当前支持 `design-report.md` 和 `test-report.md`。
+当前文档源文件为 `technical-report.md`。
 
 ## 环境要求
 
@@ -24,19 +24,18 @@ xelatex --version
 
 ```powershell
 .\docs\build.ps1
-.\docs\build.ps1 -Target design
-.\docs\build.ps1 -Target test
+.\docs\build.ps1 -Target report
 .\docs\build.ps1 -Target clean
 ```
 
-默认目标为 `all`，会依次构建设计报告和测试报告。PDF 输出到 `docs/build/`。
+默认目标为 `report`，会构建统一的技术文档。PDF 输出为 `docs/build/technical-report.pdf`。
 
 报告 YAML 元数据可用 `cover` 指定相对于 `docs/` 的封面：
 
 ```yaml
 ---
-title-meta: RISC-V CPU 设计报告
-cover: design-report-cover.pdf
+title-meta: RISC-V CPU 技术文档
+cover: assets/cover.pdf
 ---
 ```
 

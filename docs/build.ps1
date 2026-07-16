@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("all", "design", "test", "clean")]
-    [string]$Target = "all"
+    [ValidateSet("report", "clean")]
+    [string]$Target = "report"
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,12 +114,4 @@ if ($Target -eq "clean") {
 
 Assert-Command -Name "pandoc"
 Assert-Command -Name "xelatex"
-
-switch ($Target) {
-    "design" { Build-Report -Name "design-report" }
-    "test" { Build-Report -Name "test-report" }
-    "all" {
-        Build-Report -Name "design-report"
-        Build-Report -Name "test-report"
-    }
-}
+Build-Report -Name "technical-report"
