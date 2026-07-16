@@ -26,3 +26,14 @@ test("lesson route renders structured source-grounded content", async () => {
   assert.match(html, /forwarding_unit/);
   assert.match(html, /引导练习/);
 });
+
+test("RTL source viewer renders real line numbers and syntax highlighting", async () => {
+  const response = await render("/rtl-map");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /class="code-viewer"/);
+  assert.match(html, /class="line-number"[^>]*>43</);
+  assert.match(html, /class="sv-keyword">localparam</);
+  assert.match(html, /class="sv-number">8</);
+  assert.match(html, /class="sv-comment">\/\//);
+});

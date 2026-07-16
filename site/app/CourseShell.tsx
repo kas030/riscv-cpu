@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import generatedSnippets from "./generated/rtl-snippets.json";
+import { CodeViewer } from "./CodeViewer";
 import { lessons, scenarios, sourceRefs } from "./content";
 import type { LabKind, LessonSection, PipelineStage } from "./types";
 import {
@@ -188,7 +189,7 @@ function SourceExcerpt({ id }: { id: string }) {
   return (
     <details className="source-block">
       <summary><span>{source.label}</span><code>{source.path}:{snippet.line}</code></summary>
-      <p>{source.why}</p><pre><code>{snippet.code}</code></pre>
+      <p>{source.why}</p><CodeViewer code={snippet.code} startLine={snippet.line} />
     </details>
   );
 }
@@ -200,7 +201,7 @@ function Section({ section }: { section: LessonSection }) {
       {section.lead && <p className="lead">{section.lead}</p>}
       {section.paragraphs?.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       {section.bullets && <ul>{section.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul>}
-      {section.code && <pre><code>{section.code}</code></pre>}
+      {section.code && <CodeViewer code={section.code} />}
       {section.lab && <Lab kind={section.lab} />}
       {section.sourceIds?.map((id) => <SourceExcerpt id={id} key={id} />)}
       {section.exercise && <details className="exercise"><summary>引导练习 · {section.exercise.question}</summary><p><strong>提示：</strong>{section.exercise.hint}</p><p className="answer"><strong>答案：</strong>{section.exercise.answer}</p></details>}
