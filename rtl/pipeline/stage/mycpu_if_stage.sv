@@ -21,6 +21,8 @@ module mycpu_if_stage #(
     input  logic                   BranchRedirect  ,
     input  logic                   BP_update_en    ,
     input  logic [DATAWIDTH - 1:0] BP_update_pc    ,
+    input  logic [DATAWIDTH - 1:0] BP_update_target,
+    input  logic                   BP_update_is_jal,
     input  logic                   BP_update_taken ,
     output logic [DATAWIDTH - 1:0] irom_addr       ,        // 第一槽取指地址
     output logic [DATAWIDTH - 1:0] irom_addr1      ,        // 第二槽取指地址
@@ -100,9 +102,10 @@ module mycpu_if_stage #(
         .clk             (clk            ),
         .rst             (rst            ),
         .IF_pc           (IF_pc          ),
-        .IF_instr        (IF_instr       ),
         .update_en       (BP_update_en   ),
         .update_pc       (BP_update_pc   ),
+        .update_target   (BP_update_target),
+        .update_is_jal   (BP_update_is_jal),
         .update_taken    (BP_update_taken),
         .IF_pred_taken   (IF_pred_taken  ),
         .IF_pred_target  (IF_pred_target )
@@ -145,12 +148,12 @@ module mycpu_if_stage #(
                 dual_hint_tag[dual_hint_pending_index]   <= dual_hint_pending_tag;
                 dual_hint_value[dual_hint_pending_index] <= dual_hint_pending_value;
             end
-            dual_hint_pending_valid <= !Stall;
-            if (!Stall) begin
-                dual_hint_pending_index <= dual_hint_index;
-                dual_hint_pending_tag   <= dual_hint_pc_tag;
-                dual_hint_pending_value <= IF_dual_candidate;
-            end
+            // Stall 时 PC/指令保持，重复训练同一项不改变结果。
+            // 始终更新 pending 可将 hazard 从这组寄存器 CE 路径移除。
+            dual_hint_pending_valid <= 1'b1;
+            dual_hint_pending_index <= dual_hint_index;
+            dual_hint_pending_tag   <= dual_hint_pc_tag;
+            dual_hint_pending_value <= IF_dual_candidate;
         end
     end
     // 并行预计算两个顺序地址，避免 IF_issue_dual 进入 32 位加法器
@@ -185,9 +188,10 @@ module branch_predictor #(
     input  logic                   clk,
     input  logic                   rst,
     input  logic [DATAWIDTH-1:0]   IF_pc,
-    input  logic [DATAWIDTH-1:0]   IF_instr,
     input  logic                   update_en,
     input  logic [DATAWIDTH-1:0]   update_pc,
+    input  logic [DATAWIDTH-1:0]   update_target,
+    input  logic                   update_is_jal,
     input  logic                   update_taken,
     output logic                   IF_pred_taken,
     output logic [DATAWIDTH-1:0]   IF_pred_target
@@ -197,59 +201,41 @@ module branch_predictor #(
     logic [1:0] bht [0:BHT_ENTRIES-1];
     logic [INDEX_WIDTH-1:0] IF_index;
     logic [INDEX_WIDTH-1:0] update_index;
-    logic [DATAWIDTH-1:0] IF_branch_imm;
-    logic [DATAWIDTH-1:0] IF_jal_imm;
-    logic [DATAWIDTH-1:0] IF_branch_target;
-    logic [DATAWIDTH-1:0] IF_jal_target;
-    logic IF_is_branch;
-    logic IF_is_jal;
-    logic IF_branch_pred_taken;
-    logic bht_valid [0:BHT_ENTRIES-1];
+    logic [5:0] btb_tag [0:BHT_ENTRIES-1];
+    logic [DATAWIDTH-1:0] btb_target [0:BHT_ENTRIES-1];
+    logic btb_valid [0:BHT_ENTRIES-1];
+    logic btb_is_jal [0:BHT_ENTRIES-1];
+    logic btb_hit;
 
     assign IF_index     = IF_pc[INDEX_WIDTH+1:2];
     assign update_index = update_pc[INDEX_WIDTH+1:2];
-    assign IF_is_branch = (IF_instr[6:0] == `B_TYPE);
-    assign IF_is_jal    = (IF_instr[6:0] == `J_TYPE);
-
-    assign IF_branch_imm = {{(DATAWIDTH-13){IF_instr[31]}},
-                            IF_instr[31],
-                            IF_instr[7],
-                            IF_instr[30:25],
-                            IF_instr[11:8],
-                            1'b0};
-
-    assign IF_jal_imm = {{(DATAWIDTH-21){IF_instr[31]}},
-                         IF_instr[31],
-                         IF_instr[19:12],
-                         IF_instr[20],
-                         IF_instr[30:21],
-                         1'b0};
-
-    assign IF_branch_target = IF_pc + IF_branch_imm;
-    assign IF_jal_target    = IF_pc + IF_jal_imm;
-
-    // Cold conditional branches use BTFNT. Trained entries use the 2-bit counter.
-    assign IF_branch_pred_taken = bht_valid[IF_index] ? bht[IF_index][1] :
-                                                        IF_branch_imm[DATAWIDTH-1];
-    assign IF_pred_taken  = IF_is_jal || (IF_is_branch && IF_branch_pred_taken);
-    assign IF_pred_target = IF_is_jal ? IF_jal_target : IF_branch_target;
+    assign btb_hit = btb_valid[IF_index] &&
+                     (btb_tag[IF_index] == IF_pc[13:8]);
+    assign IF_pred_taken = btb_hit &&
+                           (btb_is_jal[IF_index] || bht[IF_index][1]);
+    assign IF_pred_target = btb_target[IF_index];
 
     integer i;
     always_ff @(posedge clk) begin
         if (rst) begin
             for (i = 0; i < BHT_ENTRIES; i = i + 1) begin
                 bht[i] <= 2'b01;
-                bht_valid[i] <= 1'b0;
+                btb_valid[i] = 1'b0;
             end
         end else if (update_en) begin
-            bht_valid[update_index] <= 1'b1;
-            if (update_taken) begin
-                if (bht[update_index] != 2'b11) begin
-                    bht[update_index] <= bht[update_index] + 2'b01;
-                end
-            end else begin
-                if (bht[update_index] != 2'b00) begin
-                    bht[update_index] <= bht[update_index] - 2'b01;
+            btb_valid[update_index]  <= 1'b1;
+            btb_tag[update_index]    <= update_pc[13:8];
+            btb_target[update_index] <= update_target;
+            btb_is_jal[update_index] <= update_is_jal;
+            if (!update_is_jal) begin
+                if (update_taken) begin
+                    if (bht[update_index] != 2'b11) begin
+                        bht[update_index] <= bht[update_index] + 2'b01;
+                    end
+                end else begin
+                    if (bht[update_index] != 2'b00) begin
+                        bht[update_index] <= bht[update_index] - 2'b01;
+                    end
                 end
             end
         end
