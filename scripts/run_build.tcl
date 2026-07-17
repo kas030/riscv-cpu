@@ -4,6 +4,7 @@
 #   vivado -mode batch -source scripts/run_build.tcl
 #   vivado -mode batch -source scripts/run_build.tcl -tclargs synth
 #   vivado -mode batch -source scripts/run_build.tcl -tclargs impl
+#   vivado -mode batch -source scripts/run_build.tcl -tclargs impl Performance_NetDelay_high
 #   vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 
 set script_dir [file dirname [file normalize [info script]]]
@@ -36,8 +37,13 @@ foreach tclstore_root {
 }
 
 set build_mode [lindex $argv 0]
+set impl_strategy [lindex $argv 1]
 if {$build_mode eq ""} {
     set build_mode bitstream
+}
+if {$impl_strategy eq ""} {
+    # 日常迭代优先缩短实现时间；高强度布局策略由第二参数显式开启。
+    set impl_strategy "Vivado Implementation Defaults"
 }
 
 set valid_modes {synth impl bitstream}
@@ -98,6 +104,11 @@ if {$build_mode in {synth impl bitstream}} {
 }
 
 if {$build_mode in {impl bitstream}} {
+    set impl_run [get_runs impl_1]
+    set_property strategy $impl_strategy $impl_run
+    set impl_auto_incremental [expr {$impl_strategy eq "Vivado Implementation Defaults"}]
+    set_property AUTO_INCREMENTAL_CHECKPOINT $impl_auto_incremental $impl_run
+    puts "INFO: impl_1 strategy=$impl_strategy auto_incremental=$impl_auto_incremental"
     reset_run impl_1
     if {$build_mode eq "bitstream"} {
         run_and_wait impl_1 -to_step write_bitstream -jobs 8

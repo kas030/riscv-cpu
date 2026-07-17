@@ -37,6 +37,9 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 - `run_build.tcl`
   - 运行综合、实现或生成 bitstream。
   - 支持 `synth`、`impl`、`bitstream`，默认是 `bitstream`。
+  - 日常迭代默认使用 `Vivado Implementation Defaults` 和自动增量布局。
+  - 阶段性候选版可显式使用高强度策略：
+    `-tclargs impl Performance_NetDelay_high`。
 
 - `report_high_fanout.tcl`
   - 对打开的工程或设计输出高扇出网络报告，用于时序优化分析。

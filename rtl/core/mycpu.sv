@@ -45,7 +45,8 @@ module mycpu (
     // Hazard / Forwarding 控制信号
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
-    logic        Stall_Hazard, EX_busy, EX_any_busy, Stall_Front, Flush_ID_EX_comb;
+    logic        Stall_Hazard, Stall_LateSubword, EX_busy, EX_any_busy;
+    logic        Stall_Front, Flush_ID_EX_comb;
     logic        Flush_EX_MEM;
     logic [2:0]  ID_ForwardA, ID_ForwardB, ID_ForwardA_S1, ID_ForwardB_S1;
     logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
@@ -74,7 +75,7 @@ module mycpu (
     logic [31:0] MEM_cache_lookup_addr;
     logic        MEM_cache_hit_raw, EX_cache_probe_hit_raw;
     logic [31:0] MEM_cache_data_raw, EX_cache_probe_data_raw;
-    logic        LoadUseEX, LoadUseMEM;
+    logic        LoadUseEX, LoadUseMEM, LoadUseMEM_base;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
 
@@ -276,8 +277,9 @@ module mycpu (
 
     // 消费者本地 late operand：ID 看到生产者位于 MEM2 时，把对应值和
     // 唯一 load 的原始字随消费者锁存到 ID/EX。下一拍不再跨区域读取 WB。
-    logic [31:0] MEM2_nonload_data0, MEM2_nonload_data1;
     logic        MEM2_load_slot1;
+    logic        MEM2_subword_miss0, MEM2_subword_miss1;
+    logic        ID_dep_mem2_0, ID_dep_mem2_1;
     logic [31:0] ID_late_load_word;
     logic [2:0]  ID_late_load_funct3;
     logic [1:0]  ID_late_load_offset;
@@ -295,8 +297,6 @@ module mycpu (
     logic [2:0]  EX_S1_late_load_funct3;
     logic [1:0]  EX_S1_late_load_offset;
     logic        EX_S1_late_load_bram, EX_S1_late_is_load1, EX_S1_late_is_load2;
-    logic [31:0] EX_late_load_raw, EX_late_load_data;
-    logic [31:0] EX_S1_late_load_raw, EX_S1_late_load_data;
     logic [31:0] EX_late_forward_data1, EX_late_forward_data2;
     logic [31:0] EX_S1_late_forward_data1, EX_S1_late_forward_data2;
 
@@ -327,21 +327,6 @@ module mycpu (
     assign MEM2_load_slot1 = MEM2_S1_RegWrite &&
                              (MEM2_S1_MemToReg == 3'b010);
 
-    always_comb begin
-        case (MEM2_MemToReg)
-            3'b000: MEM2_nonload_data0 = MEM2_pcadd4;
-            3'b011: MEM2_nonload_data0 = MEM2_imm;
-            3'b100: MEM2_nonload_data0 = MEM2_csr_wb;
-            default: MEM2_nonload_data0 = MEM2_alu_result;
-        endcase
-        case (MEM2_S1_MemToReg)
-            3'b000: MEM2_nonload_data1 = MEM2_S1_pcadd4;
-            3'b011: MEM2_nonload_data1 = MEM2_S1_imm;
-            3'b100: MEM2_nonload_data1 = MEM2_S1_csr_wb;
-            default: MEM2_nonload_data1 = MEM2_S1_alu_result;
-        endcase
-    end
-
     assign ID_late_load_word = MEM2_load_slot1 ? MEM2_S1_mdata : MEM2_mdata;
     assign ID_late_load_funct3 = MEM2_load_slot1 ? MEM2_S1_funct3 : MEM2_funct3;
     assign ID_late_load_offset = MEM2_load_slot1 ? MEM2_S1_alu_result[1:0] :
@@ -349,61 +334,51 @@ module mycpu (
     assign ID_late_load_bram = MEM2_load_slot1 ? MEM2_S1_bram_access :
                                                  MEM2_bram_access;
 
-    assign ID_late_data1 = (ID_ForwardA == 3'd4) ? MEM2_nonload_data1 :
-                                                   MEM2_nonload_data0;
-    assign ID_late_data2 = (ID_ForwardB == 3'd4) ? MEM2_nonload_data1 :
-                                                   MEM2_nonload_data0;
-    assign ID_S1_late_data1 = (ID_ForwardA_S1 == 3'd4) ? MEM2_nonload_data1 :
-                                                         MEM2_nonload_data0;
-    assign ID_S1_late_data2 = (ID_ForwardB_S1 == 3'd4) ? MEM2_nonload_data1 :
-                                                         MEM2_nonload_data0;
+    // MEM2_forward_data 已包含非 load 写回值和 L0 命中时的已格式化
+    // load 值。只有 L0 miss 才需要另外处理同步 BRAM 的晚到返回。
+    assign ID_late_data1 = (ID_ForwardA == 3'd4) ? MEM2_S1_forward_data :
+                                                   MEM2_forward_data;
+    assign ID_late_data2 = (ID_ForwardB == 3'd4) ? MEM2_S1_forward_data :
+                                                   MEM2_forward_data;
+    assign ID_S1_late_data1 = (ID_ForwardA_S1 == 3'd4) ? MEM2_S1_forward_data :
+                                                         MEM2_forward_data;
+    assign ID_S1_late_data2 = (ID_ForwardB_S1 == 3'd4) ? MEM2_S1_forward_data :
+                                                         MEM2_forward_data;
 
     assign ID_late_is_load1 = ((ID_ForwardA == 3'd1) && MEM2_RegWrite &&
-                               (MEM2_MemToReg == 3'b010)) ||
+                               (MEM2_MemToReg == 3'b010) && !MEM2_cache_hit &&
+                               (MEM2_funct3 == 3'b010)) ||
                               ((ID_ForwardA == 3'd4) && MEM2_S1_RegWrite &&
-                               (MEM2_S1_MemToReg == 3'b010));
+                               (MEM2_S1_MemToReg == 3'b010) && !MEM2_S1_cache_hit &&
+                               (MEM2_S1_funct3 == 3'b010));
     assign ID_late_is_load2 = ((ID_ForwardB == 3'd1) && MEM2_RegWrite &&
-                               (MEM2_MemToReg == 3'b010)) ||
+                               (MEM2_MemToReg == 3'b010) && !MEM2_cache_hit &&
+                               (MEM2_funct3 == 3'b010)) ||
                               ((ID_ForwardB == 3'd4) && MEM2_S1_RegWrite &&
-                               (MEM2_S1_MemToReg == 3'b010));
+                               (MEM2_S1_MemToReg == 3'b010) && !MEM2_S1_cache_hit &&
+                               (MEM2_S1_funct3 == 3'b010));
     assign ID_S1_late_is_load1 = ((ID_ForwardA_S1 == 3'd1) && MEM2_RegWrite &&
-                                  (MEM2_MemToReg == 3'b010)) ||
+                                  (MEM2_MemToReg == 3'b010) && !MEM2_cache_hit &&
+                                  (MEM2_funct3 == 3'b010)) ||
                                  ((ID_ForwardA_S1 == 3'd4) && MEM2_S1_RegWrite &&
-                                  (MEM2_S1_MemToReg == 3'b010));
+                                  (MEM2_S1_MemToReg == 3'b010) && !MEM2_S1_cache_hit &&
+                                  (MEM2_S1_funct3 == 3'b010));
     assign ID_S1_late_is_load2 = ((ID_ForwardB_S1 == 3'd1) && MEM2_RegWrite &&
-                                  (MEM2_MemToReg == 3'b010)) ||
+                                  (MEM2_MemToReg == 3'b010) && !MEM2_cache_hit &&
+                                  (MEM2_funct3 == 3'b010)) ||
                                  ((ID_ForwardB_S1 == 3'd4) && MEM2_S1_RegWrite &&
-                                  (MEM2_S1_MemToReg == 3'b010));
+                                  (MEM2_S1_MemToReg == 3'b010) && !MEM2_S1_cache_hit &&
+                                  (MEM2_S1_funct3 == 3'b010));
 
-    assign EX_late_load_raw = EX_late_load_bram ?
-                              select_load_raw(EX_late_load_word,
-                                              EX_late_load_funct3,
-                                              EX_late_load_offset) :
-                              EX_late_load_word;
-    assign EX_S1_late_load_raw = EX_S1_late_load_bram ?
-                                 select_load_raw(EX_S1_late_load_word,
-                                                 EX_S1_late_load_funct3,
-                                                 EX_S1_late_load_offset) :
-                                 EX_S1_late_load_word;
-
-    load_mask #(DATAWIDTH) u_ex_late_load_mask (
-        .mask  (EX_late_load_funct3),
-        .dout  (EX_late_load_raw   ),
-        .mdata (EX_late_load_data  )
-    );
-    load_mask #(DATAWIDTH) u_ex_late_load_mask_s1 (
-        .mask  (EX_S1_late_load_funct3),
-        .dout  (EX_S1_late_load_raw   ),
-        .mdata (EX_S1_late_load_data  )
-    );
-
-    assign EX_late_forward_data1 = EX_late_is_load1 ? EX_late_load_data :
+    // miss 的 lw 直接前递 BRAM 完整字，不再经过 byte/half 格式化网络。
+    // subword miss 的依赖者会在 ID 多等一拍，由 WB 同拍旁路提供结果。
+    assign EX_late_forward_data1 = EX_late_is_load1 ? EX_late_load_word :
                                                              EX_late_data1;
-    assign EX_late_forward_data2 = EX_late_is_load2 ? EX_late_load_data :
+    assign EX_late_forward_data2 = EX_late_is_load2 ? EX_late_load_word :
                                                              EX_late_data2;
-    assign EX_S1_late_forward_data1 = EX_S1_late_is_load1 ? EX_S1_late_load_data :
+    assign EX_S1_late_forward_data1 = EX_S1_late_is_load1 ? EX_S1_late_load_word :
                                                                    EX_S1_late_data1;
-    assign EX_S1_late_forward_data2 = EX_S1_late_is_load2 ? EX_S1_late_load_data :
+    assign EX_S1_late_forward_data2 = EX_S1_late_is_load2 ? EX_S1_late_load_word :
                                                                    EX_S1_late_data2;
 
 `ifndef SYNTHESIS
@@ -507,6 +482,25 @@ module mycpu (
                              (ID_instr1_effective[6:0] == `S_TYPE) ||
                              (ID_instr1_effective[6:0] == `B_TYPE));
 
+    // L0 miss 的 byte/half load 不走晚到数据快速路径。若当前 ID 包依赖
+    // MEM2 中的这类 load，多停一拍等它进入 WB；无依赖和 L0 命中均不停。
+    assign MEM2_subword_miss0 = MEM2_RegWrite && MEM2_MemRead &&
+                                !MEM2_cache_hit && (MEM2_rd != 5'd0) &&
+                                (MEM2_funct3 != 3'b010);
+    assign MEM2_subword_miss1 = MEM2_S1_RegWrite && MEM2_S1_MemRead &&
+                                !MEM2_S1_cache_hit && (MEM2_S1_rd != 5'd0) &&
+                                (MEM2_S1_funct3 != 3'b010);
+    assign ID_dep_mem2_0 = (ID_uses_rs1 && (ID_rs1 == MEM2_rd)) ||
+                           (ID_uses_rs2 && (ID_rs2 == MEM2_rd)) ||
+                           (ID_S1_uses_rs1 && (ID_S1_rs1 == MEM2_rd)) ||
+                           (ID_S1_uses_rs2 && (ID_S1_rs2 == MEM2_rd));
+    assign ID_dep_mem2_1 = (ID_uses_rs1 && (ID_rs1 == MEM2_S1_rd)) ||
+                           (ID_uses_rs2 && (ID_rs2 == MEM2_S1_rd)) ||
+                           (ID_S1_uses_rs1 && (ID_S1_rs1 == MEM2_S1_rd)) ||
+                           (ID_S1_uses_rs2 && (ID_S1_rs2 == MEM2_S1_rd));
+    assign Stall_LateSubword = (MEM2_subword_miss0 && ID_dep_mem2_0) ||
+                               (MEM2_subword_miss1 && ID_dep_mem2_1);
+
     // =========================================================================
     // 冒险检测 / 前递选择
     // =========================================================================
@@ -537,8 +531,10 @@ module mycpu (
         .Flush_IF_ID   (Flush_IF_ID    ),
         .Flush_ID_EX   (Flush_ID_EX    ),
         .LoadUseEX     (LoadUseEX      ),
-        .LoadUseMEM    (LoadUseMEM     )
+        .LoadUseMEM    (LoadUseMEM_base)
     );
+
+    assign LoadUseMEM = LoadUseMEM_base | Stall_LateSubword;
 
     assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
     assign MEM_S1_bram_access = is_bram_addr(MEM_S1_perip_addr);
@@ -600,10 +596,10 @@ module mycpu (
     //   2) 任一 EX 槽正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
     //   BRAM load 通过 MEM1/MEM2 后端流水返回，不再冻结整条前段流水。
     assign EX_any_busy     = EX_busy | EX_busy_S1;
-    assign Stall_Front     = Stall_Hazard | EX_any_busy;
+    assign Stall_Front     = Stall_Hazard | Stall_LateSubword | EX_any_busy;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
     assign Flush_ID_EX_comb = redirect_valid_q ? 1'b1 :
-                               (Flush_ID_EX & ~EX_any_busy);
+                               ((Flush_ID_EX | Stall_LateSubword) & ~EX_any_busy);
     assign Stall           = Stall_Front;
 `ifndef SYNTHESIS
     always_ff @(posedge clk) begin
