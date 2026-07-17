@@ -149,8 +149,6 @@ module mycpu_ex_stage #(
         .ex_busy_i           (EX_busy            ),
         .ex_npc_op_i         (EX_NpcOp           ),
         .alu_branch_true_i   (alu_isTrue         ),
-        .branch_target_i     (branch_target      ),
-        .jal_target_i        (jal_target         ),
         .jalr_csr_target_i   (jalr_csr_target    ),
         .pred_taken_i        (EX_pred_taken      ),
         .pred_target_i       (EX_pred_target     ),

@@ -27,8 +27,8 @@ module alu #(
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
     logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra;
-    logic [DATAWIDTH-1:0] r_slt, r_sltu;
-    logic                 cmp_eq, cmp_lt, cmp_ltu;
+    logic [DATAWIDTH-1:0] r_logic_shift, r_non_arith;
+    logic                 cmp_eq, cmp_lt, cmp_ltu, cmp_result_selected;
 
     assign m_add  = ALUControl[ 0];
     assign m_sub  = ALUControl[ 1];
@@ -63,8 +63,6 @@ module alu #(
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
     assign cmp_ltu = ~cout;
-    assign r_slt   = {{DATAWIDTH - 1{1'b0}},  cmp_lt };
-    assign r_sltu  = {{DATAWIDTH - 1{1'b0}},  cmp_ltu};
 
     assign isTrue = (m_beq  &  cmp_eq ) |
                     (m_bne  & ~cmp_eq ) |
@@ -73,13 +71,20 @@ module alu #(
                     (m_bgeu & ~cmp_ltu) |
                     (m_bltu &  cmp_ltu);
 
-    assign Result = {DATAWIDTH{m_add | m_sub}} & r_addsub |
-                    {DATAWIDTH{m_and        }} & r_and    |
-                    {DATAWIDTH{m_or         }} & r_or     |
-                    {DATAWIDTH{m_xor        }} & r_xor    |
-                    {DATAWIDTH{m_sll        }} & r_sll    |
-                    {DATAWIDTH{m_srl        }} & r_srl    |
-                    {DATAWIDTH{m_sra        }} & r_sra    |
-                    {DATAWIDTH{m_blt        }} & r_slt    |
-                    {DATAWIDTH{m_bltu       }} & r_sltu;
+    // ADD/SUB 是最常见且会串接 32 位 carry chain 的结果。将它从大型
+    // 独热 OR 树中单独旁路，使算术数据在 carry 后只经过一级结果 mux；
+    // 分支比较继续使用上面的独立 isTrue 通路。
+    assign r_logic_shift = {DATAWIDTH{m_and}} & r_and |
+                           {DATAWIDTH{m_or }} & r_or  |
+                           {DATAWIDTH{m_xor}} & r_xor |
+                           {DATAWIDTH{m_sll}} & r_sll |
+                           {DATAWIDTH{m_srl}} & r_srl |
+                           {DATAWIDTH{m_sra}} & r_sra;
+
+    assign cmp_result_selected = (m_blt & cmp_lt) | (m_bltu & cmp_ltu);
+    assign r_non_arith = (m_blt | m_bltu) ?
+                         {{DATAWIDTH - 1{1'b0}}, cmp_result_selected} :
+                         r_logic_shift;
+
+    assign Result = (m_add | m_sub) ? r_addsub : r_non_arith;
 endmodule

@@ -505,10 +505,10 @@ module mycpu (
     //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
     //   切断 ALU/branch compare -> Flush_ID_EX 的运行期长路径。
     //
-    // 优先级（从高到低）：
+    // redirect 优先级（从高到低）：
     //   1) redirect_valid_q 有效且前段不暂停 → 消费完毕，清 0
     //   2) BranchMispredict_raw 新来了分支误预测 → 直接设置 valid
-    //   3) 分支指令（NpcOp==01）且 EX 不忙 → 记录 bp_update（预测正确也要更新）
+    // 预测器更新与误预测结果解耦：branch/jal 在 EX 完成就训练。
     always_ff @(posedge clk) begin
         if (rst) begin
             redirect_valid_q     <= 1'b0;
@@ -519,8 +519,11 @@ module mycpu (
             redirect_bp_target_q <= '0;
             redirect_bp_is_jal_q <= 1'b0;
         end else begin
-            // bp_update 默认清 0（仅当有分支完成时在下方设为 1）
-            redirect_bp_update_q <= 1'b0;
+            // 预测器训练不依赖分支比较/误预测结果，避免操作数长路径进入
+            // update pulse。EX_NpcOp_eff 已包含 pipe_valid 屏蔽。
+            redirect_bp_update_q <= !redirect_valid_q &&
+                                    ((EX_NpcOp_eff == 2'b01) ||
+                                     (EX_NpcOp_eff == 2'b11));
             // 记录分支 PC，用于更新预测器历史表
             redirect_bp_pc_q     <= EX_pc;
             // branch/jal 的预测目标始终是 PC+imm；分支本次不跳转时
@@ -543,14 +546,6 @@ module mycpu (
             // [优先级 2] EX 刚检测到分支误预测，立即发起重定向
             end else if (BranchMispredict_raw) begin
                 redirect_valid_q  <= 1'b1;
-                // 条件分支和 jal 都训练 BTB；jalr/陷阱目标可变，不进 BTB。
-                redirect_bp_update_q <= (EX_NpcOp_eff == 2'b01) ||
-                                        (EX_NpcOp_eff == 2'b11);
-            // [优先级 3] 预测正确的分支/jal，只训练预测器。
-            end else if (!EX_any_busy &&
-                         ((EX_NpcOp_eff == 2'b01) ||
-                          (EX_NpcOp_eff == 2'b11))) begin
-                redirect_bp_update_q <= 1'b1;
             end
         end
     end
