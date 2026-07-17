@@ -31,6 +31,16 @@ module mycpu_id_ex_reg #(
     input  logic [11:0]             ID_csr_idx      ,
     input  logic [4:0]              ID_csr_zimm     ,
     input  logic [5:0]              ID_CSRControll  ,
+    input  logic [2:0]              ID_ForwardA     ,
+    input  logic [2:0]              ID_ForwardB     ,
+    input  logic [DATAWIDTH - 1:0]  ID_late_data1   ,
+    input  logic [DATAWIDTH - 1:0]  ID_late_data2   ,
+    input  logic [DATAWIDTH - 1:0]  ID_late_load_word,
+    input  logic [2:0]              ID_late_load_funct3,
+    input  logic [1:0]              ID_late_load_offset,
+    input  logic                    ID_late_load_bram,
+    input  logic                    ID_late_is_load1,
+    input  logic                    ID_late_is_load2,
     input  logic                    ID_pred_taken   ,
     input  logic [DATAWIDTH - 1:0]  ID_pred_target  ,
     input  logic                    clk             ,
@@ -58,6 +68,19 @@ module mycpu_id_ex_reg #(
     output logic [11:0]             EX_csr_idx      ,
     output logic [4:0]              EX_csr_zimm     ,
     output logic [5:0]              EX_CSRControll  ,
+    output logic [2:0]              EX_ForwardA     ,
+    output logic [2:0]              EX_ForwardB     ,
+    (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+    output logic [DATAWIDTH - 1:0]  EX_late_data1   ,
+    (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+    output logic [DATAWIDTH - 1:0]  EX_late_data2   ,
+    (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+    output logic [DATAWIDTH - 1:0]  EX_late_load_word,
+    output logic [2:0]              EX_late_load_funct3,
+    output logic [1:0]              EX_late_load_offset,
+    output logic                    EX_late_load_bram,
+    output logic                    EX_late_is_load1,
+    output logic                    EX_late_is_load2,
     output logic                    EX_pred_taken   ,
     output logic [DATAWIDTH - 1:0]  EX_pred_target
     ,output logic                   EX_pipe_valid
@@ -76,6 +99,16 @@ module mycpu_id_ex_reg #(
             EX_NpcOp        <= '0;
             EX_OffsetOrigin <= '0;
             EX_CSRControll  <= '0;
+            EX_ForwardA     <= '0;
+            EX_ForwardB     <= '0;
+            EX_late_data1   <= '0;
+            EX_late_data2   <= '0;
+            EX_late_load_word <= '0;
+            EX_late_load_funct3 <= '0;
+            EX_late_load_offset <= '0;
+            EX_late_load_bram <= 1'b0;
+            EX_late_is_load1 <= 1'b0;
+            EX_late_is_load2 <= 1'b0;
             EX_pc           <= '0;
             EX_imm          <= '0;
             EX_rR1_data     <= '0;
@@ -113,6 +146,16 @@ module mycpu_id_ex_reg #(
             EX_NpcOp        <= ID_NpcOp;
             EX_OffsetOrigin <= ID_OffsetOrigin;
             EX_CSRControll  <= ID_CSRControll;
+            EX_ForwardA     <= '0;
+            EX_ForwardB     <= '0;
+            EX_late_data1   <= ID_late_data1;
+            EX_late_data2   <= ID_late_data2;
+            EX_late_load_word <= ID_late_load_word;
+            EX_late_load_funct3 <= ID_late_load_funct3;
+            EX_late_load_offset <= ID_late_load_offset;
+            EX_late_load_bram <= ID_late_load_bram;
+            EX_late_is_load1 <= ID_late_is_load1;
+            EX_late_is_load2 <= ID_late_is_load2;
             EX_pred_taken   <= ID_pred_taken;
         end else if (Stall_ID_EX) begin
             // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
@@ -139,6 +182,16 @@ module mycpu_id_ex_reg #(
             EX_csr_idx      <= ID_csr_idx;
             EX_csr_zimm     <= ID_csr_zimm;
             EX_CSRControll  <= ID_CSRControll;
+            EX_ForwardA     <= ID_ForwardA;
+            EX_ForwardB     <= ID_ForwardB;
+            EX_late_data1   <= ID_late_data1;
+            EX_late_data2   <= ID_late_data2;
+            EX_late_load_word <= ID_late_load_word;
+            EX_late_load_funct3 <= ID_late_load_funct3;
+            EX_late_load_offset <= ID_late_load_offset;
+            EX_late_load_bram <= ID_late_load_bram;
+            EX_late_is_load1 <= ID_late_is_load1;
+            EX_late_is_load2 <= ID_late_is_load2;
             EX_pred_taken   <= ID_pred_taken;
             EX_pred_target  <= ID_pred_target;
         end

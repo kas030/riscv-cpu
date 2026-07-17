@@ -47,6 +47,7 @@ module mycpu (
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
     logic        Stall_Hazard, EX_busy, EX_any_busy, Stall_Front, Flush_ID_EX_comb;
     logic        Flush_EX_MEM;
+    logic [2:0]  ID_ForwardA, ID_ForwardB, ID_ForwardA_S1, ID_ForwardB_S1;
     logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
     logic [31:0] ForwardAData, ForwardBData, ForwardAData_S1, ForwardBData_S1;
     logic        BranchTaken, BranchTaken_raw;
@@ -68,6 +69,11 @@ module mycpu (
     logic [31:0] EX_cache_probe_data, EX_cache_probe_raw, EX_cache_probe_load_data;
     logic        MEM_cache_fill_en;
     logic [31:0] MEM_cache_fill_addr;
+    logic        MEM_cache_fill_q_en;
+    logic [31:0] MEM_cache_fill_q_addr, MEM_cache_fill_q_data;
+    logic [31:0] MEM_cache_lookup_addr;
+    logic        MEM_cache_hit_raw, EX_cache_probe_hit_raw;
+    logic [31:0] MEM_cache_data_raw, EX_cache_probe_data_raw;
     logic        LoadUseEX, LoadUseMEM;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
@@ -267,6 +273,138 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] WB_wdata;
     logic [31:0] WB_S1_wdata;
+
+    // 消费者本地 late operand：ID 看到生产者位于 MEM2 时，把对应值和
+    // 唯一 load 的原始字随消费者锁存到 ID/EX。下一拍不再跨区域读取 WB。
+    logic [31:0] MEM2_nonload_data0, MEM2_nonload_data1;
+    logic        MEM2_load_slot1;
+    logic [31:0] ID_late_load_word;
+    logic [2:0]  ID_late_load_funct3;
+    logic [1:0]  ID_late_load_offset;
+    logic        ID_late_load_bram;
+    logic [31:0] ID_late_data1, ID_late_data2;
+    logic [31:0] ID_S1_late_data1, ID_S1_late_data2;
+    logic        ID_late_is_load1, ID_late_is_load2;
+    logic        ID_S1_late_is_load1, ID_S1_late_is_load2;
+
+    logic [31:0] EX_late_data1, EX_late_data2, EX_late_load_word;
+    logic [2:0]  EX_late_load_funct3;
+    logic [1:0]  EX_late_load_offset;
+    logic        EX_late_load_bram, EX_late_is_load1, EX_late_is_load2;
+    logic [31:0] EX_S1_late_data1, EX_S1_late_data2, EX_S1_late_load_word;
+    logic [2:0]  EX_S1_late_load_funct3;
+    logic [1:0]  EX_S1_late_load_offset;
+    logic        EX_S1_late_load_bram, EX_S1_late_is_load1, EX_S1_late_is_load2;
+    logic [31:0] EX_late_load_raw, EX_late_load_data;
+    logic [31:0] EX_S1_late_load_raw, EX_S1_late_load_data;
+    logic [31:0] EX_late_forward_data1, EX_late_forward_data2;
+    logic [31:0] EX_S1_late_forward_data1, EX_S1_late_forward_data2;
+
+    // 当前 ID 消费者进入 EX 时，各生产者也恰好前进一级。前递来源选择在
+    // ID 提前完成并随消费者打拍，从 EX 数据路径移除 rd 比较和优先级链。
+    function automatic logic [2:0] select_id_forward(input logic [4:0] rs);
+        begin
+            if (rs == 5'd0) begin
+                select_id_forward = 3'd0;
+            end else if (EX_S1_RegWrite_eff && (EX_S1_rd == rs)) begin
+                select_id_forward = 3'd5;
+            end else if (EX_RegWrite_eff && (EX_rd == rs)) begin
+                select_id_forward = 3'd2;
+            end else if (MEM_S1_RegWrite && (MEM_S1_rd == rs)) begin
+                select_id_forward = 3'd6;
+            end else if (MEM_RegWrite && (MEM_rd == rs)) begin
+                select_id_forward = 3'd3;
+            end else if (MEM2_S1_RegWrite && (MEM2_S1_rd == rs)) begin
+                select_id_forward = 3'd4;
+            end else if (MEM2_RegWrite && (MEM2_rd == rs)) begin
+                select_id_forward = 3'd1;
+            end else begin
+                select_id_forward = 3'd0;
+            end
+        end
+    endfunction
+
+    assign MEM2_load_slot1 = MEM2_S1_RegWrite &&
+                             (MEM2_S1_MemToReg == 3'b010);
+
+    always_comb begin
+        case (MEM2_MemToReg)
+            3'b000: MEM2_nonload_data0 = MEM2_pcadd4;
+            3'b011: MEM2_nonload_data0 = MEM2_imm;
+            3'b100: MEM2_nonload_data0 = MEM2_csr_wb;
+            default: MEM2_nonload_data0 = MEM2_alu_result;
+        endcase
+        case (MEM2_S1_MemToReg)
+            3'b000: MEM2_nonload_data1 = MEM2_S1_pcadd4;
+            3'b011: MEM2_nonload_data1 = MEM2_S1_imm;
+            3'b100: MEM2_nonload_data1 = MEM2_S1_csr_wb;
+            default: MEM2_nonload_data1 = MEM2_S1_alu_result;
+        endcase
+    end
+
+    assign ID_late_load_word = MEM2_load_slot1 ? MEM2_S1_mdata : MEM2_mdata;
+    assign ID_late_load_funct3 = MEM2_load_slot1 ? MEM2_S1_funct3 : MEM2_funct3;
+    assign ID_late_load_offset = MEM2_load_slot1 ? MEM2_S1_alu_result[1:0] :
+                                                   MEM2_alu_result[1:0];
+    assign ID_late_load_bram = MEM2_load_slot1 ? MEM2_S1_bram_access :
+                                                 MEM2_bram_access;
+
+    assign ID_late_data1 = (ID_ForwardA == 3'd4) ? MEM2_nonload_data1 :
+                                                   MEM2_nonload_data0;
+    assign ID_late_data2 = (ID_ForwardB == 3'd4) ? MEM2_nonload_data1 :
+                                                   MEM2_nonload_data0;
+    assign ID_S1_late_data1 = (ID_ForwardA_S1 == 3'd4) ? MEM2_nonload_data1 :
+                                                         MEM2_nonload_data0;
+    assign ID_S1_late_data2 = (ID_ForwardB_S1 == 3'd4) ? MEM2_nonload_data1 :
+                                                         MEM2_nonload_data0;
+
+    assign ID_late_is_load1 = ((ID_ForwardA == 3'd1) && MEM2_RegWrite &&
+                               (MEM2_MemToReg == 3'b010)) ||
+                              ((ID_ForwardA == 3'd4) && MEM2_S1_RegWrite &&
+                               (MEM2_S1_MemToReg == 3'b010));
+    assign ID_late_is_load2 = ((ID_ForwardB == 3'd1) && MEM2_RegWrite &&
+                               (MEM2_MemToReg == 3'b010)) ||
+                              ((ID_ForwardB == 3'd4) && MEM2_S1_RegWrite &&
+                               (MEM2_S1_MemToReg == 3'b010));
+    assign ID_S1_late_is_load1 = ((ID_ForwardA_S1 == 3'd1) && MEM2_RegWrite &&
+                                  (MEM2_MemToReg == 3'b010)) ||
+                                 ((ID_ForwardA_S1 == 3'd4) && MEM2_S1_RegWrite &&
+                                  (MEM2_S1_MemToReg == 3'b010));
+    assign ID_S1_late_is_load2 = ((ID_ForwardB_S1 == 3'd1) && MEM2_RegWrite &&
+                                  (MEM2_MemToReg == 3'b010)) ||
+                                 ((ID_ForwardB_S1 == 3'd4) && MEM2_S1_RegWrite &&
+                                  (MEM2_S1_MemToReg == 3'b010));
+
+    assign EX_late_load_raw = EX_late_load_bram ?
+                              select_load_raw(EX_late_load_word,
+                                              EX_late_load_funct3,
+                                              EX_late_load_offset) :
+                              EX_late_load_word;
+    assign EX_S1_late_load_raw = EX_S1_late_load_bram ?
+                                 select_load_raw(EX_S1_late_load_word,
+                                                 EX_S1_late_load_funct3,
+                                                 EX_S1_late_load_offset) :
+                                 EX_S1_late_load_word;
+
+    load_mask #(DATAWIDTH) u_ex_late_load_mask (
+        .mask  (EX_late_load_funct3),
+        .dout  (EX_late_load_raw   ),
+        .mdata (EX_late_load_data  )
+    );
+    load_mask #(DATAWIDTH) u_ex_late_load_mask_s1 (
+        .mask  (EX_S1_late_load_funct3),
+        .dout  (EX_S1_late_load_raw   ),
+        .mdata (EX_S1_late_load_data  )
+    );
+
+    assign EX_late_forward_data1 = EX_late_is_load1 ? EX_late_load_data :
+                                                             EX_late_data1;
+    assign EX_late_forward_data2 = EX_late_is_load2 ? EX_late_load_data :
+                                                             EX_late_data2;
+    assign EX_S1_late_forward_data1 = EX_S1_late_is_load1 ? EX_S1_late_load_data :
+                                                                   EX_S1_late_data1;
+    assign EX_S1_late_forward_data2 = EX_S1_late_is_load2 ? EX_S1_late_load_data :
+                                                                   EX_S1_late_data2;
 
 `ifndef SYNTHESIS
     // 仿真性能统计使用的架构有效位。每一级严格复刻对应流水寄存器的
@@ -494,64 +632,33 @@ module mycpu (
     assign BranchMispredict = redirect_valid_q;
     assign BP_update_en    = redirect_bp_update_q;
     assign BP_update_taken = redirect_taken_q;
+
     forwarding_unit u_forwarding_unit (
-        .ID_EX_rs1       (EX_rs1      ),
-        .ID_EX_rs2       (EX_rs2      ),
         .ID_EX_data1     (EX_rR1_data ),
         .ID_EX_data2     (EX_rR2_data ),
-        .EX_MEM_rd0      (MEM_rd      ),
-        .EX_MEM_valid0   (MEM_RegWrite && (MEM_rd != 5'd0)),
-        .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
-        .MEM2_rd0        (MEM2_rd     ),
-        .MEM2_valid0     (MEM2_RegWrite && (!MEM2_MemRead || MEM2_cache_hit) &&
-                          (MEM2_rd != 5'd0)),
-        .MEM2_rd1        (MEM2_S1_rd  ),
-        .MEM2_valid1     (MEM2_S1_RegWrite && (!MEM2_S1_MemRead || MEM2_S1_cache_hit) &&
-                          (MEM2_S1_rd != 5'd0)),
-        .MEM_WB_rd0      (WB_rd       ),
-        .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
-        .MEM_WB_rd1      (WB_S1_rd    ),
-        .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
         .EX_MEM_data0    (MEM_forward_data_effective),
         .EX_MEM_data1    (MEM_S1_forward_data_effective),
         .MEM2_data0      (MEM2_forward_data),
         .MEM2_data1      (MEM2_S1_forward_data),
-        .MEM_WB_data0    (WB_wdata),
-        .MEM_WB_data1    (WB_S1_wdata),
-        .ForwardA        (ForwardA    ),
-        .ForwardB        (ForwardB    ),
+        .LATE_data1      (EX_late_forward_data1),
+        .LATE_data2      (EX_late_forward_data2),
+        .ForwardA_sel    (ForwardA    ),
+        .ForwardB_sel    (ForwardB    ),
         .ForwardAData    (ForwardAData),
         .ForwardBData    (ForwardBData)
     );
 
     forwarding_unit u_forwarding_unit_s1 (
-        .ID_EX_rs1       (EX_S1_rs1   ),
-        .ID_EX_rs2       (EX_S1_rs2   ),
         .ID_EX_data1     (EX_S1_rR1_data),
         .ID_EX_data2     (EX_S1_rR2_data),
-        .EX_MEM_rd0      (MEM_rd      ),
-        .EX_MEM_valid0   (MEM_RegWrite && (MEM_rd != 5'd0)),
-        .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
-        .MEM2_rd0        (MEM2_rd     ),
-        .MEM2_valid0     (MEM2_RegWrite && (!MEM2_MemRead || MEM2_cache_hit) &&
-                          (MEM2_rd != 5'd0)),
-        .MEM2_rd1        (MEM2_S1_rd  ),
-        .MEM2_valid1     (MEM2_S1_RegWrite && (!MEM2_S1_MemRead || MEM2_S1_cache_hit) &&
-                          (MEM2_S1_rd != 5'd0)),
-        .MEM_WB_rd0      (WB_rd       ),
-        .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
-        .MEM_WB_rd1      (WB_S1_rd    ),
-        .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
         .EX_MEM_data0    (MEM_forward_data_effective),
         .EX_MEM_data1    (MEM_S1_forward_data_effective),
         .MEM2_data0      (MEM2_forward_data),
         .MEM2_data1      (MEM2_S1_forward_data),
-        .MEM_WB_data0    (WB_wdata),
-        .MEM_WB_data1    (WB_S1_wdata),
-        .ForwardA        (ForwardA_S1 ),
-        .ForwardB        (ForwardB_S1 ),
+        .LATE_data1      (EX_S1_late_forward_data1),
+        .LATE_data2      (EX_S1_late_forward_data2),
+        .ForwardA_sel    (ForwardA_S1 ),
+        .ForwardB_sel    (ForwardB_S1 ),
         .ForwardAData    (ForwardAData_S1),
         .ForwardBData    (ForwardBData_S1)
     );
@@ -670,6 +777,11 @@ module mycpu (
         .rR4_data (ID_S1_rR2_data)
     );
 
+    assign ID_ForwardA    = select_id_forward(ID_rs1);
+    assign ID_ForwardB    = select_id_forward(ID_rs2);
+    assign ID_ForwardA_S1 = select_id_forward(ID_S1_rs1);
+    assign ID_ForwardB_S1 = select_id_forward(ID_S1_rs2);
+
     // ---- ID/EX 流水寄存器 ----
     mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg (
         .ID_pc           (ID_pc          ),
@@ -692,6 +804,16 @@ module mycpu (
         .ID_csr_idx      (ID_csr_idx     ),
         .ID_csr_zimm     (ID_csr_zimm    ),
         .ID_CSRControll  (ID_CSRControll ),
+        .ID_ForwardA     (ID_ForwardA    ),
+        .ID_ForwardB     (ID_ForwardB    ),
+        .ID_late_data1   (ID_late_data1  ),
+        .ID_late_data2   (ID_late_data2  ),
+        .ID_late_load_word(ID_late_load_word),
+        .ID_late_load_funct3(ID_late_load_funct3),
+        .ID_late_load_offset(ID_late_load_offset),
+        .ID_late_load_bram(ID_late_load_bram),
+        .ID_late_is_load1(ID_late_is_load1),
+        .ID_late_is_load2(ID_late_is_load2),
         .ID_pred_taken   (ID_pred_taken  ),
         .ID_pred_target  (ID_pred_target ),
         .clk             (clk            ),
@@ -718,6 +840,16 @@ module mycpu (
         .EX_csr_idx      (EX_csr_idx     ),
         .EX_csr_zimm     (EX_csr_zimm    ),
         .EX_CSRControll  (EX_CSRControll ),
+        .EX_ForwardA     (ForwardA       ),
+        .EX_ForwardB     (ForwardB       ),
+        .EX_late_data1   (EX_late_data1  ),
+        .EX_late_data2   (EX_late_data2  ),
+        .EX_late_load_word(EX_late_load_word),
+        .EX_late_load_funct3(EX_late_load_funct3),
+        .EX_late_load_offset(EX_late_load_offset),
+        .EX_late_load_bram(EX_late_load_bram),
+        .EX_late_is_load1(EX_late_is_load1),
+        .EX_late_is_load2(EX_late_is_load2),
         .EX_pred_taken   (EX_pred_taken  ),
         .EX_pred_target  (EX_pred_target ),
         .EX_pipe_valid   (EX_pipe_valid  )
@@ -744,6 +876,16 @@ module mycpu (
         .ID_csr_idx      (ID_S1_csr_idx  ),
         .ID_csr_zimm     (ID_S1_csr_zimm ),
         .ID_CSRControll  (ID_S1_CSRControll),
+        .ID_ForwardA     (ID_ForwardA_S1 ),
+        .ID_ForwardB     (ID_ForwardB_S1 ),
+        .ID_late_data1   (ID_S1_late_data1),
+        .ID_late_data2   (ID_S1_late_data2),
+        .ID_late_load_word(ID_late_load_word),
+        .ID_late_load_funct3(ID_late_load_funct3),
+        .ID_late_load_offset(ID_late_load_offset),
+        .ID_late_load_bram(ID_late_load_bram),
+        .ID_late_is_load1(ID_S1_late_is_load1),
+        .ID_late_is_load2(ID_S1_late_is_load2),
         .ID_pred_taken   (1'b0           ),
         .ID_pred_target  ('0             ),
         .clk             (clk            ),
@@ -770,6 +912,16 @@ module mycpu (
         .EX_csr_idx      (EX_S1_csr_idx  ),
         .EX_csr_zimm     (EX_S1_csr_zimm ),
         .EX_CSRControll  (EX_S1_CSRControll),
+        .EX_ForwardA     (ForwardA_S1    ),
+        .EX_ForwardB     (ForwardB_S1    ),
+        .EX_late_data1   (EX_S1_late_data1),
+        .EX_late_data2   (EX_S1_late_data2),
+        .EX_late_load_word(EX_S1_late_load_word),
+        .EX_late_load_funct3(EX_S1_late_load_funct3),
+        .EX_late_load_offset(EX_S1_late_load_offset),
+        .EX_late_load_bram(EX_S1_late_load_bram),
+        .EX_late_is_load1(EX_S1_late_is_load1),
+        .EX_late_is_load2(EX_S1_late_is_load2),
         .EX_pred_taken   (EX_S1_pred_taken),
         .EX_pred_target  (EX_S1_pred_target),
         .EX_pipe_valid   (EX_S1_pipe_valid)
@@ -966,18 +1118,21 @@ module mycpu (
 
     // 64 项 BRAM load 结果缓存。外部访问保持不变；EX 提前探测命中时允许
     // 下一拍从 MEM1 前递，miss 仍沿原 BRAM→WB 路径返回。
+    assign MEM_cache_lookup_addr = MEM_use_s1_bus ? MEM_S1_perip_bus_addr :
+                                                     MEM_perip_bus_addr;
+
     load_l0_cache #(.INDEX_WIDTH(6)) u_load_l0_cache (
         .clk          (clk),
         .rst          (rst),
-        .lookup_addr  (MEM_use_s1_bus ? MEM_S1_perip_bus_addr : MEM_perip_bus_addr),
-        .lookup_hit   (MEM_cache_hit),
-        .lookup_data  (MEM_cache_data),
+        .lookup_addr  (MEM_cache_lookup_addr),
+        .lookup_hit   (MEM_cache_hit_raw),
+        .lookup_data  (MEM_cache_data_raw),
         .probe_addr   (EX_cache_probe_addr),
-        .probe_hit    (EX_cache_probe_hit),
-        .probe_data   (EX_cache_probe_data),
-        .fill_en      (MEM_cache_fill_en),
-        .fill_addr    (MEM_cache_fill_addr),
-        .fill_data    (perip_rdata),
+        .probe_hit    (EX_cache_probe_hit_raw),
+        .probe_data   (EX_cache_probe_data_raw),
+        .fill_en      (MEM_cache_fill_q_en),
+        .fill_addr    (MEM_cache_fill_q_addr),
+        .fill_data    (MEM_cache_fill_q_data),
         .store_en     (MEM_bus_wen && is_bram_addr(MEM_bus_addr)),
         .store_addr   (MEM_bus_addr)
     );
@@ -986,6 +1141,43 @@ module mycpu (
                                (MEM2_S1_MemRead && MEM2_S1_bram_access);
     assign MEM_cache_fill_addr = MEM2_MemRead ? MEM2_alu_result :
                                                    MEM2_S1_alu_result;
+
+    // BRAM 返回先进入窄寄存器，再在下一拍写 L0，切断 BRAM 大读 mux 到
+    // 64 项分布式 RAM 写口的组合路径。q 项在写入前作为虚拟最新缓存行
+    // 参与 lookup/probe，因此命中时序和原实现保持一致。
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            MEM_cache_fill_q_en   <= 1'b0;
+            MEM_cache_fill_q_addr <= 32'b0;
+            MEM_cache_fill_q_data <= 32'b0;
+        end else begin
+            MEM_cache_fill_q_en <= MEM_cache_fill_en &&
+                                   !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
+                                     (MEM_bus_addr[17:2] == MEM_cache_fill_addr[17:2]));
+            MEM_cache_fill_q_addr <= MEM_cache_fill_addr;
+            MEM_cache_fill_q_data <= perip_rdata;
+        end
+    end
+
+    always_comb begin
+        MEM_cache_hit  = MEM_cache_hit_raw;
+        MEM_cache_data = MEM_cache_data_raw;
+        if (MEM_cache_fill_q_en &&
+            (MEM_cache_fill_q_addr[7:2] == MEM_cache_lookup_addr[7:2])) begin
+            MEM_cache_hit  = (MEM_cache_fill_q_addr[17:2] ==
+                              MEM_cache_lookup_addr[17:2]);
+            MEM_cache_data = MEM_cache_fill_q_data;
+        end
+
+        EX_cache_probe_hit  = EX_cache_probe_hit_raw;
+        EX_cache_probe_data = EX_cache_probe_data_raw;
+        if (MEM_cache_fill_q_en &&
+            (MEM_cache_fill_q_addr[7:2] == EX_cache_probe_addr[7:2])) begin
+            EX_cache_probe_hit  = (MEM_cache_fill_q_addr[17:2] ==
+                                   EX_cache_probe_addr[17:2]);
+            EX_cache_probe_data = MEM_cache_fill_q_data;
+        end
+    end
 
     // EX 提前读取完整缓存字，并随 load 一起打入 EX/MEM。下一拍消费者仅
     // 前递寄存后的数据，避免 MEM 异步 L0 读取直接串入 EX ALU。
