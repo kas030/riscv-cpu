@@ -22,6 +22,11 @@ async function expectNoNodeOverlap(page: Page) {
 test("desktop overview", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await openSimulator(page);
+  const leftPanel = await page.locator(".visualizer-left").boundingBox();
+  const canvas = await page.locator(".visualizer-canvas").boundingBox();
+  expect(leftPanel).not.toBeNull();
+  expect(canvas).not.toBeNull();
+  expect(Math.abs((leftPanel?.x ?? 0) + (leftPanel?.width ?? 0) - (canvas?.x ?? 0))).toBeLessThanOrEqual(1);
   await expectNoNodeOverlap(page);
   await expect(page).toHaveScreenshot("desktop-overview.png", { fullPage: true });
 });

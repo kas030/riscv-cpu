@@ -73,7 +73,7 @@
 .effect-list p.invalid, .signal-list article.zero { opacity: .58; }
 .state-grid p, .effect-list p { margin: 3px 0; color: var(--viz-muted); font-size: .62rem; }
 .effect-list b, .effect-list code { margin-right: 5px; color: #e5a55f; }
-.visualizer-canvas { position: relative; grid-area: 2 / 2 / 3 / 3; min-width: 0; min-height: 0; }
+.visualizer-canvas { position: relative; grid-area: 2 / 2 / 3 / 3; min-width: 0; min-height: 0; margin-left: 0; }
 .trace-provenance { position: absolute; z-index: 5; top: 12px; left: 50%; display: flex; gap: 9px; align-items: center; padding: 6px 10px; transform: translateX(-50%); color: var(--viz-muted); background: #08151dcc; border: 1px solid var(--viz-line); border-radius: 999px; font-size: .6rem; backdrop-filter: blur(8px); }
 .trace-provenance .pass { color: #80e0b2; }
 .trace-provenance .idle { color: #e4b176; }

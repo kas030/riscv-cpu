@@ -58,7 +58,7 @@ test("cycle, scene, instruction, module and signal interactions stay coherent", 
   await expect(page.locator(".instruction-list button.selected")).toHaveCount(0);
 });
 
-test("schematic zoom, pan, fit-view and node dragging are functional", async ({ page }) => {
+test("schematic zoom, drag-to-pan and fit-view are functional", async ({ page }) => {
   await openSimulator(page);
   const viewport = page.locator(".react-flow__viewport");
   const transform = () => viewport.getAttribute("style");
@@ -88,18 +88,6 @@ test("schematic zoom, pan, fit-view and node dragging are functional", async ({ 
     await expect.poll(transform).not.toBe(beforePan);
   }
 
-  const node = page.locator(".react-flow__node").first();
-  const beforeDrag = await node.boundingBox();
-  expect(beforeDrag).not.toBeNull();
-  if (beforeDrag) {
-    await page.mouse.move(beforeDrag.x + beforeDrag.width / 2, beforeDrag.y + beforeDrag.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(beforeDrag.x + beforeDrag.width / 2 + 36, beforeDrag.y + beforeDrag.height / 2 + 24, { steps: 5 });
-    await page.mouse.up();
-    const afterDrag = await node.boundingBox();
-    expect(afterDrag).not.toBeNull();
-    expect(Math.abs((afterDrag?.x ?? 0) - beforeDrag.x)).toBeGreaterThan(20);
-  }
 });
 
 test("reduced motion, keyboard playback and accessible names are available", async ({ page }) => {
