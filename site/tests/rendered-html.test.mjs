@@ -37,3 +37,11 @@ test("RTL source viewer renders real line numbers and syntax highlighting", asyn
   assert.match(html, /class="sv-number">8</);
   assert.match(html, /class="sv-comment">\/\//);
 });
+
+test("simulator route renders the RTL-grounded visualizer shell", async () => {
+  const response = await render("/simulator");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /正在校验并加载 RTL 图清单/);
+  assert.doesNotMatch(html, /Your site is taking shape/);
+});

@@ -1,4 +1,4 @@
-import type { Lesson, PipelineScenario, SourceRef } from "./types";
+import type { Lesson, SourceRef } from "./types";
 
 export const sourceRefs: SourceRef[] = [
   { id: "if-dual", label: "双发射提示与配对判定", path: "rtl/pipeline/stage/mycpu_if_stage.sv", symbol: "IF_dual_candidate / IF_issue_dual", why: "确认 256 项 hint、RAW/资源限制和冷启动单发射。" },
@@ -101,54 +101,3 @@ export const lessons: Lesson[] = [
 ];
 
 export const lessonSlugs = lessons.map((lesson) => lesson.slug);
-
-const empty = (cycle: number, note: string): PipelineScenario["cycles"][number] => ({ cycle, stages: {}, stallReason: "无", forwarding: "无", effects: "无", note });
-
-export const scenarios: PipelineScenario[] = [
-  {
-    id: "dual", title: "两条独立 ALU 指令", summary: "hint 命中后，两条安全指令并肩穿过后端并在同拍写回。", instructions: ["add x5, x1, x2", "xor x6, x3, x4"],
-    cycles: [
-      { ...empty(1, "IF_issue_dual=1，顺序下一 PC 为 PC+8。"), stages: { IF: { lane0: "add", lane1: "xor", state: "active" } } },
-      { ...empty(2, "四个读口同时读取两个槽的操作数。"), stages: { ID: { lane0: "add", lane1: "xor", state: "active" } } },
-      { ...empty(3, "两个 ALU 独立运算。"), stages: { EX: { lane0: "add", lane1: "xor", state: "active" } } },
-      { ...empty(4, "无访存请求，两个结果继续传递。"), stages: { MEM1: { lane0: "add", lane1: "xor", state: "active" } } },
-      { ...empty(5, "后端对齐。"), stages: { MEM2: { lane0: "add", lane1: "xor", state: "active" } } },
-      { ...empty(6, "两个写口同拍提交，槽 0 年龄更老。"), stages: { WB: { lane0: "x5←sum", lane1: "x6←xor", state: "active" } }, effects: "RegWrite0 + RegWrite1" },
-    ],
-  },
-  {
-    id: "load-miss", title: "L0 miss 的 load-use", summary: "消费者在 EX 与 MEM1 两个生产者位置各停一次，最终从 WB 前递。", instructions: ["lw x5, 0(x3)", "add x6, x5, x4"],
-    cycles: [
-      { ...empty(1, "load 进入 EX，提前探测 L0 未命中。"), stages: { EX: { lane0: "lw x5", state: "active" }, ID: { lane0: "add x6", state: "held" } }, stallReason: "LoadUseEX" },
-      { ...empty(2, "load 在 MEM1 发起 BRAM 读；消费者仍留在 ID。"), stages: { MEM1: { lane0: "lw x5", state: "active" }, ID: { lane0: "add x6", state: "held" }, EX: { state: "bubble" } }, stallReason: "LoadUseMEM" },
-      { ...empty(3, "同步数据在 MEM2 对齐；hazard 不再由 MEM1 命中。"), stages: { MEM2: { lane0: "lw x5", state: "active" }, ID: { lane0: "add x6", state: "active" } } },
-      { ...empty(4, "load 到 WB，消费者在 EX 从 WB 槽 0 取得 x5。"), stages: { WB: { lane0: "x5←load", state: "active" }, EX: { lane0: "add x6", state: "active" } }, forwarding: "WB_0 → EX.rs1", effects: "x5 写回" },
-      { ...empty(5, "消费者继续进入后端。"), stages: { MEM1: { lane0: "add x6", state: "active" } } },
-    ],
-  },
-  {
-    id: "load-hit", title: "L0 hit 的零气泡依赖", summary: "EX 提前命中后，消费者无需停顿，下一拍从 MEM1 的寄存副本前递。", instructions: ["lw x5, 0(x3)", "add x6, x5, x4"],
-    cycles: [
-      { ...empty(1, "EX_cache_ready=1，hazard 把 load 视为下一拍可用。"), stages: { EX: { lane0: "lw x5", state: "active" }, ID: { lane0: "add x6", state: "active" } } },
-      { ...empty(2, "缓存字和扩展结果已随 load 锁存，直接前递给消费者。"), stages: { MEM1: { lane0: "lw x5 (hit)", state: "active" }, EX: { lane0: "add x6", state: "active" } }, forwarding: "MEM1_0 → EX.rs1" },
-      { ...empty(3, "load 与消费者并行进入更深后端。"), stages: { MEM2: { lane0: "lw x5", state: "active" }, MEM1: { lane0: "add x6", state: "active" } } },
-    ],
-  },
-  {
-    id: "redirect", title: "条件分支误预测", summary: "EX 先算出 raw 结果，下一拍由 pending redirect 驱动 PC 与 flush。", instructions: ["beq x1, x2, target", "wrong-path sw x3, 0(x4)"],
-    cycles: [
-      { ...empty(1, "EX 发现真实方向与预测不一致，在沿上锁存目标。"), stages: { EX: { lane0: "beq", state: "active" }, ID: { lane0: "wrong store", state: "active" } } },
-      { ...empty(2, "redirect_valid_q=1；IF/ID、ID/EX 被冲刷，PC 转向正确目标。"), stages: { MEM1: { lane0: "beq", state: "active" }, EX: { lane0: "wrong store", state: "flushed" }, IF: { lane0: "target", state: "active" } }, stallReason: "pending redirect", effects: "错路径 MemWrite=0" },
-      { ...empty(3, "正确路径重新填充，旧目标 valid 已被消费。"), stages: { ID: { lane0: "target", state: "active" } } },
-    ],
-  },
-  {
-    id: "m-busy", title: "DIV 的前端保持", summary: "除法迭代期间 ID/EX 保留生产者，前端不覆盖它，EX/MEM 不重复退休。", instructions: ["div x5, x1, x2", "add x6, x5, x3"],
-    cycles: [
-      { ...empty(1, "start 锁存操作数，busy 拉高。"), stages: { EX: { lane0: "div x5", state: "active" }, ID: { lane0: "add x6", state: "held" } }, stallReason: "EX_busy" },
-      { ...empty(2, "代表中间 32 次恢复除法迭代；PC、IF/ID、ID/EX 均保持。"), stages: { EX: { lane0: "div x5 ···", state: "held" }, ID: { lane0: "add x6", state: "held" }, MEM1: { state: "bubble" } }, stallReason: "EX_busy" },
-      { ...empty(33, "done 产生结果，busy 解除，生产者可以进入 EX/MEM。"), stages: { EX: { lane0: "div x5 done", state: "active" }, ID: { lane0: "add x6", state: "active" } } },
-      { ...empty(34, "消费者在 EX 从 MEM1 前递除法结果。"), stages: { MEM1: { lane0: "div x5", state: "active" }, EX: { lane0: "add x6", state: "active" } }, forwarding: "MEM1_0 → EX.rs1" },
-    ],
-  },
-];

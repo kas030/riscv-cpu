@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "isa": ["RV32I", "RV32M", "Zicsr", "ecall", "mret"],
+  "instructions": [
+    "add", "sub", "sll", "slt", "sltu", "xor", "srl", "sra", "or", "and",
+    "addi", "slti", "sltiu", "xori", "ori", "andi", "slli", "srli", "srai",
+    "lui", "auipc", "jal", "jalr",
+    "beq", "bne", "blt", "bge", "bltu", "bgeu",
+    "lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw",
+    "mul", "mulh", "mulhsu", "mulhu", "div", "divu", "rem", "remu",
+    "csrrw", "csrrs", "csrrc", "csrrwi", "csrrsi", "csrrci", "ecall", "mret"
+  ]
+}

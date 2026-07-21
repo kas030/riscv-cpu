@@ -6,7 +6,7 @@ const siteRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const repoRoot = path.resolve(siteRoot, "..");
 
 const manifest = [
-  { id: "if-dual", file: "rtl/pipeline/stage/mycpu_if_stage.sv", start: "localparam DUAL_HINT_INDEX_WIDTH = 8;", end: "!IF_slot_raw_hazard;" },
+  { id: "if-dual", file: "rtl/pipeline/stage/mycpu_if_stage.sv", start: "localparam DUAL_HINT_INDEX_WIDTH = 8;", end: "!IF_slot_waw_hazard;" },
   { id: "predictor", file: "rtl/pipeline/stage/mycpu_if_stage.sv", start: "module branch_predictor #(", end: "endmodule" },
   { id: "decoder", file: "rtl/control/mycpu_decoder.sv", start: "module mycpu_decoder #(", end: "endmodule" },
   { id: "redirect", file: "rtl/control/mycpu_redirect_ctrl.sv", start: "module mycpu_redirect_ctrl #(", end: "endmodule" },

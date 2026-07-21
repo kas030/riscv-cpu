@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import generatedSnippets from "./generated/rtl-snippets.json";
 import { CodeViewer } from "./CodeViewer";
-import { lessons, scenarios, sourceRefs } from "./content";
+import { lessons, sourceRefs } from "./content";
 import type { LabKind, LessonSection, PipelineStage } from "./types";
 import {
   analyzePair,
@@ -139,36 +139,12 @@ function ControlLab() {
 }
 
 function PipelineLab() {
-  const [scenarioId, setScenarioId] = useState(scenarios[0].id);
-  const [index, setIndex] = useState(0);
-  const scenario = scenarios.find((item) => item.id === scenarioId) ?? scenarios[0];
-  const cycle = scenario.cycles[index];
-  const move = (delta: number) => setIndex((value) => Math.min(scenario.cycles.length - 1, Math.max(0, value + delta)));
-  const maxIndex = scenario.cycles.length - 1;
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
-      if (event.key === "ArrowRight") setIndex((value) => Math.min(maxIndex, value + 1));
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [maxIndex]);
   return (
     <div className="lab pipeline-lab">
-      <div className="stepper-head">
-        <label>教学场景<select value={scenarioId} onChange={(event) => { setScenarioId(event.target.value); setIndex(0); }}>{scenarios.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select></label>
-        <span>第 {index + 1} / {scenario.cycles.length} 步 · cycle {cycle.cycle}</span>
-      </div>
-      <p className="scenario-summary">{scenario.summary}</p>
-      <div className="instruction-chips">{scenario.instructions.map((instruction, lane) => <code key={instruction}>I{lane}: {instruction}</code>)}</div>
-      <div className="cycle-grid" role="img" aria-label={`周期 ${cycle.cycle}：${cycle.note}`}>
-        {stageOrder.map((stage) => {
-          const cell = cycle.stages[stage];
-          return <div key={stage} className={`cycle-cell ${cell?.state ?? ""}`}><strong>{stage}</strong><span>{cell?.lane0 ?? "—"}</span><span>{cell?.lane1 ?? ""}</span></div>;
-        })}
-      </div>
-      <div className="cycle-detail" aria-live="polite"><p>{cycle.note}</p><dl><div><dt>停顿</dt><dd>{cycle.stallReason}</dd></div><div><dt>前递</dt><dd>{cycle.forwarding}</dd></div><div><dt>副作用</dt><dd>{cycle.effects}</dd></div></dl></div>
-      <div className="step-buttons"><button onClick={() => move(-1)} disabled={index === 0}>← 上一拍</button><button onClick={() => setIndex(0)} disabled={index === 0}>重置</button><button className="primary" onClick={() => move(1)} disabled={index === scenario.cycles.length - 1}>下一拍 →</button></div>
+      <div className="section-number">REAL RTL TRACE</div>
+      <h3>逐拍案例已经迁移到真实 RTL 播放器</h3>
+      <p>播放器中的值、动态指令身份、停顿、冲刷和副作用全部来自 Verilator 采样；课程正文不再保存手写逐拍结果。</p>
+      <Link className="simulator-launch" href="/simulator">打开交互式 CPU 原理图与逐拍播放器 →</Link>
     </div>
   );
 }
@@ -226,7 +202,7 @@ export function CourseShell({ slug }: { slug: string }) {
       <main>
         <article>
           <header className="hero"><div className="eyebrow"><span>{lesson.order}</span>{lesson.kicker}</div><h1>{lesson.title}</h1><p>{lesson.summary}</p><div className="objective-row">{lesson.objectives.map((objective) => <span key={objective}>{objective}</span>)}</div></header>
-          {lesson.slug === "home" && <div className="course-map"><div className="map-label">LEARNING PATH</div>{lessons.slice(1).map((item) => <Link href={`/${item.slug}`} key={item.slug}><span>{item.order}</span><div><strong>{item.title}</strong><p>{item.summary}</p></div><b>→</b></Link>)}</div>}
+          {lesson.slug === "home" && <div className="course-map"><div className="map-label">LEARNING PATH</div><Link href="/simulator" className="simulator-map-link"><span>LIVE</span><div><strong>交互式 CPU 原理图与 RTL Trace</strong><p>搜索全部功能实例，逐拍回放由当前 Verilator 仿真生成的真实执行记录。</p></div><b>↗</b></Link>{lessons.slice(1).map((item) => <Link href={`/${item.slug}`} key={item.slug}><span>{item.order}</span><div><strong>{item.title}</strong><p>{item.summary}</p></div><b>→</b></Link>)}</div>}
           {lesson.sections.map((section) => <Section section={section} key={section.id} />)}
           <footer className="lesson-footer">
             {currentIndex > 0 ? <Link href={currentIndex === 1 ? "/" : `/${lessons[currentIndex - 1].slug}`}>← {lessons[currentIndex - 1].title}</Link> : <span />}

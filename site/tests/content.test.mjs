@@ -40,13 +40,14 @@ test("critical microarchitecture constants remain grounded", async () => {
   assert.match(core, /Stall_Front\s*=\s*Stall_Hazard\s*\|\s*EX_any_busy/);
 });
 
-test("course shell exposes keyboard, mobile navigation, exercises and reduced motion", async () => {
-  const [shell, css] = await Promise.all([
+test("course and visualizer expose keyboard, mobile navigation, exercises and reduced motion", async () => {
+  const [shell, visualizer, css] = await Promise.all([
     readFile(new URL("app/CourseShell.tsx", root), "utf8"),
+    readFile(new URL("app/simulator/CpuVisualizer.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
-  assert.match(shell, /ArrowLeft/);
-  assert.match(shell, /ArrowRight/);
+  assert.match(visualizer, /ArrowLeft/);
+  assert.match(visualizer, /ArrowRight/);
   assert.match(shell, /aria-expanded=\{menuOpen\}/);
   assert.match(shell, /<details className="exercise">/);
   assert.match(shell, /aria-pressed=\{reducedMotion\}/);

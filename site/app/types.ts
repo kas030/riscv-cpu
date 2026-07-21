@@ -43,26 +43,3 @@ export interface Lesson {
 }
 
 export type PipelineStage = "IF" | "ID" | "EX" | "MEM1" | "MEM2" | "WB";
-
-export interface StageSlot {
-  lane0?: string;
-  lane1?: string;
-  state?: "active" | "held" | "bubble" | "flushed";
-}
-
-export interface CycleState {
-  cycle: number;
-  stages: Partial<Record<PipelineStage, StageSlot>>;
-  stallReason: string;
-  forwarding: string;
-  effects: string;
-  note: string;
-}
-
-export interface PipelineScenario {
-  id: string;
-  title: string;
-  summary: string;
-  instructions: string[];
-  cycles: CycleState[];
-}

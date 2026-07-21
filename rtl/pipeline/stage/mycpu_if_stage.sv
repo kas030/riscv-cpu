@@ -38,6 +38,7 @@ module mycpu_if_stage #(
     (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus8;
     logic                   IF_dual_candidate;
     logic                   IF_slot_raw_hazard;
+    logic                   IF_slot_waw_hazard;
     logic                   IF_slot_mem_conflict;
     logic                   IF_slot_m_conflict;
     localparam DUAL_HINT_INDEX_WIDTH = 8;
@@ -115,13 +116,18 @@ module mycpu_if_stage #(
                                 (IF_instr[11:7] != 5'd0) &&
                                 ((IF_instr[11:7] == irom_data1[19:15]) ||
                                  (IF_instr[11:7] == irom_data1[24:20]));
+    assign IF_slot_waw_hazard = instr_writes_rd(IF_instr) &&
+                                instr_writes_rd(irom_data1) &&
+                                (IF_instr[11:7] != 5'd0) &&
+                                (IF_instr[11:7] == irom_data1[11:7]);
     assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(irom_data1);
     assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(irom_data1);
     assign IF_dual_candidate = instr_can_dual(IF_instr) &&
                                instr_can_dual(irom_data1) &&
                                !IF_slot_mem_conflict &&
                                !IF_slot_m_conflict &&
-                               !IF_slot_raw_hazard;
+                               !IF_slot_raw_hazard &&
+                               !IF_slot_waw_hazard;
     // 双发射提示表把第二路IROM和复杂合法性译码移出PC反馈环。
     // IROM只读，tag命中后的历史结果始终有效；冷启动/冲突仅保守单发射。
     assign dual_hint_index  = IF_pc[DUAL_HINT_INDEX_WIDTH+1:2];

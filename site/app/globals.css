@@ -65,6 +65,8 @@ h1 { max-width: 850px; margin: 23px 0 18px; font-size: clamp(2.3rem, 5vw, 4.7rem
 .map-label, .section-number { color: var(--blue); font-family: var(--mono); font-size: .69rem; letter-spacing: .12em; text-transform: uppercase; }
 .course-map > a { display: grid; grid-template-columns: 56px 1fr 30px; gap: 16px; align-items: center; padding: 22px 8px; border-bottom: 1px solid var(--line); text-decoration: none; transition: padding .2s ease, color .2s ease; }
 .course-map > a:hover { padding-left: 18px; color: var(--blue); }
+.course-map > a.simulator-map-link { margin-bottom: 10px; padding-inline: 14px; color: #e8f4f7; background: #173c4d; border: 1px solid #2c6175; border-radius: 8px; }
+.course-map > a.simulator-map-link p { color: #a9c4ce; }
 .course-map > a > span { font-family: var(--mono); color: var(--orange); }
 .course-map strong { font-size: 1.02rem; }
 .course-map p { margin: 3px 0 0; color: var(--muted); font-size: .83rem; line-height: 1.55; }
@@ -164,6 +166,8 @@ select, input:not([type=checkbox]) { display: block; width: 100%; margin-top: 5p
 .cycle-detail dd { margin: 2px 0 0; font-size: .74rem; }
 .step-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; }
 .step-buttons .primary { color: #fff; border-color: var(--blue); background: var(--blue); }
+.pipeline-lab h3 { margin: 6px 0 10px; font-size: 1.15rem; }
+.simulator-launch { display: inline-flex; margin-top: 10px; padding: 9px 13px; color: #fff; background: var(--blue); border-radius: 6px; text-decoration: none; font-size: .8rem; }
 
 .source-block, .exercise { max-width: 900px; margin-top: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.64); border-radius: 8px; }
 .source-block summary, .exercise summary { cursor: pointer; padding: 14px 16px; }

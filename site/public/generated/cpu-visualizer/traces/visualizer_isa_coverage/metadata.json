@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "graphSchemaVersion": 1,
+  "manifestSha256": "e0ceb5b40719ef6fcc18e6a6cc8e64570c63e463f6950eea26d297be120a2b26",
+  "scenario": {
+    "id": "visualizer_isa_coverage",
+    "title": "RV32I 逻辑、移位、比较与双发射",
+    "category": "ISA / 双发射",
+    "description": "短自检微程序补齐基础运算、jalr、csrrwi，并回访同一 PC 训练双发射 hint。"
+  },
+  "rtl": {
+    "gitCommit": "a126eaf57a531ac309ab74dfdc2593513ab59613",
+    "dirty": true,
+    "rtlDigest": "0782c2f173c5a201f1d277263160b6d671c4aff315004b50a4f613243aae78f8",
+    "files": [
+      "rtl/bus/perip_bridge.sv",
+      "rtl/common/defines.sv",
+      "rtl/common/mux_key.v",
+      "rtl/common/mux_key_internal.v",
+      "rtl/control/alu_ctrl.sv",
+      "rtl/control/csr_ctrl_decode.sv",
+      "rtl/control/csr_file.sv",
+      "rtl/control/imm_gen.sv",
+      "rtl/control/main_ctrl.sv",
+      "rtl/control/mycpu_decoder.sv",
+      "rtl/control/mycpu_redirect_ctrl.sv",
+      "rtl/control/npc_calc.sv",
+      "rtl/core/mycpu.sv",
+      "rtl/datapath/alu.sv",
+      "rtl/datapath/pc_reg.sv",
+      "rtl/datapath/reg_file.sv",
+      "rtl/datapath/rv32m_unit.sv",
+      "rtl/hazard/forwarding_unit.sv",
+      "rtl/hazard/hazard_unit.sv",
+      "rtl/memory/bram_driver.sv",
+      "rtl/memory/load_l0_cache.sv",
+      "rtl/memory/load_mask.sv",
+      "rtl/memory/mycpu_lsu.sv",
+      "rtl/pipeline/register/mycpu_ex_mem_reg.sv",
+      "rtl/pipeline/register/mycpu_id_ex_reg.sv",
+      "rtl/pipeline/register/mycpu_if_id_reg.sv",
+      "rtl/pipeline/register/mycpu_mem1_mem2_reg.sv",
+      "rtl/pipeline/register/mycpu_mem_wb_reg.sv",
+      "rtl/pipeline/stage/mycpu_ex_stage.sv",
+      "rtl/pipeline/stage/mycpu_id_stage.sv",
+      "rtl/pipeline/stage/mycpu_if_stage.sv",
+      "rtl/pipeline/stage/mycpu_mem_stage.sv",
+      "rtl/pipeline/stage/mycpu_wb_stage.sv"
+    ],
+    "probeHash": "6132f6829a84bd19c263975fe26a941b909664fd8e2d57a144e1b8a1efb4a700"
+  },
+  "traceTool": {
+    "traceToolDigest": "d19f117c1d5472d1bbf1a11dff24411ab0f7c16deb398f6e1cea7aa9ea4023a6",
+    "files": [
+      "sim_cpu_only/tb_cpu_only.sv",
+      "sim_cpu_only/tb_visual_trace.sv",
+      "sim_cpu_only/visual_trace_probe.sv",
+      "sim_cpu_only/visual_trace.mk",
+      "tools/cpu_visualizer/build_trace_index.mjs",
+      "tools/cpu_visualizer/disassemble.mjs",
+      "tools/cpu_visualizer/reference_compare.mjs",
+      "tools/cpu_visualizer/schema_validate.mjs",
+      "tools/cpu_visualizer/trace.schema.json",
+      "tools/cpu_visualizer/trace_tool_digest.mjs"
+    ]
+  },
+  "simulator": {
+    "verilator": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+    "sampling": "postEdge signals after #1; events are effects at the sampled edge",
+    "configuration": {
+      "expectedLed": "0xc0dec0de (   match)",
+      "passLed": "0xc0dec0de",
+      "failLed": "0xdeadbeef"
+    }
+  },
+  "image": {
+    "file": "visualizer_isa_coverage.coe",
+    "sha256": "1e0f85cda5480da7aa9081a13d58e020951f7fdf691f51438aa06366383b29e2",
+    "entry": "80000000"
+  },
+  "bram": {
+    "file": "dram.coe",
+    "sha256": "d1c6d8f4adbe80d618ccfccc0336a9a61b56007b0f44a4e79bddf71ccab89c03",
+    "base": "80100000"
+  },
+  "result": {
+    "status": "PASS",
+    "reason": "led",
+    "expectedLed": "0xc0dec0de (   match)",
+    "actualLed": "0xc0dec0de"
+  },
+  "totals": {
+    "cycles": 52,
+    "retired": 45,
+    "testbenchRetired": 45
+  },
+  "functionalSha256": "852a207382dc7bad4d11056c6c6666c1636381fc0b434dc6b7c097f5b4b079fe",
+  "final": {
+    "registers": {
+      "x0": "00000000",
+      "x1": "00000005",
+      "x2": "00000002",
+      "x3": "00000003",
+      "x4": "00000014",
+      "x5": "80200040",
+      "x6": "00000000",
+      "x7": "00000007",
+      "x8": "00000001",
+      "x9": "00000007",
+      "x10": "c0dec0de",
+      "x11": "00000010",
+      "x12": "00000004",
+      "x13": "fffffff8",
+      "x14": "fffffffe",
+      "x15": "fffffffe",
+      "x16": "00000001",
+      "x17": "00000000",
+      "x18": "00000005",
+      "x19": "0000000a",
+      "x20": "00000001",
+      "x21": "80000078",
+      "x22": "80000074",
+      "x23": "00000000",
+      "x24": "00000000",
+      "x25": "00000000",
+      "x26": "00000000",
+      "x27": "00000000",
+      "x28": "00000003",
+      "x29": "00000007",
+      "x30": "00000009",
+      "x31": "00000000"
+    },
+    "csrs": {
+      "mstatus": "00001800",
+      "mtvec": "00000000",
+      "mscratch": "00000003",
+      "mepc": "00000000",
+      "mcause": "00000000"
+    },
+    "memory": {}
+  },
+  "reference": {
+    "model": "independent RV32IM/Zicsr sequential interpreter",
+    "status": "PASS",
+    "retired": 45,
+    "stores": 1
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://riscv-cpu.local/schemas/cpu-visualizer-manifest-v1.json",
+  "title": "CPU visualizer graph and signal manifest",
+  "type": "object",
+  "required": ["schemaVersion", "rtlRoot", "modules", "ports", "edges", "signals", "groups", "layouts"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "rtlRoot": { "type": "string", "const": "mycpu" },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "module", "label", "stage", "kind", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "pattern": "^mycpu(\\.[A-Za-z_][A-Za-z0-9_$]*)+$" },
+          "module": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "stage": { "enum": ["IF", "ID", "EX", "MEM1", "MEM2", "WB", "feedback"] },
+          "lane": { "enum": [0, 1, "shared"] },
+          "kind": { "enum": ["stage", "register", "compute", "control", "memory", "mux"] },
+          "parent": { "type": "string" },
+          "source": {
+            "type": "object",
+            "required": ["file", "line"],
+            "properties": {
+              "file": { "type": "string", "pattern": "^rtl/" },
+              "line": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "moduleId", "name", "direction"],
+        "properties": {
+          "id": { "type": "string" },
+          "moduleId": { "type": "string" },
+          "name": { "type": "string" },
+          "direction": { "enum": ["input", "output", "inout"] }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "target", "kind", "signalIds"],
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "type": "string" },
+          "target": { "type": "string" },
+          "kind": { "enum": ["data", "address", "control", "static"] },
+          "signalIds": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "width", "group", "label", "format", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "path": { "type": "string", "pattern": "^mycpu\\." },
+          "width": { "type": "integer", "minimum": 1 },
+          "group": { "type": "string" },
+          "label": { "type": "string" },
+          "format": { "enum": ["hex", "binary", "unsigned", "signed", "instruction", "enum"] },
+          "description": { "type": "string" },
+          "enum": { "type": "object" }
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "color"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "color": { "type": "string" }
+        }
+      }
+    },
+    "layouts": { "type": "object", "required": ["overview", "modules"] }
+  }
+}

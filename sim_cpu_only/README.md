@@ -72,3 +72,37 @@ make competition
 cd verification
 make run TEST=rv32i
 ```
+
+## 交互式可视化 trace
+
+可视化采集目标复用同一套 IROM、BRAM、MMIO 和 PASS 判定模型，通过仿真专用
+`bind` 探针在时钟上升沿后 `#1` 采样，不修改 `mycpu` 端口或综合 RTL：
+
+```sh
+./sim_cpu_only/run_visual_trace.sh \
+  vivado/tests/build/t08_load_use.coe \
+  site/public/generated/cpu-visualizer/traces/t08_load_use
+```
+
+重新构建并发布全部九个内置场景：
+
+```sh
+./sim_cpu_only/run_all_visual_traces.sh
+```
+
+生成过程会执行 graph/trace schema、动态 tag、完整场景覆盖矩阵、前递和副作用
+检查，并用独立顺序 RV32IM/Zicsr 解释器对拍退休 PC、机器码、rd/wdata、store、
+最终寄存器/CSR 与观察内存。可用下列
+命令证明开启与关闭 JSONL 写出时 CPU 统计完全一致：
+
+```sh
+./sim_cpu_only/check_visual_trace_equivalence.sh \
+  vivado/tests/build/t08_load_use.coe
+```
+
+同一镜像的功能 trace 确定性可用下列命令复验；临时目录和非功能元数据不参与哈希：
+
+```sh
+./sim_cpu_only/check_visual_trace_determinism.sh \
+  vivado/tests/build/t08_load_use.coe
+```

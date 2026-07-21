@@ -22,10 +22,13 @@ npm --version
 
 ```powershell
 cd site
-npm ci
+npm ci --include=optional
 ```
 
 后续命令都在 `site/` 目录内执行。
+
+`node_modules/` 包含操作系统相关的原生模块，不能在 Linux 与 Windows 之间
+直接复制或复用。切换操作系统后应在目标系统重新执行上述安装命令。
 
 ## 开发模式访问
 
@@ -59,20 +62,21 @@ npm run start
 
 然后打开终端给出的本地地址，通常仍为 `http://localhost:3000/`。`npm run build` 只生成产物，不会自行启动可访问的服务器。
 
-### Windows 下的已知问题
+`npm run start` 使用构建产物自带的 Cloudflare 本地运行时，因此 Linux 和
+Windows 都会正确提供 `/assets/` 下的样式与脚本。可用 `PORT` 环境变量修改端口。
 
-当前锁定的 `vinext 0.0.50` 在 Windows 上使用 `npm run start` 时存在静态资源路径兼容问题：页面 HTML 可以正常返回，但 `/assets/*.css` 和其他前端资源可能返回 HTTP 404，表现为页面能够打开却没有样式。构建产物本身仍会正常生成在 `dist/client/assets/`，问题发生在生产服务器读取静态资源时。
+`npm run dev` 与 `npm run build` 都会先同步 RTL 代码片段和 CPU 可视化数据。
+构建会校验 graph/trace JSON schema、当前 RTL 摘要、九个场景的 PASS/参考对拍
+状态，以及 53 条指令与分支方向、地址 lane、冒险、L0、RV32M 边界等覆盖矩阵；
+源码标记缺失、trace 过期或场景不完整时直接失败。
 
-在该问题修复前，Windows 用户应使用开发服务器访问站点：
+交互式 CPU 原理图位于 `/simulator`。页面首次只加载 graph、场景索引和首个
+128-cycle chunk，播放或跳转时才按需取得后续 chunk。执行值全部来自
+CPU-only Verilator trace，前端只负责重建、筛选和格式化。
 
-```powershell
-# 如果 npm run start 仍在运行，先按 Ctrl+C 停止
-npm run dev
-```
-
-然后访问 `http://localhost:3000/`，端口被占用时以终端显示的实际地址为准。`npm run build` 仍可用于检查生产构建是否成功，但不建议在 Windows 上使用当前版本的 `npm run start` 预览页面。
-
-`npm run dev` 与 `npm run build` 都会先执行 `scripts/sync-rtl-snippets.mjs`，从仓库当前 RTL 重新提取页面中的关键代码。源码标记缺失或重复时命令会直接失败，避免站点静默展示过期片段。
+新增模块需要辅助排布时可运行 `npm run layout:visualizer` 获取 ELK 分层布局建议；
+该命令只输出候选坐标，人工检查后才写入版本化 `manifest.layouts`，因此构建结果
+不会随自动布局算法漂移。
 
 ## 验证
 
@@ -87,3 +91,15 @@ npm test
 ```powershell
 npm run lint
 ```
+
+安装 Playwright Chromium 后可执行四组基准截图，以及逐拍、分块、场景切换、
+搜索、键盘、减少动态效果和长 RV32M trace 响应性等浏览器集成测试：
+
+```powershell
+node node_modules/playwright/cli.js install chromium
+npm run test:visual
+```
+
+RTL 或场景修改后，先从仓库根目录运行
+`./sim_cpu_only/run_all_visual_traces.sh`，再执行站点测试。视觉变更经过人工检查后
+使用 `npm run test:visual:update` 更新基准图。

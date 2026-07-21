@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "graphSchemaVersion": 1,
+  "manifestSha256": "e0ceb5b40719ef6fcc18e6a6cc8e64570c63e463f6950eea26d297be120a2b26",
+  "scenario": {
+    "id": "t19_zicsr_trap",
+    "title": "Zicsr、ecall 与 mret",
+    "category": "CSR / trap",
+    "description": "复用 t19，展示 CSR 写、trap 入口和 mret 返回。"
+  },
+  "rtl": {
+    "gitCommit": "a126eaf57a531ac309ab74dfdc2593513ab59613",
+    "dirty": true,
+    "rtlDigest": "0782c2f173c5a201f1d277263160b6d671c4aff315004b50a4f613243aae78f8",
+    "files": [
+      "rtl/bus/perip_bridge.sv",
+      "rtl/common/defines.sv",
+      "rtl/common/mux_key.v",
+      "rtl/common/mux_key_internal.v",
+      "rtl/control/alu_ctrl.sv",
+      "rtl/control/csr_ctrl_decode.sv",
+      "rtl/control/csr_file.sv",
+      "rtl/control/imm_gen.sv",
+      "rtl/control/main_ctrl.sv",
+      "rtl/control/mycpu_decoder.sv",
+      "rtl/control/mycpu_redirect_ctrl.sv",
+      "rtl/control/npc_calc.sv",
+      "rtl/core/mycpu.sv",
+      "rtl/datapath/alu.sv",
+      "rtl/datapath/pc_reg.sv",
+      "rtl/datapath/reg_file.sv",
+      "rtl/datapath/rv32m_unit.sv",
+      "rtl/hazard/forwarding_unit.sv",
+      "rtl/hazard/hazard_unit.sv",
+      "rtl/memory/bram_driver.sv",
+      "rtl/memory/load_l0_cache.sv",
+      "rtl/memory/load_mask.sv",
+      "rtl/memory/mycpu_lsu.sv",
+      "rtl/pipeline/register/mycpu_ex_mem_reg.sv",
+      "rtl/pipeline/register/mycpu_id_ex_reg.sv",
+      "rtl/pipeline/register/mycpu_if_id_reg.sv",
+      "rtl/pipeline/register/mycpu_mem1_mem2_reg.sv",
+      "rtl/pipeline/register/mycpu_mem_wb_reg.sv",
+      "rtl/pipeline/stage/mycpu_ex_stage.sv",
+      "rtl/pipeline/stage/mycpu_id_stage.sv",
+      "rtl/pipeline/stage/mycpu_if_stage.sv",
+      "rtl/pipeline/stage/mycpu_mem_stage.sv",
+      "rtl/pipeline/stage/mycpu_wb_stage.sv"
+    ],
+    "probeHash": "6132f6829a84bd19c263975fe26a941b909664fd8e2d57a144e1b8a1efb4a700"
+  },
+  "traceTool": {
+    "traceToolDigest": "d19f117c1d5472d1bbf1a11dff24411ab0f7c16deb398f6e1cea7aa9ea4023a6",
+    "files": [
+      "sim_cpu_only/tb_cpu_only.sv",
+      "sim_cpu_only/tb_visual_trace.sv",
+      "sim_cpu_only/visual_trace_probe.sv",
+      "sim_cpu_only/visual_trace.mk",
+      "tools/cpu_visualizer/build_trace_index.mjs",
+      "tools/cpu_visualizer/disassemble.mjs",
+      "tools/cpu_visualizer/reference_compare.mjs",
+      "tools/cpu_visualizer/schema_validate.mjs",
+      "tools/cpu_visualizer/trace.schema.json",
+      "tools/cpu_visualizer/trace_tool_digest.mjs"
+    ]
+  },
+  "simulator": {
+    "verilator": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+    "sampling": "postEdge signals after #1; events are effects at the sampled edge",
+    "configuration": {
+      "expectedLed": "0xc0dec0de (   match)",
+      "passLed": "0xc0dec0de",
+      "failLed": "0xdeadbeef"
+    }
+  },
+  "image": {
+    "file": "t19_zicsr_trap.coe",
+    "sha256": "939da90c6bca0a026569430831d629de6454a1590f4f52920b1ffc2c1c6fd1ec",
+    "entry": "80000000"
+  },
+  "bram": {
+    "file": "dram.coe",
+    "sha256": "d1c6d8f4adbe80d618ccfccc0336a9a61b56007b0f44a4e79bddf71ccab89c03",
+    "base": "80100000"
+  },
+  "result": {
+    "status": "PASS",
+    "reason": "led",
+    "expectedLed": "0xc0dec0de (   match)",
+    "actualLed": "0xc0dec0de"
+  },
+  "totals": {
+    "cycles": 66,
+    "retired": 56,
+    "testbenchRetired": 56
+  },
+  "functionalSha256": "d0e1a59317ec1e1103ae5519af5ae2fda31e31a29365c1e4120fd4cce182b2ee",
+  "final": {
+    "registers": {
+      "x0": "00000000",
+      "x1": "00000000",
+      "x2": "00000000",
+      "x3": "00000000",
+      "x4": "00000000",
+      "x5": "80200040",
+      "x6": "00000088",
+      "x7": "80000000",
+      "x8": "00000000",
+      "x9": "00000000",
+      "x10": "c0dec0de",
+      "x11": "00000000",
+      "x12": "00000000",
+      "x13": "00000000",
+      "x14": "00000000",
+      "x15": "00000000",
+      "x16": "00000000",
+      "x17": "00000000",
+      "x18": "00000000",
+      "x19": "00000000",
+      "x20": "00000000",
+      "x21": "00000000",
+      "x22": "00000000",
+      "x23": "00000000",
+      "x24": "00000000",
+      "x25": "00000000",
+      "x26": "00000000",
+      "x27": "00000000",
+      "x28": "0000000a",
+      "x29": "0000000a",
+      "x30": "00000000",
+      "x31": "00000000"
+    },
+    "csrs": {
+      "mstatus": "00001888",
+      "mtvec": "00000084",
+      "mscratch": "00000000",
+      "mepc": "80000070",
+      "mcause": "0000000b"
+    },
+    "memory": {}
+  },
+  "reference": {
+    "model": "independent RV32IM/Zicsr sequential interpreter",
+    "status": "PASS",
+    "retired": 56,
+    "stores": 1
+  }
+}

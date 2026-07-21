@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {"id":"t03_branch","title":"基础分支与 JAL 冲刷","category":"控制流","description":"复用 t03，展示 taken/not-taken 分支、JAL 重定向和错误路径动态指令终止。","image":"../vivado/tests/build/t03_branch.coe","expectedLed":"C0DEC0DE"},
+    {"id":"t05_load_store","title":"byte/half/word load-store","category":"访存与 L0","description":"复用 t05，展示地址 lane、写 mask、同步返回、符号扩展和 L0 完整字缓存。","image":"../vivado/tests/build/t05_load_store.coe","expectedLed":"C0DEC0DE"},
+    {"id":"visualizer_isa_coverage","title":"RV32I 逻辑、移位、比较与双发射","category":"ISA / 双发射","description":"短自检微程序补齐基础运算、jalr、csrrwi，并回访同一 PC 训练双发射 hint。","image":"../vivado/tests/build/visualizer_isa_coverage.coe","expectedLed":"C0DEC0DE"},
+    {"id":"visualizer_lane1_memory","title":"槽 1 共享数据口访问","category":"双发射 / 访存","description":"训练 hint 后将独立 addi/lw 配对，展示槽 1 的 MEM_use_s1_bus、同步 BRAM 返回和顺序提交。","image":"../vivado/tests/build/visualizer_lane1_memory.coe","expectedLed":"C0DEC0DE"},
+    {"id":"visualizer_microarchitecture","title":"地址 lane、L0 与错路径副作用","category":"微架构定向覆盖","description":"覆盖 byte/half 高低地址 lane、L0 miss/hit 紧邻依赖、双消费者、WAW，以及错路径 store/CSR 抑制。","image":"../vivado/tests/build/visualizer_microarchitecture.coe","expectedLed":"C0DEC0DE"},
+    {"id":"t08_load_use","title":"L0 miss 与双消费者 load-use","category":"冒险与访存","description":"复用 t08，展示 LoadUseEX、LoadUseMEM、同步 BRAM 返回与 WB 前递。","image":"../vivado/tests/build/t08_load_use.coe","expectedLed":"C0DEC0DE"},
+    {"id":"t09_branch_hazard","title":"条件分支预测与错误路径冲刷","category":"控制流","description":"复用 t09，展示分支预测更新、重定向和 flush。","image":"../vivado/tests/build/t09_branch_hazard.coe","expectedLed":"C0DEC0DE"},
+    {"id":"t18_m_ext_basic","title":"RV32M 乘除法 busy","category":"RV32M","description":"复用 t18，展示 MUL/high-MUL/DIV/REM 的不同 busy 持续时间。","image":"../vivado/tests/build/t18_m_ext_basic.coe","expectedLed":"C0DEC0DE"},
+    {"id":"t19_zicsr_trap","title":"Zicsr、ecall 与 mret","category":"CSR / trap","description":"复用 t19，展示 CSR 写、trap 入口和 mret 返回。","image":"../vivado/tests/build/t19_zicsr_trap.coe","expectedLed":"C0DEC0DE"}
+  ]
+}

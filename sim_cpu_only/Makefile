@@ -109,4 +109,6 @@ sim-verilator: check-verilator $(BUILD)/irom.mem $(BUILD)/bram.mem $(VERILATOR_O
 	@stdbuf -oL -eL ./$(VERILATOR_OBJ_DIR)/Vtb_cpu_only $(VERILATOR_RUNTIME_ARGS) | tee $(BUILD)/verilator-sim.log
 
 clean:
-	@rm -rf $(BUILD) obj_dir obj_dir_trace
+	@rm -rf $(BUILD) obj_dir obj_dir_trace obj_dir_visual
+
+-include visual_trace.mk

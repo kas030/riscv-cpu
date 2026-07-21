@@ -54,6 +54,10 @@ module tb_cpu_only;
     longint unsigned cnt_l0_hit = 64'd0;
     longint unsigned cnt_bram_load = 64'd0;
     longint unsigned cnt_retired = 64'd0;
+    logic [63:0] retire_digest = 64'hcbf29ce484222325;
+    logic [63:0] store_digest = 64'hcbf29ce484222325;
+    logic [63:0] register_signature, csr_signature;
+    logic [63:0] retire_digest_next, store_digest_next;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
@@ -75,6 +79,11 @@ module tb_cpu_only;
     logic [31:0] progress_last_seg = 32'd0;
     string stop_reason;
     integer init_idx;
+    integer signature_idx;
+
+    function automatic [63:0] signature_mix(input [63:0] state, input [31:0] value);
+        signature_mix = (state ^ {32'd0, value}) * 64'h00000100000001b3;
+    endfunction
 
     always #(CPU_HALF_PERIOD_NS) clk = ~clk;
     always #10 cnt_clk = ~cnt_clk;
@@ -239,6 +248,46 @@ module tb_cpu_only;
         end
     end
 
+    always_comb begin
+        register_signature = 64'hcbf29ce484222325;
+        for (signature_idx = 0; signature_idx < 32; signature_idx = signature_idx + 1)
+            register_signature = signature_mix(register_signature, dut.rf_inst.xreg[signature_idx]);
+        csr_signature = 64'hcbf29ce484222325;
+        csr_signature = signature_mix(csr_signature, dut.u_ex_stage.u_csr_file.mstatus);
+        csr_signature = signature_mix(csr_signature, dut.u_ex_stage.u_csr_file.mtvec);
+        csr_signature = signature_mix(csr_signature, dut.u_ex_stage.u_csr_file.mscratch);
+        csr_signature = signature_mix(csr_signature, dut.u_ex_stage.u_csr_file.mepc);
+        csr_signature = signature_mix(csr_signature, dut.u_ex_stage.u_csr_file.mcause);
+
+        retire_digest_next = retire_digest;
+        if (dut.WB_retire_valid0) begin
+            retire_digest_next = signature_mix(retire_digest_next, dut.WB_pcadd4 - 32'd4);
+            retire_digest_next = signature_mix(retire_digest_next, {26'd0, dut.WB_RegWrite, dut.WB_rd});
+            retire_digest_next = signature_mix(retire_digest_next, dut.WB_wdata);
+        end
+        if (dut.WB_retire_valid1) begin
+            retire_digest_next = signature_mix(retire_digest_next, dut.WB_S1_pcadd4 - 32'd4);
+            retire_digest_next = signature_mix(retire_digest_next, {26'd0, dut.WB_S1_RegWrite, dut.WB_S1_rd});
+            retire_digest_next = signature_mix(retire_digest_next, dut.WB_S1_wdata);
+        end
+        store_digest_next = store_digest;
+        if (perip_wen) begin
+            store_digest_next = signature_mix(store_digest_next, perip_addr);
+            store_digest_next = signature_mix(store_digest_next, {30'd0, perip_mask});
+            store_digest_next = signature_mix(store_digest_next, perip_wdata);
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            retire_digest <= 64'hcbf29ce484222325;
+            store_digest <= 64'hcbf29ce484222325;
+        end else begin
+            retire_digest <= retire_digest_next;
+            store_digest <= store_digest_next;
+        end
+    end
+
     function automatic [15:0] bcd4(input [31:0] value);
         integer v;
         begin
@@ -387,6 +436,10 @@ module tb_cpu_only;
                     $display(" L0 hit rate       : %0.3f%%",
                              100.0 * cnt_l0_hit / cnt_bram_load);
                 $display(" retired inst      : %0d", cnt_retired);
+                $display(" retire digest     : %016X", retire_digest);
+                $display(" store digest      : %016X", store_digest);
+                $display(" register signature: %016X", register_signature);
+                $display(" csr signature     : %016X", csr_signature);
                 if (cnt_retired > 0) begin
                     $display(" CPI               : %0.3f", cycles * 1.0 / cnt_retired);
                     $display(" MIPS              : %0.3f", CPU_FREQ_MHZ * cnt_retired / cycles);

@@ -43,7 +43,7 @@ ZB_SRC = $(BUILD)/$(ZB_NAME).S
 ZB_ENCODING_ARG = $(if $(strip $(ZB_ENCODING)),--encoding $(ZB_ENCODING),)
 
 # 收集所有 .S
-SRCS := $(wildcard tier1_basic/*.S tier2_hazard/*.S tier3_perf/*.S tier4_bench/*.S)
+SRCS := $(wildcard tier1_basic/*.S tier2_hazard/*.S tier3_perf/*.S tier4_bench/*.S visualizer/*.S)
 NAMES := $(notdir $(SRCS:.S=))
 
 # 主目标 = 所有 .coe 与 .mif
@@ -68,7 +68,7 @@ $(NAMES): %: dirs $(BUILD)/%.coe $(BUILD)/%.mif $(BUILD)/%.dump
 
 # 在 4 个 tier 子目录里寻找对应 .S 文件
 define find_src
-$(firstword $(wildcard tier1_basic/$(1).S tier2_hazard/$(1).S tier3_perf/$(1).S tier4_bench/$(1).S))
+$(firstword $(wildcard tier1_basic/$(1).S tier2_hazard/$(1).S tier3_perf/$(1).S tier4_bench/$(1).S visualizer/$(1).S))
 endef
 
 .SECONDEXPANSION:

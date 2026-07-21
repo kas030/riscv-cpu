@@ -7,19 +7,26 @@
   },
   "scripts": {
     "sync:rtl": "node scripts/sync-rtl-snippets.mjs",
-    "dev": "npm run sync:rtl && vinext dev",
-    "build": "npm run sync:rtl && vinext build",
-    "start": "vinext start",
+    "sync:visualizer": "node scripts/sync-visualizer-data.mjs",
+    "layout:visualizer": "node scripts/suggest-visualizer-layout.mjs",
+    "dev": "npm run sync:rtl && npm run sync:visualizer && vinext dev",
+    "build": "npm run sync:rtl && npm run sync:visualizer && vinext build",
+    "start": "node scripts/start-production.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
+    "test:visual": "node node_modules/playwright/cli.js test",
+    "test:visual:update": "node node_modules/playwright/cli.js test --update-snapshots",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.0",
+    "elkjs": "^0.11.0",
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",

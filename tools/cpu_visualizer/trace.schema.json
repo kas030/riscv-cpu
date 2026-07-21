@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://riscv-cpu.local/schemas/cpu-visualizer-trace-v1.json",
+  "title": "CPU visualizer raw and published trace contracts",
+  "$defs": {
+    "tag": {
+      "type": ["object", "null"],
+      "required": ["instructionId", "pc", "instruction", "lane"],
+      "properties": {
+        "instructionId": {"type": "integer", "minimum": 0},
+        "pc": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "instruction": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "lane": {"enum": [0, 1]},
+        "state": {"enum": ["active", "held", "bubble", "flushed"]}
+      },
+      "additionalProperties": false
+    },
+    "tagPair": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/tag"}
+    },
+    "rawTags": {
+      "type": "object",
+      "required": ["ID", "EX", "MEM1", "MEM2", "WB"],
+      "properties": {
+        "ID": {"$ref": "#/$defs/tagPair"},
+        "EX": {"$ref": "#/$defs/tagPair"},
+        "MEM1": {"$ref": "#/$defs/tagPair"},
+        "MEM2": {"$ref": "#/$defs/tagPair"},
+        "WB": {"$ref": "#/$defs/tagPair"}
+      },
+      "additionalProperties": false
+    },
+    "rawEdgeEvents": {
+      "type": "object",
+      "required": ["retire0", "retire1", "retireTag0", "retireTag1", "retireRegWrite0", "retireRegWrite1", "retireRd0", "retireRd1", "retireData0", "retireData1", "store", "storeTag", "storeAddr", "storeMask", "storeData", "l0Fill", "l0FillAddr", "l0FillData", "l0Invalidate", "l0InvalidateAddr", "csrWrite", "trapEnter", "trapReturn", "csrTag", "csrIndex", "csrValue", "redirect", "redirectTag", "redirectTarget", "redirectReason"],
+      "properties": {
+        "retire0": {"enum": [0, 1]}, "retire1": {"enum": [0, 1]},
+        "retireTag0": {"type": "integer", "minimum": -1}, "retireTag1": {"type": "integer", "minimum": -1},
+        "retireRegWrite0": {"enum": [0, 1]}, "retireRegWrite1": {"enum": [0, 1]},
+        "retireRd0": {"type": "integer", "minimum": 0}, "retireRd1": {"type": "integer", "minimum": 0},
+        "retireData0": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"}, "retireData1": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "store": {"enum": [0, 1]}, "storeTag": {"type": "integer", "minimum": -1},
+        "storeAddr": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"}, "storeMask": {"type": "string", "pattern": "^[01xz]{2}$"}, "storeData": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "l0Fill": {"enum": [0, 1]}, "l0FillAddr": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"}, "l0FillData": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "l0Invalidate": {"enum": [0, 1]}, "l0InvalidateAddr": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "csrWrite": {"enum": [0, 1]}, "trapEnter": {"enum": [0, 1]}, "trapReturn": {"enum": [0, 1]},
+        "csrTag": {"type": "integer", "minimum": -1}, "csrIndex": {"type": "string", "pattern": "^[0-9a-fxz]{3}$"}, "csrValue": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"},
+        "redirect": {"enum": [0, 1]}, "redirectTag": {"type": "integer", "minimum": -1}, "redirectTarget": {"type": "string", "pattern": "^[0-9a-fxz]{8}$"}, "redirectReason": {"enum": [0, 1, 2]}
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": ["type", "label"],
+      "properties": {
+        "type": {"enum": ["stall", "bubble", "flush", "redirect", "l0-hit", "l0-miss", "l0-invalidate", "store", "csr-write", "retire"]},
+        "label": {"type": "string", "minLength": 1},
+        "instructionId": {"type": "integer", "minimum": 0},
+        "lane": {"enum": [0, 1]},
+        "address": {"type": "string"},
+        "value": {"type": "string"},
+        "register": {"type": "string"},
+        "reason": {"enum": ["direction", "target"]},
+        "peripheral": {"enum": ["LED", "SEG", "COUNTER"]}
+      }
+    },
+    "rawHeader": {
+      "type": "object",
+      "required": ["type", "schemaVersion", "sampling"],
+      "properties": {"type": {"const": "header"}, "schemaVersion": {"const": 1}, "sampling": {"type": "string", "minLength": 1}}
+    },
+    "rawFrame": {
+      "type": "object",
+      "required": ["type", "cycle", "signals", "tags", "edgeEvents"],
+      "properties": {
+        "type": {"const": "frame"},
+        "cycle": {"type": "integer", "minimum": 1},
+        "signals": {"type": "object", "additionalProperties": {"type": "string"}},
+        "tags": {"$ref": "#/$defs/rawTags"},
+        "edgeEvents": {"$ref": "#/$defs/rawEdgeEvents"}
+      },
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object",
+      "required": ["cycle", "retireCount", "retiredTotal", "changed", "stages", "events", "registers", "csrs", "memory", "l0"],
+      "properties": {
+        "cycle": {"type": "integer", "minimum": 1},
+        "retireCount": {"type": "integer", "minimum": 0},
+        "retiredTotal": {"type": "integer", "minimum": 0},
+        "changed": {"type": "object", "additionalProperties": {"type": "string"}},
+        "stages": {
+          "type": "object",
+          "required": ["ID", "EX", "MEM1", "MEM2", "WB"],
+          "properties": {
+            "ID": {"$ref": "#/$defs/tagPair"},
+            "EX": {"$ref": "#/$defs/tagPair"},
+            "MEM1": {"$ref": "#/$defs/tagPair"},
+            "MEM2": {"$ref": "#/$defs/tagPair"},
+            "WB": {"$ref": "#/$defs/tagPair"}
+          },
+          "additionalProperties": false
+        },
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+        "registers": {"type": "object", "additionalProperties": {"type": "string"}},
+        "csrs": {"type": "object", "additionalProperties": {"type": "string"}},
+        "memory": {"type": "object", "additionalProperties": {"type": "string"}},
+        "l0": {"type": "object"}
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "required": ["schemaVersion", "frames"],
+      "properties": {"schemaVersion": {"const": 1}, "frames": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/frame"}}}
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["schemaVersion", "graphSchemaVersion", "manifestSha256", "scenario", "rtl", "traceTool", "simulator", "image", "bram", "result", "totals", "functionalSha256", "final", "reference"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "graphSchemaVersion": {"const": 1},
+        "manifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "scenario": {"type": "object"},
+        "rtl": {"type": "object"},
+        "traceTool": {"type": "object"},
+        "simulator": {"type": "object"},
+        "image": {"type": "object"},
+        "bram": {"type": "object"},
+        "result": {"type": "object"},
+        "totals": {"type": "object"},
+        "functionalSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "final": {"type": "object"},
+        "reference": {"type": "object"}
+      }
+    },
+    "index": {
+      "type": "object",
+      "required": ["schemaVersion", "graphSchemaVersion", "rtlDigest", "manifestSha256", "traceToolDigest", "scenarios"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "graphSchemaVersion": {"const": 1},
+        "rtlDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "traceToolDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "scenarios": {"type": "array", "minItems": 1}
+      }
+    }
+  }
+}
