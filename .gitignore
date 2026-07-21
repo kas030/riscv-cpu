@@ -32,6 +32,12 @@ __pycache__/
 cpu_core_files.md
 reports/
 docs/build/
+vivado/tests/build/*.dump
+vivado/tests/build/*.mif
+vivado/tests/build/visualizer_isa_coverage.coe
+vivado/tests/build/visualizer_lane1_memory.coe
+vivado/tests/build/visualizer_microarchitecture.*
+vivado/tests/build/t18_m_ext_basic.coe
 
 # OS
 *.swp
