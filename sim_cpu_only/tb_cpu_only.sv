@@ -54,6 +54,8 @@ module tb_cpu_only;
     longint unsigned cnt_l0_hit = 64'd0;
     longint unsigned cnt_bram_load = 64'd0;
     longint unsigned cnt_retired = 64'd0;
+    longint unsigned crc_completed_rounds = 64'd0;
+    localparam logic [31:0] CRC_ROUND_DONE_PC = 32'h8000_0668;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
@@ -338,6 +340,29 @@ module tb_cpu_only;
         end
     endtask
 
+    task automatic print_crc_snapshot(input longint unsigned completed_rounds);
+        begin
+            clear_progress_line();
+            $display(">>> [CRC_SNAPSHOT] rounds=%0d", completed_rounds);
+            $display(" cnt_ms            : %0d", cnt_ms);
+            $display(" cycles            : %0d", cycles);
+            $display(" writeback (reg_file)    : %0d", cnt_writeback);
+            $display(" slot1 writeback   : %0d", cnt_slot1_writeback);
+            $display(" stores            : %0d", cnt_store);
+            $display(" taken branches    : %0d", cnt_branch);
+            $display(" dual issue packets: %0d", cnt_dual_issue);
+            $display(" front stall cycles: %0d", cnt_stall_front);
+            $display(" load/use stalls   : %0d", cnt_stall_hazard);
+            $display(" load/use EX stalls: %0d", cnt_load_use_ex);
+            $display(" load/use MEM stalls: %0d", cnt_load_use_mem);
+            $display(" hazard+EX busy    : %0d", cnt_stall_both);
+            $display(" ex busy cycles    : %0d", cnt_ex_busy);
+            $display(" L0 load hits      : %0d", cnt_l0_hit);
+            $display(" BRAM loads        : %0d", cnt_bram_load);
+            $display(" retired inst      : %0d", cnt_retired);
+        end
+    endtask
+
     task automatic finish_sim(input string reason);
         bit led_ok;
         begin
@@ -400,7 +425,17 @@ module tb_cpu_only;
     endtask
 
     always_ff @(posedge clk) begin
-        if (!rst) begin
+        if (rst) begin
+            crc_completed_rounds <= 64'd0;
+        end else begin
+            if ((dut.EX_valid && dut.EX_pc == CRC_ROUND_DONE_PC) ||
+                (dut.EX_S1_valid && dut.EX_S1_pc == CRC_ROUND_DONE_PC)) begin
+                crc_completed_rounds <= crc_completed_rounds + 1;
+                if ((crc_completed_rounds + 1 == 8) ||
+                    (crc_completed_rounds + 1 == 16)) begin
+                    print_crc_snapshot(crc_completed_rounds + 1);
+                end
+            end
             cycles <= cycles + 1;
             cnt_writeback <= cnt_writeback +
                              ((dut.rf_inst.wen && dut.rf_inst.waddr != 5'd0) ? 1 : 0) +

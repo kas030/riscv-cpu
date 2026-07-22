@@ -33,6 +33,8 @@ SIM_CONFIG_ID := $(shell printf '%s' "$(SIM_CONFIG_KEY)" | sha256sum | cut -c 1-
 SIM_CONFIG_DIR := $(BUILD)/config/$(SIM_CONFIG_ID)
 SIM_CONFIG := $(SIM_CONFIG_DIR)/sim_config.svh
 IVERILOG_VVP := $(SIM_CONFIG_DIR)/tb_cpu_only.vvp
+VERILATOR_CPP := $(abspath verilator_finish_quiet.cpp)
+TERMINAL_TEE := terminal_tee.py
 
 VERILATOR_QUIET_CANDIDATES := --quiet --quiet-build --quiet-exit
 VERILATOR_QUIET_FLAGS := $(if $(filter 1,$(QUIET)),$(shell for flag in $(VERILATOR_QUIET_CANDIDATES); do $(VERILATOR) $$flag --version >/dev/null 2>&1 && printf '%s ' $$flag; done),)
@@ -112,13 +114,13 @@ $(IVERILOG_VVP): tb_cpu_only.sv $(CPU_SRCS) $(SIM_CONFIG) | $(SIM_CONFIG_DIR)
 sim: sim-verilator
 
 sim-iverilog: check-tools $(BUILD)/irom.mem $(BUILD)/bram.mem $(IVERILOG_VVP)
-	@stdbuf -oL -eL $(VVP) $(IVERILOG_VVP) | tee $(BUILD)/sim.log
+	@stdbuf -oL -eL $(VVP) $(IVERILOG_VVP) | python3 $(TERMINAL_TEE) $(BUILD)/sim.log
 
-$(VERILATOR_OBJ_DIR)/Vtb_cpu_only: tb_cpu_only.sv verilator_finish_quiet.cpp $(CPU_SRCS) $(SIM_CONFIG) | $(BUILD) $(VERILATOR_OBJ_DIR)
+$(VERILATOR_OBJ_DIR)/Vtb_cpu_only: tb_cpu_only.sv $(VERILATOR_CPP) $(CPU_SRCS) $(SIM_CONFIG) | $(BUILD) $(VERILATOR_OBJ_DIR)
 	@CXX=$(CXX) $(VERILATOR) $(VFLAGS) --Mdir $(VERILATOR_OBJ_DIR) $(INC_DIRS) --top-module tb_cpu_only $^
 
 sim-verilator: check-verilator $(BUILD)/irom.mem $(BUILD)/bram.mem $(VERILATOR_OBJ_DIR)/Vtb_cpu_only
-	@stdbuf -oL -eL ./$(VERILATOR_OBJ_DIR)/Vtb_cpu_only $(VERILATOR_RUNTIME_ARGS) | tee $(BUILD)/verilator-sim.log
+	@stdbuf -oL -eL ./$(VERILATOR_OBJ_DIR)/Vtb_cpu_only $(VERILATOR_RUNTIME_ARGS) | python3 $(TERMINAL_TEE) $(BUILD)/verilator-sim.log
 
 clean:
 	@rm -rf $(BUILD) obj_dir obj_dir_trace
