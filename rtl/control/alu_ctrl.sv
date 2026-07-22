@@ -1,7 +1,7 @@
 // =============================================================================
 // alu_ctrl.sv —— alu 控制译码
 //   位于 ID 级，根据 opcode + funct7/funct3 译码出独热 ALUControl，
-//   每一位对应 alu 的一种运算（RV32I 算术逻辑/比较 + RV32M 乘除余）。
+//   每一位对应 alu 的一种运算（RV32I 算术逻辑/比较 + RV32M 乘除余 + Zbb ror）。
 //   一热编码使得 alu 内部可以用按位与 + 或汇总，避免使用 case，
 //   有利于布局布线时分散到多 LUT 上从而缩短关键路径。
 // =============================================================================
@@ -34,10 +34,12 @@ module alu_ctrl(
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIVU   = 22'h080000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_REM    = 22'h100000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_REMU   = 22'h200000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_ROR    = 23'h400000;
 
     logic do_add , do_sub , do_and , do_or  , do_xor , do_sll , do_srl;
     logic do_sra , do_beq , do_bne , do_blt , do_bge , do_bgeu, do_bltu;
     logic do_mul , do_mulh, do_mulhsu, do_mulhu, do_div, do_divu, do_rem, do_remu;
+    logic do_ror;
 
     assign ALUControl = {`ALU_OP_WIDTH{do_add   }} & OP_ADD    |
                         {`ALU_OP_WIDTH{do_sub   }} & OP_SUB    |
@@ -60,7 +62,8 @@ module alu_ctrl(
                         {`ALU_OP_WIDTH{do_div   }} & OP_DIV    |
                         {`ALU_OP_WIDTH{do_divu  }} & OP_DIVU   |
                         {`ALU_OP_WIDTH{do_rem   }} & OP_REM    |
-                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU;
+                        {`ALU_OP_WIDTH{do_remu  }} & OP_REMU   |
+                        {`ALU_OP_WIDTH{do_ror   }} & OP_ROR;
 
     logic kind_r, kind_i, kind_load, kind_store, kind_jalr, kind_auipc, kind_branch;
     logic [6:0] funct7;
@@ -102,6 +105,7 @@ module alu_ctrl(
     assign do_sll  = ((r_base && funct7 == 7'b0000000) || (i_shift_base && funct7 == 7'b0000000)) && funct3 == 3'b001;
     assign do_srl  = ((r_base && funct7 == 7'b0000000) || (i_shift_base && funct7 == 7'b0000000)) && funct3 == 3'b101;
     assign do_sra  = ((r_base && funct7 == 7'b0100000) || (i_shift_base && funct7 == 7'b0100000)) && funct3 == 3'b101;
+    assign do_ror  = kind_r && funct7 == 7'b0110000 && funct3 == 3'b101;
 
     assign do_bltu = (r_base && funct7 == 7'b0000000 && funct3 == 3'b011) || (kind_branch && funct3 == 3'b110) || (kind_i && funct3 == 3'b011);
     assign do_blt  = (r_base && funct7 == 7'b0000000 && funct3 == 3'b010) || (kind_branch && funct3 == 3'b100) || (kind_i && funct3 == 3'b010);
