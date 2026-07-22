@@ -2,6 +2,7 @@
 import os
 import sys
 import re
+from pathlib import Path
 
 
 def q(v: str) -> str:
@@ -62,8 +63,10 @@ def main() -> int:
 `define SIM_PROGRESS_NS {u64_literal(progress_ns, "PROGRESS_NS")}
 `define SIM_TRACE_FILE "{q(trace_file)}"
 """
-    with open(out, "w", encoding="ascii") as f:
-        f.write(text)
+    out_path = Path(out)
+    if out_path.exists() and out_path.read_text(encoding="ascii") == text:
+        return 0
+    out_path.write_text(text, encoding="ascii")
     return 0
 
 

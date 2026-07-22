@@ -28,13 +28,19 @@ VERILATOR_RUNTIME_ARGS ?=
 
 -include config.mk
 
+SIM_CONFIG_KEY := $(EXPECTED_LED)|$(PASS_LED)|$(FAIL_LED)|$(TRACE)|$(CPU_FREQ_MHZ)|$(STOP_NS)|$(PROGRESS_NS)|$(TRACE_FILE)
+SIM_CONFIG_ID := $(shell printf '%s' "$(SIM_CONFIG_KEY)" | sha256sum | cut -c 1-16)
+SIM_CONFIG_DIR := $(BUILD)/config/$(SIM_CONFIG_ID)
+SIM_CONFIG := $(SIM_CONFIG_DIR)/sim_config.svh
+IVERILOG_VVP := $(SIM_CONFIG_DIR)/tb_cpu_only.vvp
+
 VERILATOR_QUIET_CANDIDATES := --quiet --quiet-build --quiet-exit
 VERILATOR_QUIET_FLAGS := $(if $(filter 1,$(QUIET)),$(shell for flag in $(VERILATOR_QUIET_CANDIDATES); do $(VERILATOR) $$flag --version >/dev/null 2>&1 && printf '%s ' $$flag; done),)
 VFLAGS_BASE := --binary --timing $(VERILATOR_QUIET_FLAGS) -MAKEFLAGS -s -CFLAGS -DVL_USER_FINISH -Wno-fatal -Wno-TIMESCALEMOD -Wno-WIDTH -Wno-UNOPTFLAT -Wno-ZERODLY -Wno-UNSIGNED
 VFLAGS_TRACE := $(if $(filter 1,$(TRACE)),--trace-fst --trace-structs -LDFLAGS -lz,)
 VFLAGS := $(VFLAGS_BASE) $(VFLAGS_TRACE)
-VERILATOR_OBJ_DIR := $(if $(filter 1,$(TRACE)),obj_dir_trace,obj_dir)
-INC_DIRS := -I$(SRC_COMMON) -I$(SRC_CONTROL) -I$(SRC_CORE) -I$(SRC_DATAPATH) -I$(SRC_HAZARD) -I$(SRC_MEMORY) -I$(SRC_PIPE_REG) -I$(SRC_PIPE_STAGE) -I$(BUILD)
+VERILATOR_OBJ_DIR := $(if $(filter 1,$(TRACE)),obj_dir_trace,obj_dir)/$(SIM_CONFIG_ID)
+INC_DIRS := -I$(SRC_COMMON) -I$(SRC_CONTROL) -I$(SRC_CORE) -I$(SRC_DATAPATH) -I$(SRC_HAZARD) -I$(SRC_MEMORY) -I$(SRC_PIPE_REG) -I$(SRC_PIPE_STAGE) -I$(SIM_CONFIG_DIR) -I$(BUILD)
 
 CPU_SRCS := \
   $(SRC_COMMON)/mux_key_internal.v \
@@ -84,7 +90,13 @@ check-verilator:
 $(BUILD):
 	@mkdir -p $@
 
-$(BUILD)/sim_config.svh: sim_config_gen.py FORCE | $(BUILD)
+$(SIM_CONFIG_DIR):
+	@mkdir -p $@
+
+$(VERILATOR_OBJ_DIR):
+	@mkdir -p $@
+
+$(SIM_CONFIG): sim_config_gen.py | $(SIM_CONFIG_DIR)
 	@EXPECTED_LED="$(EXPECTED_LED)" PASS_LED="$(PASS_LED)" FAIL_LED="$(FAIL_LED)" TRACE="$(TRACE)" CPU_FREQ_MHZ="$(CPU_FREQ_MHZ)" STOP_NS="$(STOP_NS)" PROGRESS_NS="$(PROGRESS_NS)" TRACE_FILE="$(TRACE_FILE)" \
 	python3 sim_config_gen.py $@
 
@@ -94,15 +106,15 @@ $(BUILD)/irom.mem: $(IROM_COE) coe_to_mem.py FORCE | $(BUILD)
 $(BUILD)/bram.mem: $(BRAM_COE) coe_to_mem.py FORCE | $(BUILD)
 	@python3 coe_to_mem.py $(BRAM_COE) $@
 
-$(BUILD)/tb_cpu_only.vvp: tb_cpu_only.sv $(CPU_SRCS) $(BUILD)/sim_config.svh | $(BUILD)
+$(IVERILOG_VVP): tb_cpu_only.sv $(CPU_SRCS) $(SIM_CONFIG) | $(SIM_CONFIG_DIR)
 	@$(IVERILOG) -g2012 -Wall $(INC_DIRS) -s tb_cpu_only -o $@ $^
 
 sim: sim-verilator
 
-sim-iverilog: check-tools $(BUILD)/irom.mem $(BUILD)/bram.mem $(BUILD)/tb_cpu_only.vvp
-	@stdbuf -oL -eL $(VVP) $(BUILD)/tb_cpu_only.vvp | tee $(BUILD)/sim.log
+sim-iverilog: check-tools $(BUILD)/irom.mem $(BUILD)/bram.mem $(IVERILOG_VVP)
+	@stdbuf -oL -eL $(VVP) $(IVERILOG_VVP) | tee $(BUILD)/sim.log
 
-$(VERILATOR_OBJ_DIR)/Vtb_cpu_only: tb_cpu_only.sv verilator_finish_quiet.cpp $(CPU_SRCS) $(BUILD)/sim_config.svh | $(BUILD)
+$(VERILATOR_OBJ_DIR)/Vtb_cpu_only: tb_cpu_only.sv verilator_finish_quiet.cpp $(CPU_SRCS) $(SIM_CONFIG) | $(BUILD) $(VERILATOR_OBJ_DIR)
 	@CXX=$(CXX) $(VERILATOR) $(VFLAGS) --Mdir $(VERILATOR_OBJ_DIR) $(INC_DIRS) --top-module tb_cpu_only $^
 
 sim-verilator: check-verilator $(BUILD)/irom.mem $(BUILD)/bram.mem $(VERILATOR_OBJ_DIR)/Vtb_cpu_only
