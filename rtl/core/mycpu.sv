@@ -65,6 +65,8 @@ module mycpu (
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
+    logic        MEM_store_valid, MEM_store_word;
+    logic [31:0] MEM_store_addr, MEM_store_data;
     logic        MEM_bram_load;
     logic        EX_cache_probe_hit, EX_cache_ready0, EX_cache_ready1;
     logic [31:0] EX_cache_probe_addr, EX_cache_probe_addr0, EX_cache_probe_addr1;
@@ -76,6 +78,8 @@ module mycpu (
     logic [31:0] MEM_cache_lookup_addr;
     logic        MEM_cache_hit_raw, EX_cache_probe_hit_raw;
     logic [31:0] MEM_cache_data_raw, EX_cache_probe_data_raw;
+    logic        store_bypass_valid_q, EX_store_bypass_hit;
+    logic [31:0] store_bypass_addr_q, store_bypass_data_q;
     logic        LoadUseEX, LoadUseMEM, LoadUseMEM_base;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
@@ -230,6 +234,9 @@ module mycpu (
     logic        MEM_early_cache_hit0, MEM_early_cache_hit1;
     logic [31:0] MEM_early_cache_data0, MEM_early_cache_data1;
     logic        MEM_cache_hit, MEM_cache_hit0, MEM_cache_hit1;
+    logic        MEM_load_ready0, MEM_load_ready1, MEM_store_bypass_hit;
+    logic        MEM_lookup_ready0, MEM_lookup_ready1;
+    logic [31:0] MEM_load_ready_word;
     logic [31:0] MEM_cache_data;
 
     // -------------------------------------------------------------------------
@@ -480,10 +487,10 @@ module mycpu (
         .ID_EX_LoadReady_1(EX_cache_ready1),
         .EX_MEM_rd     (MEM_rd         ),
         .EX_MEM_MemRead(MEM_MemRead    ),
-        .EX_MEM_LoadReady(MEM_cache_hit0),
+        .EX_MEM_LoadReady(MEM_load_ready0),
         .EX_MEM_rd_1   (MEM_S1_rd      ),
         .EX_MEM_MemRead_1(MEM_S1_MemRead),
-        .EX_MEM_LoadReady_1(MEM_cache_hit1),
+        .EX_MEM_LoadReady_1(MEM_load_ready1),
         .BranchMispredict (BranchMispredict),
         .Stall         (Stall_Hazard   ),
         .Flush_IF_ID   (Flush_IF_ID    ),
@@ -498,8 +505,25 @@ module mycpu (
     assign MEM_S1_bram_access = is_bram_addr(MEM_S1_perip_addr);
     assign MEM_use_s1_bus     = !(MEM_MemWrite || MEM_MemRead) &&
                                 (MEM_S1_MemWrite || MEM_S1_MemRead);
+    assign MEM_store_addr     = MEM_MemWrite ? MEM_perip_bus_addr :
+                                               MEM_S1_perip_bus_addr;
+    assign MEM_store_data     = MEM_MemWrite ? MEM_rR2_data : MEM_S1_rR2_data;
+    assign MEM_store_valid    = ((MEM_MemWrite && MEM_bram_access) ||
+                                 (MEM_S1_MemWrite && MEM_S1_bram_access));
+    assign MEM_store_word     = MEM_store_valid &&
+                                (MEM_MemWrite ? (MEM_funct3 == 3'b010) :
+                                                (MEM_S1_funct3 == 3'b010));
     assign MEM_cache_hit0 = MEM_MemRead && MEM_bram_access && MEM_cache_hit;
     assign MEM_cache_hit1 = MEM_S1_MemRead && MEM_S1_bram_access && MEM_cache_hit;
+    assign MEM_store_bypass_hit = store_bypass_valid_q &&
+                                  (store_bypass_addr_q[17:2] ==
+                                   MEM_cache_lookup_addr[17:2]);
+    assign MEM_lookup_ready0 = MEM_MemRead && MEM_bram_access &&
+                               (MEM_cache_hit || MEM_store_bypass_hit);
+    assign MEM_lookup_ready1 = MEM_S1_MemRead && MEM_S1_bram_access &&
+                               (MEM_cache_hit || MEM_store_bypass_hit);
+    assign MEM_load_ready0 = MEM_early_cache_hit0 || MEM_lookup_ready0;
+    assign MEM_load_ready1 = MEM_early_cache_hit1 || MEM_lookup_ready1;
     assign Flush_EX_MEM       = redirect_valid_q;
 
     // redirect/flush 打拍提交：
@@ -1111,6 +1135,37 @@ module mycpu (
         end
     end
 
+    // L0 按约定仍在 store 时失效；另外保留最近一次完整字 BRAM store，
+    // 为随后的同地址 load 提供顺序一致的 store-to-load 旁路。byte/half
+    // store 无法构造完整缓存字，命中同一字时使该旁路失效。
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            store_bypass_valid_q <= 1'b0;
+            store_bypass_addr_q  <= 32'b0;
+            store_bypass_data_q  <= 32'b0;
+        end else if (MEM_store_valid) begin
+            if (MEM_store_word) begin
+                store_bypass_valid_q <= 1'b1;
+                store_bypass_addr_q  <= MEM_store_addr;
+                store_bypass_data_q  <= MEM_store_data;
+            end else if (store_bypass_valid_q &&
+                         (store_bypass_addr_q[17:2] == MEM_store_addr[17:2])) begin
+                store_bypass_valid_q <= 1'b0;
+            end
+        end
+    end
+
+    always_comb begin
+        EX_store_bypass_hit = store_bypass_valid_q &&
+                              (store_bypass_addr_q[17:2] == EX_cache_probe_addr[17:2]);
+        // 当前 MEM store 比寄存的上一项更新。完整字可直接旁路；同字的
+        // byte/half store 必须屏蔽旧完整字。
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr[17:2])) begin
+            EX_store_bypass_hit = MEM_store_word;
+        end
+    end
+
     always_comb begin
         MEM_cache_hit  = MEM_cache_hit_raw;
         MEM_cache_data = MEM_cache_data_raw;
@@ -1120,7 +1175,6 @@ module mycpu (
                               MEM_cache_lookup_addr[17:2]);
             MEM_cache_data = MEM_cache_fill_q_data;
         end
-
         EX_cache_probe_hit  = EX_cache_probe_hit_raw;
         EX_cache_probe_data = EX_cache_probe_data_raw;
         if (MEM_cache_fill_q_en &&
@@ -1128,6 +1182,16 @@ module mycpu (
             EX_cache_probe_hit  = (MEM_cache_fill_q_addr[17:2] ==
                                    EX_cache_probe_addr[17:2]);
             EX_cache_probe_data = MEM_cache_fill_q_data;
+        end
+        if (store_bypass_valid_q &&
+            (store_bypass_addr_q[17:2] == EX_cache_probe_addr[17:2])) begin
+            EX_cache_probe_hit  = 1'b1;
+            EX_cache_probe_data = store_bypass_data_q;
+        end
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr[17:2])) begin
+            EX_cache_probe_hit  = MEM_store_word;
+            EX_cache_probe_data = MEM_store_data;
         end
     end
 
@@ -1154,20 +1218,18 @@ module mycpu (
     // 避免消费者前递到 store 之前的旧缓存数据。
     assign EX_cache_ready0 = EX_MemRead_eff && (ForwardA == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr0) &&
-                             EX_cache_probe_hit &&
-                             !(MEM_cache_fill_en &&
-                               (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr0[7:2]) &&
-                               (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2])) &&
-                             !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
-                               (MEM_bus_addr[17:2] == EX_cache_probe_addr0[17:2]));
+                             (EX_store_bypass_hit ||
+                              (EX_cache_probe_hit &&
+                               !(MEM_cache_fill_en &&
+                                 (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr0[7:2]) &&
+                                 (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2]))));
     assign EX_cache_ready1 = EX_S1_MemRead_eff && (ForwardA_S1 == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr1) &&
-                             EX_cache_probe_hit &&
-                             !(MEM_cache_fill_en &&
-                               (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr1[7:2]) &&
-                               (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr1[17:2])) &&
-                             !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
-                               (MEM_bus_addr[17:2] == EX_cache_probe_addr1[17:2]));
+                             (EX_store_bypass_hit ||
+                              (EX_cache_probe_hit &&
+                               !(MEM_cache_fill_en &&
+                                 (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr1[7:2]) &&
+                                 (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr1[17:2]))));
 
     // 零气泡 load 的前递值来自 EX/MEM 中的寄存副本。
     assign MEM_forward_data_effective = MEM_forward_data;
@@ -1175,9 +1237,11 @@ module mycpu (
 
     logic [31:0] MEM_cache_raw0, MEM_cache_raw1;
     logic [31:0] MEM_cache_load_data0, MEM_cache_load_data1;
-    assign MEM_cache_raw0 = select_load_raw(MEM_cache_data, MEM_funct3,
+    assign MEM_load_ready_word = MEM_store_bypass_hit ? store_bypass_data_q :
+                                                        MEM_cache_data;
+    assign MEM_cache_raw0 = select_load_raw(MEM_load_ready_word, MEM_funct3,
                                              MEM_perip_bus_addr[1:0]);
-    assign MEM_cache_raw1 = select_load_raw(MEM_cache_data, MEM_S1_funct3,
+    assign MEM_cache_raw1 = select_load_raw(MEM_load_ready_word, MEM_S1_funct3,
                                              MEM_S1_perip_bus_addr[1:0]);
     load_mask #(DATAWIDTH) u_mem_cache_load_mask (
         .mask(MEM_funct3), .dout(MEM_cache_raw0), .mdata(MEM_cache_load_data0)
@@ -1195,11 +1259,11 @@ module mycpu (
             MEM2_forward_data    <= 32'b0;
             MEM2_S1_forward_data <= 32'b0;
         end else begin
-            MEM2_cache_hit       <= MEM_cache_hit0;
-            MEM2_S1_cache_hit    <= MEM_cache_hit1;
-            MEM2_forward_data    <= MEM_cache_hit0 ? MEM_cache_load_data0 :
+            MEM2_cache_hit       <= MEM_load_ready0;
+            MEM2_S1_cache_hit    <= MEM_load_ready1;
+            MEM2_forward_data    <= MEM_lookup_ready0 ? MEM_cache_load_data0 :
                                                         MEM_forward_data;
-            MEM2_S1_forward_data <= MEM_cache_hit1 ? MEM_cache_load_data1 :
+            MEM2_S1_forward_data <= MEM_lookup_ready1 ? MEM_cache_load_data1 :
                                                         MEM_S1_forward_data;
         end
     end
