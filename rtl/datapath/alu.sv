@@ -2,7 +2,7 @@
 // alu.sv —— 32 位算术逻辑单元
 //   位于 EX 级，根据 alu_ctrl 译码出的独热 ALUControl 选择本次运算：
 //     [0] add  [1] sub  [2] and [3] or  [4] xor [5] sll [6] srl [7] sra
-//     [8] beq  [9] bne [10] blt [11] bge [12] bgeu [13] bltu
+//     [8] beq  [9] bne [10] blt [11] bge [12] bgeu [13] bltu [22] zext.h
 //   设计要点：
 //     - add/sub/blt/bge/bgeu/bltu 共享同一加减法器，减法/比较时通过
 //       B 端取反 + cin=1 实现 A - B。
@@ -23,6 +23,7 @@ module alu #(
 );
     logic m_add , m_sub , m_and , m_or  , m_xor , m_sll , m_srl;
     logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu;
+    logic m_zexth;
     logic [DATAWIDTH-1:0] add_lhs, add_rhs;
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
@@ -44,6 +45,7 @@ module alu #(
     assign m_bge  = ALUControl[11];
     assign m_bgeu = ALUControl[12];
     assign m_bltu = ALUControl[13];
+    assign m_zexth = ALUControl[22];
 
     assign add_lhs = A;
     assign add_rhs = (m_sub | m_blt | m_bge | m_bgeu | m_bltu) ? ~B : B;
@@ -81,5 +83,6 @@ module alu #(
                     {DATAWIDTH{m_srl        }} & r_srl    |
                     {DATAWIDTH{m_sra        }} & r_sra    |
                     {DATAWIDTH{m_blt        }} & r_slt    |
-                    {DATAWIDTH{m_bltu       }} & r_sltu;
+                    {DATAWIDTH{m_bltu       }} & r_sltu   |
+                    {DATAWIDTH{m_zexth      }} & {{DATAWIDTH - 16{1'b0}}, A[15:0]};
 endmodule
