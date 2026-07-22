@@ -15,6 +15,7 @@ module mycpu_id_ex_reg #(
     input  logic [DATAWIDTH - 1:0]  ID_imm          ,
     input  logic [DATAWIDTH - 1:0]  ID_rR1_data     ,
     input  logic [DATAWIDTH - 1:0]  ID_rR2_data     ,
+    input  logic [DATAWIDTH - 1:0]  ID_mem_addr_early,
     input  logic [ADDR_WIDTH - 1:0] ID_rs1          ,
     input  logic [ADDR_WIDTH - 1:0] ID_rs2          ,
     input  logic [ADDR_WIDTH - 1:0] ID_rd           ,
@@ -47,6 +48,7 @@ module mycpu_id_ex_reg #(
     output logic [DATAWIDTH - 1:0]  EX_imm          ,
     output logic [DATAWIDTH - 1:0]  EX_rR1_data     ,
     output logic [DATAWIDTH - 1:0]  EX_rR2_data     ,
+    output logic [DATAWIDTH - 1:0]  EX_mem_addr_early,
     output logic [ADDR_WIDTH - 1:0] EX_rs1          ,
     output logic [ADDR_WIDTH - 1:0] EX_rs2          ,
     output logic [ADDR_WIDTH - 1:0] EX_rd           ,
@@ -98,6 +100,7 @@ module mycpu_id_ex_reg #(
             EX_imm          <= '0;
             EX_rR1_data     <= '0;
             EX_rR2_data     <= '0;
+            EX_mem_addr_early <= '0;
             EX_rs1          <= '0;
             EX_rs2          <= '0;
             EX_rd           <= '0;
@@ -122,6 +125,7 @@ module mycpu_id_ex_reg #(
                 EX_imm          <= ID_imm;
                 EX_rR1_data     <= ID_rR1_data;
                 EX_rR2_data     <= ID_rR2_data;
+                EX_mem_addr_early <= ID_mem_addr_early;
                 EX_rs1          <= ID_rs1;
                 EX_rs2          <= ID_rs2;
                 EX_rd           <= ID_rd;

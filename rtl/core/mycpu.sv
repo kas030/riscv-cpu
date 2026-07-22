@@ -125,7 +125,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // ID 级信号
     // -------------------------------------------------------------------------
-    logic [31:0] ID_imm, ID_rR1_data, ID_rR2_data;
+    logic [31:0] ID_imm, ID_rR1_data, ID_rR2_data, ID_mem_addr_early;
     logic        ID_RegWrite, ID_MemWrite, ID_MemRead;
     logic        ID_ALUSrcA, ID_ALUSrcB;
     logic [2:0]  ID_MemToReg;
@@ -137,7 +137,7 @@ module mycpu (
     logic [2:0]  ID_funct3;
     logic [4:0]  ID_rs1, ID_rs2, ID_rd;
     logic        ID_uses_rs1, ID_uses_rs2;
-    logic [31:0] ID_S1_imm, ID_S1_rR1_data, ID_S1_rR2_data;
+    logic [31:0] ID_S1_imm, ID_S1_rR1_data, ID_S1_rR2_data, ID_S1_mem_addr_early;
     logic        ID_S1_RegWrite, ID_S1_MemWrite, ID_S1_MemRead;
     logic        ID_S1_ALUSrcA, ID_S1_ALUSrcB;
     logic [2:0]  ID_S1_MemToReg;
@@ -153,7 +153,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // ID/EX 寄存器输出（即 EX 级输入）
     // -------------------------------------------------------------------------
-    logic [31:0] EX_pc, EX_imm, EX_rR1_data, EX_rR2_data;
+    logic [31:0] EX_pc, EX_imm, EX_rR1_data, EX_rR2_data, EX_mem_addr_early;
     logic [4:0]  EX_rs1, EX_rs2, EX_rd;
     logic        EX_RegWrite, EX_MemWrite, EX_MemRead;
     logic [2:0]  EX_MemToReg, EX_funct3;
@@ -172,6 +172,7 @@ module mycpu (
     logic [5:0]  EX_CSRControll_eff;
     logic [31:0] EX_pred_target;
     logic [31:0] EX_S1_pc, EX_S1_imm, EX_S1_rR1_data, EX_S1_rR2_data;
+    logic [31:0] EX_S1_mem_addr_early;
     logic [4:0]  EX_S1_rs1, EX_S1_rs2, EX_S1_rd;
     logic        EX_S1_RegWrite, EX_S1_MemWrite, EX_S1_MemRead;
     logic [2:0]  EX_S1_MemToReg, EX_S1_funct3;
@@ -743,12 +744,19 @@ module mycpu (
     assign ID_ForwardA_S1 = select_id_forward(ID_S1_rs1);
     assign ID_ForwardB_S1 = select_id_forward(ID_S1_rs2);
 
+    // 零气泡 L0 探测只允许未使用 EX 前递的 load。此时 ID 读出的基址就是
+    // EX 的实际基址，可把地址加法提前一拍并锁存，缩短 L0 hit 到 hazard 的路径。
+    // 真正的访存地址仍由 EX ALU 计算，外部总线语义不变。
+    assign ID_mem_addr_early    = ID_rR1_data + ID_imm;
+    assign ID_S1_mem_addr_early = ID_S1_rR1_data + ID_S1_imm;
+
     // ---- ID/EX 流水寄存器 ----
     mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg (
         .ID_pc           (ID_pc          ),
         .ID_imm          (ID_imm         ),
         .ID_rR1_data     (ID_rR1_data    ),
         .ID_rR2_data     (ID_rR2_data    ),
+        .ID_mem_addr_early(ID_mem_addr_early),
         .ID_rs1          (ID_rs1         ),
         .ID_rs2          (ID_rs2         ),
         .ID_rd           (ID_rd          ),
@@ -780,6 +788,7 @@ module mycpu (
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
         .EX_rR2_data     (EX_rR2_data    ),
+        .EX_mem_addr_early(EX_mem_addr_early),
         .EX_rs1          (EX_rs1         ),
         .EX_rs2          (EX_rs2         ),
         .EX_rd           (EX_rd          ),
@@ -811,6 +820,7 @@ module mycpu (
         .ID_imm          (ID_S1_imm      ),
         .ID_rR1_data     (ID_S1_rR1_data ),
         .ID_rR2_data     (ID_S1_rR2_data ),
+        .ID_mem_addr_early(ID_S1_mem_addr_early),
         .ID_rs1          (ID_S1_rs1      ),
         .ID_rs2          (ID_S1_rs2      ),
         .ID_rd           (ID_S1_rd       ),
@@ -842,6 +852,7 @@ module mycpu (
         .EX_imm          (EX_S1_imm      ),
         .EX_rR1_data     (EX_S1_rR1_data ),
         .EX_rR2_data     (EX_S1_rR2_data ),
+        .EX_mem_addr_early(EX_S1_mem_addr_early),
         .EX_rs1          (EX_S1_rs1      ),
         .EX_rs2          (EX_S1_rs2      ),
         .EX_rd           (EX_S1_rd       ),
@@ -1124,8 +1135,8 @@ module mycpu (
     // 前递寄存后的数据，避免 MEM 异步 L0 读取直接串入 EX ALU。
     // 提前探测只使用 ID/EX 已寄存的基址。需要任意 EX 前递的 load 不能走
     // 零气泡路径，否则会形成 MEM2/WB -> ALU -> L0 -> hazard 的长组合链。
-    assign EX_cache_probe_addr0 = EX_rR1_data + EX_imm;
-    assign EX_cache_probe_addr1 = EX_S1_rR1_data + EX_S1_imm;
+    assign EX_cache_probe_addr0 = EX_mem_addr_early;
+    assign EX_cache_probe_addr1 = EX_S1_mem_addr_early;
     assign EX_cache_probe_addr = EX_MemRead_eff ? EX_cache_probe_addr0 :
                                  EX_S1_MemRead_eff ? EX_cache_probe_addr1 : 32'b0;
     assign EX_cache_probe_raw = select_load_raw(
