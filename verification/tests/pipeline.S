@@ -66,6 +66,22 @@ TEST_START
     bnez t0, .Lbranch_loop
     CHECK_REG t1, 16, 310
 
+    # CRC 软件位循环融合必须只依赖连续指令签名，与代码地址无关。
+    mv s0, sp
+    li a5, 0x1234
+.Lcrc_fuse_start:
+    .word 0xfef41723    # sh a5,-18(s0)
+    .word 0xfe042223    # sw zero,-28(s0) -> crc8 a5,a5
+    .word 0x0480006f    # jal x0,+72          -> sh a5,-18(s0)
+    .word 0xfee45783    # lhu a5,-18(s0)      -> jal x0,+80
+    .rept 19
+    nop
+    .endr
+.Lcrc_fuse_target:
+    lhu t0, -18(s0)
+    CHECK_REG t0, 0xd713, 311
+    CHECK_REG a5, 0xd713, 312
+
     j test_pass
 TEST_END
 

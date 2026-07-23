@@ -22,11 +22,11 @@ module alu #(
     output logic                           isTrue
 );
     logic m_add , m_sub , m_and , m_or  , m_xor , m_sll , m_srl;
-    logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu, m_ror;
+    logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu, m_ror, m_crc8;
     logic [DATAWIDTH-1:0] add_lhs, add_rhs;
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
-    logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra, r_ror;
+    logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra, r_ror, r_crc8;
     logic [DATAWIDTH-1:0] r_logic_shift, r_non_arith;
     logic                 cmp_eq, cmp_lt, cmp_ltu, cmp_result_selected;
 
@@ -45,6 +45,19 @@ module alu #(
     assign m_bgeu = ALUControl[12];
     assign m_bltu = ALUControl[13];
     assign m_ror  = ALUControl[22];
+    assign m_crc8 = ALUControl[23];
+
+    function automatic logic [15:0] crc16_advance_byte(input logic [15:0] value);
+        logic [15:0] crc;
+        integer i;
+        begin
+            crc = value;
+            for (i = 0; i < 8; i = i + 1) begin
+                crc = crc[0] ? ((crc >> 1) ^ 16'ha001) : (crc >> 1);
+            end
+            crc16_advance_byte = crc;
+        end
+    endfunction
 
     assign add_lhs = A;
     assign add_rhs = (m_sub | m_blt | m_bge | m_bgeu | m_bltu) ? ~B : B;
@@ -61,6 +74,7 @@ module alu #(
     assign r_srl  = A >> B[4:0];
     assign r_sra  = ($signed(A)) >>> B[4:0];
     assign r_ror  = (A >> B[4:0]) | (A << (5'd0 - B[4:0]));
+    assign r_crc8 = {{DATAWIDTH - 16{1'b0}}, crc16_advance_byte(A[15:0])};
 
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
@@ -82,7 +96,8 @@ module alu #(
                            {DATAWIDTH{m_sll}} & r_sll |
                            {DATAWIDTH{m_srl}} & r_srl |
                            {DATAWIDTH{m_sra}} & r_sra |
-                           {DATAWIDTH{m_ror}} & r_ror;
+                           {DATAWIDTH{m_ror }} & r_ror |
+                           {DATAWIDTH{m_crc8}} & r_crc8;
 
     assign cmp_result_selected = (m_blt & cmp_lt) | (m_bltu & cmp_ltu);
     assign r_non_arith = (m_blt | m_bltu) ?

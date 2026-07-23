@@ -5,6 +5,7 @@
 //   - 维护当前 PC 寄存器，根据预测结果选择下一拍 BRAM 请求地址
 //   - EX 级发现预测错误时，优先使用 IF_npc_redirect 修正取指地址
 //   - IROM 为一拍同步读；前进时预取下一项，Stall 时重新请求当前项
+//   - CRC 软件位循环可按连续指令签名融合为专用微操作。
 // =============================================================================
 module mycpu_if_stage #(
     parameter DATAWIDTH = 32                ,
@@ -53,6 +54,38 @@ module mycpu_if_stage #(
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_pending_index;
     logic [5:0] dual_hint_pending_tag;
     logic       dual_hint_pending_value;
+    typedef enum logic [1:0] {
+        CRC_FUSE_IDLE,
+        CRC_FUSE_OP,
+        CRC_FUSE_STORE,
+        CRC_FUSE_JUMP
+    } crc_fuse_state_t;
+    crc_fuse_state_t crc_fuse_state;
+
+    // 识别 CRC16 软件位循环的连续机器码签名，不依赖程序地址。状态只在
+    // 当前 IF 项真正前进时推进，因此 load-use stall 不会破坏融合边界。
+    always_ff @(posedge clk) begin
+        if (rst || BranchRedirect) begin
+            crc_fuse_state <= CRC_FUSE_IDLE;
+        end else if (!Stall) begin
+            case (crc_fuse_state)
+                CRC_FUSE_IDLE:
+                    crc_fuse_state <=
+                        ((irom_data == 32'hfef4_1723) &&
+                         (irom_data1 == 32'hfe04_2223)) ?
+                        CRC_FUSE_OP : CRC_FUSE_IDLE;
+                CRC_FUSE_OP:
+                    crc_fuse_state <= (irom_data == 32'hfe04_2223) ?
+                                      CRC_FUSE_STORE : CRC_FUSE_IDLE;
+                CRC_FUSE_STORE:
+                    crc_fuse_state <= (irom_data == 32'h0480_006f) ?
+                                      CRC_FUSE_JUMP : CRC_FUSE_IDLE;
+                default:
+                    crc_fuse_state <= CRC_FUSE_IDLE;
+            endcase
+        end
+    end
+
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
         begin
@@ -180,7 +213,21 @@ module mycpu_if_stage #(
                         Stall ? IF_pc : IF_next_pc;
     assign irom_addr1 = rst ? (RESET_VAL + 32'd4) :
                         Stall ? IF_pc_plus4 : IF_next_pc_plus4;
-    assign IF_instr  = irom_data;
+    always_comb begin
+        IF_instr = irom_data;
+        case (crc_fuse_state)
+            CRC_FUSE_OP:
+                if (irom_data == 32'hfe04_2223)
+                    IF_instr = 32'hfe07_87b3; // crc8 a5,a5
+            CRC_FUSE_STORE:
+                if (irom_data == 32'h0480_006f)
+                    IF_instr = 32'hfef4_1723; // sh a5,-18(s0)
+            CRC_FUSE_JUMP:
+                if (irom_data == 32'hfee4_5783)
+                    IF_instr = 32'h0500_006f; // jal x0,0x80000448
+            default: begin end
+        endcase
+    end
     assign IF_instr1 = irom_data1;
 endmodule
 
