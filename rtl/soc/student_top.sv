@@ -72,13 +72,14 @@ module student_top#(
     );
 
     IROM Mem_IROM (
-        .a          (inst_addr),
-        .spo        (instruction)
-    );
-
-    IROM Mem_IROM1 (
-        .a          (inst_addr1),
-        .spo        (instruction1)
+        .clka       (w_cpu_clk),
+        .ena        (1'b1),
+        .addra      (inst_addr),
+        .douta      (instruction),
+        .clkb       (w_cpu_clk),
+        .enb        (1'b1),
+        .addrb      (inst_addr1),
+        .doutb      (instruction1)
     );
     
     perip_bridge bridge_inst (

@@ -2,11 +2,9 @@
 `include "../../common/defines.sv"
 // =============================================================================
 // mycpu_if_stage.sv —— IF（取指）级
-//   - 维护 pc_reg 寄存器，根据预测结果选择 pc_reg+4 或预测目标
+//   - 维护当前 PC 寄存器，根据预测结果选择下一拍 BRAM 请求地址
 //   - EX 级发现预测错误时，优先使用 IF_npc_redirect 修正取指地址
-//   - 把 pc_reg 输出到 IROM 的地址端口，IROM 同周期返回的 32 位指令直接连给
-//     IF_instr，再交给 IF/ID 流水寄存器锁存。
-//   - Stall=1 时由 pc_reg 模块的 en 入口冻结 pc_reg，使流水线整体停顿。
+//   - IROM 为一拍同步读；前进时预取下一项，Stall 时重新请求当前项
 // =============================================================================
 module mycpu_if_stage #(
     parameter DATAWIDTH = 32                ,
@@ -33,11 +31,12 @@ module mycpu_if_stage #(
     output logic                   IF_pred_taken   ,
     output logic [DATAWIDTH - 1:0] IF_pred_target
 );
-    // 取下一条指令地址：纠错重定向优先，其次使用动态分支预测。
+    // 当前指令 PC，以及下一拍同步 IROM 请求地址。
     logic [DATAWIDTH - 1:0] IF_next_pc;
     logic [DATAWIDTH - 1:0] IF_seq_pc;
     (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus4;
     (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus8;
+    (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_next_pc_plus4;
     logic                   IF_dual_candidate;
     logic                   IF_slot_raw_hazard;
     logic                   IF_slot_mem_conflict;
@@ -54,7 +53,6 @@ module mycpu_if_stage #(
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_pending_index;
     logic [5:0] dual_hint_pending_tag;
     logic       dual_hint_pending_value;
-
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
         begin
@@ -164,8 +162,10 @@ module mycpu_if_stage #(
     assign IF_next_pc    = BranchRedirect ? IF_npc_redirect :
                            IF_pred_taken  ? IF_pred_target   :
                                             IF_seq_pc;
+    // IROM B 口固定请求 A 口地址后的相邻 word。分别在 Stall 选择前完成
+    // 两条候选路径的 +4，避免 Stall_Front 穿过 32 位进位链后才到 BRAM 地址口。
+    assign IF_next_pc_plus4 = IF_next_pc + 32'd4;
 
-    // pc_reg 寄存器；Stall=1 时 en=0，pc_reg 保持
     pc_reg #(DATAWIDTH, RESET_VAL) u_pc (
         .clk    (clk        ),
         .rst    (rst        ),
@@ -174,11 +174,14 @@ module mycpu_if_stage #(
         .pc_out (IF_pc      )
     );
 
-    // 把 pc_reg 当作取指地址送给 IROM；IROM 当周期吐出的数据即为指令
-    assign irom_addr  = IF_pc;
-    assign irom_addr1 = IF_pc + 32'd4;
-    assign IF_instr   = irom_data;
-    assign IF_instr1  = irom_data1;
+    // 同步 IROM 在上升沿采样地址。流水前进时请求下一项，使沿后的 BRAM
+    // 返回值与同时更新的 IF_pc 对齐；停顿时重新请求当前项并保持返回稳定。
+    assign irom_addr  = rst ? RESET_VAL :
+                        Stall ? IF_pc : IF_next_pc;
+    assign irom_addr1 = rst ? (RESET_VAL + 32'd4) :
+                        Stall ? IF_pc_plus4 : IF_next_pc_plus4;
+    assign IF_instr  = irom_data;
+    assign IF_instr1 = irom_data1;
 endmodule
 
 module branch_predictor #(

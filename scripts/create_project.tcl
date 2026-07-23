@@ -109,22 +109,42 @@ proc create_irom_ip {project_dir project_name repo_root} {
     file delete -force $irom_ip_dir
     file mkdir $irom_ip_dir
 
-    create_ip -name dist_mem_gen -vendor xilinx.com -library ip -version 8.0 \
+    create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 \
         -module_name IROM -dir $irom_ip_dir
 
     set irom_ip [get_ips IROM]
     set_property -dict [list \
         CONFIG.Component_Name {IROM} \
-        CONFIG.depth {4096} \
-        CONFIG.data_width {32} \
-        CONFIG.memory_type {rom} \
-        CONFIG.input_options {non_registered} \
-        CONFIG.output_options {non_registered} \
-        CONFIG.Pipeline_Stages {0} \
-        CONFIG.coefficient_file $irom_coe \
-        CONFIG.default_data_radix {16} \
-        CONFIG.default_data {0} \
+        CONFIG.Interface_Type {Native} \
+        CONFIG.Memory_Type {Dual_Port_ROM} \
+        CONFIG.PRIM_type_to_Implement {BRAM} \
+        CONFIG.Assume_Synchronous_Clk {true} \
+        CONFIG.Write_Width_A {32} \
+        CONFIG.Write_Depth_A {4096} \
+        CONFIG.Read_Width_A {32} \
+        CONFIG.Read_Width_B {32} \
+        CONFIG.Enable_A {Use_ENA_Pin} \
+        CONFIG.Enable_B {Use_ENB_Pin} \
+        CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
+        CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
+        CONFIG.Register_PortA_Output_of_Memory_Core {false} \
+        CONFIG.Register_PortB_Output_of_Memory_Core {false} \
+        CONFIG.Load_Init_File {true} \
+        CONFIG.Coe_File $irom_coe \
+        CONFIG.Port_A_Clock {240} \
+        CONFIG.Port_B_Clock {240} \
+        CONFIG.Fill_Remaining_Memory_Locations {true} \
+        CONFIG.Remaining_Memory_Locations {0} \
+        CONFIG.Use_RSTA_Pin {false} \
+        CONFIG.Use_RSTB_Pin {false} \
     ] $irom_ip
+
+    set irom_xci_path [string map {\\ /} [file join $irom_ip_dir IROM IROM.xci]]
+    set irom_xci [get_files -quiet -all $irom_xci_path]
+    if {[llength $irom_xci] == 0} {
+        error "IROM XCI not found after create_ip"
+    }
+    set_property GENERATE_SYNTH_CHECKPOINT false $irom_xci
 }
 
 proc create_bram_ip {project_dir project_name repo_root} {

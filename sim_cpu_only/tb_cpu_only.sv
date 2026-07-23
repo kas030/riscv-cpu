@@ -111,10 +111,10 @@ module tb_cpu_only;
         rst = 1'b0;
     end
 
-    always_comb begin
-        // student_top.sv 使用 pc[13:2] 访问 IROM，这里保持同样的高位忽略语义。
-        irom_data = irom[irom_addr[13:2]];
-        irom_data1 = irom[irom_addr1[13:2]];
+    always_ff @(posedge clk) begin
+        // 与 blk_mem_gen IROM 的一拍同步读一致，高位 PC 仍按 student_top 忽略。
+        irom_data  <= irom[irom_addr[13:2]];
+        irom_data1 <= irom[irom_addr1[13:2]];
     end
 
     function automatic [31:0] select_load_word(input [31:0] word, input [1:0] mask, input [1:0] offset);

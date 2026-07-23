@@ -7,6 +7,7 @@
 
 ```sh
 vivado -mode batch -source scripts/create_project.tcl
+vivado -mode batch -source scripts/recreate_irom_ip.tcl
 vivado -mode batch -source scripts/recreate_bram_ip.tcl
 vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU
 vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
@@ -16,8 +17,9 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 
 - `create_project.tcl`
   - 从仓库源码重新创建 `vivado/digital_twin.xpr`。
-  - 导入 RTL、约束、COE/MIF 文件，以及 `ip/IROM`、`ip/BRAM`、`ip/pll`
-    下已有的 XCI IP 文件。
+  - 导入 RTL、约束和 COE/MIF 文件，并显式创建 `IROM`、`BRAM` 和 `pll`
+    三个 IP。
+  - IROM 创建为双端口 `blk_mem_gen` ROM，不再使用旧 `dist_mem_gen` 配置。
   - 创建后会对所有 XCI 执行 `generate_target all`。
 
 - `recreate_bram_ip.tcl`
@@ -29,6 +31,13 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
   - 适用于综合报旧 `BRAM_stub.v` 端口不匹配，例如 RTL 连接了
     `clka/ena/wea/addra/douta/clkb/enb/web/addrb/dinb`，但 Vivado 仍看到
     旧 `clk/a/d/we/spo` 端口。
+
+- `recreate_irom_ip.tcl`
+  - 删除工程中的旧 `dist_mem_gen` IROM，并用同名 `blk_mem_gen 8.4`
+    重建为 4096×32 双端口 ROM。
+  - A/B 端口均为一拍同步读，分别服务 `PC` 和 `PC+4`。
+  - 使用 `sim/coe/mext/irom-v2.coe` 初始化并生成新的 output products。
+  - 适用于已经由旧脚本创建的工程，无需再次完整重建工程。
 
 - `run_sim.tcl`
   - 运行 XSim 行为仿真。
