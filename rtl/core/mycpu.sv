@@ -65,7 +65,7 @@ module mycpu (
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
-    logic        MEM_store_valid, MEM_store_word;
+    logic        MEM_store_valid;
     logic [31:0] MEM_store_addr, MEM_store_data;
     logic        MEM_bram_load;
     logic        EX_cache_probe_hit, EX_cache_ready0, EX_cache_ready1;
@@ -78,11 +78,14 @@ module mycpu (
     logic [31:0] MEM_cache_lookup_addr;
     logic        MEM_cache_hit_raw, EX_cache_probe_hit_raw;
     logic [31:0] MEM_cache_data_raw, EX_cache_probe_data_raw;
-    logic [3:0]  store_bypass_valid_q;
-    logic [13:0] store_bypass_tag_q [0:3];
-    logic [31:0] store_bypass_data_q [0:3];
+    logic [3:0]  store_bypass_byte_valid_q [0:7];
+    logic [12:0] store_bypass_tag_q [0:7];
+    logic [31:0] store_bypass_data_q [0:7];
     logic        EX_store_bypass_hit;
     logic [31:0] MEM_store_bypass_data;
+    logic [2:0]  MEM_store_funct3;
+    logic [3:0]  MEM_store_byte_mask, MEM_load_byte_mask, EX_load_byte_mask;
+    logic [31:0] MEM_store_aligned_data;
     logic        LoadUseEX, LoadUseMEM, LoadUseMEM_base;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
@@ -109,6 +112,35 @@ module mycpu (
                 2'b01: select_load_raw = offset[1] ? {16'b0, word[31:16]} :
                                                     {16'b0, word[15:0]};
                 default: select_load_raw = word;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [3:0] access_byte_mask(
+        input logic [2:0] funct3,
+        input logic [1:0] offset
+    );
+        begin
+            case (funct3[1:0])
+                2'b00: access_byte_mask = 4'b0001 << offset;
+                2'b01: access_byte_mask = offset[1] ? 4'b1100 : 4'b0011;
+                default: access_byte_mask = 4'b1111;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [31:0] align_store_data(
+        input logic [31:0] data,
+        input logic [2:0]  funct3,
+        input logic [1:0]  offset
+    );
+        begin
+            case (funct3[1:0])
+                2'b00: align_store_data = {24'b0, data[7:0]}
+                                                << {offset, 3'b000};
+                2'b01: align_store_data = offset[1] ? {data[15:0], 16'b0} :
+                                                      {16'b0, data[15:0]};
+                default: align_store_data = data;
             endcase
         end
     endfunction
@@ -511,19 +543,31 @@ module mycpu (
     assign MEM_store_addr     = MEM_MemWrite ? MEM_perip_bus_addr :
                                                MEM_S1_perip_bus_addr;
     assign MEM_store_data     = MEM_MemWrite ? MEM_rR2_data : MEM_S1_rR2_data;
+    assign MEM_store_funct3   = MEM_MemWrite ? MEM_funct3 : MEM_S1_funct3;
     assign MEM_store_valid    = ((MEM_MemWrite && MEM_bram_access) ||
                                  (MEM_S1_MemWrite && MEM_S1_bram_access));
-    assign MEM_store_word     = MEM_store_valid &&
-                                (MEM_MemWrite ? (MEM_funct3 == 3'b010) :
-                                                (MEM_S1_funct3 == 3'b010));
     assign MEM_cache_hit0 = MEM_MemRead && MEM_bram_access && MEM_cache_hit;
     assign MEM_cache_hit1 = MEM_S1_MemRead && MEM_S1_bram_access && MEM_cache_hit;
+    assign MEM_store_byte_mask = access_byte_mask(MEM_store_funct3,
+                                                   MEM_store_addr[1:0]);
+    assign MEM_store_aligned_data = align_store_data(MEM_store_data,
+                                                      MEM_store_funct3,
+                                                      MEM_store_addr[1:0]);
+    assign MEM_load_byte_mask = access_byte_mask(
+        MEM_S1_MemRead ? MEM_S1_funct3 : MEM_funct3,
+        MEM_cache_lookup_addr[1:0]
+    );
+    assign EX_load_byte_mask = access_byte_mask(
+        EX_MemRead_eff ? EX_funct3 : EX_S1_funct3,
+        EX_cache_probe_addr[1:0]
+    );
     assign MEM_store_bypass_hit =
-        store_bypass_valid_q[MEM_cache_lookup_addr[3:2]] &&
-        (store_bypass_tag_q[MEM_cache_lookup_addr[3:2]] ==
-         MEM_cache_lookup_addr[17:4]);
+        (store_bypass_tag_q[MEM_cache_lookup_addr[4:2]] ==
+         MEM_cache_lookup_addr[17:5]) &&
+        ((store_bypass_byte_valid_q[MEM_cache_lookup_addr[4:2]] &
+          MEM_load_byte_mask) == MEM_load_byte_mask);
     assign MEM_store_bypass_data =
-        store_bypass_data_q[MEM_cache_lookup_addr[3:2]];
+        store_bypass_data_q[MEM_cache_lookup_addr[4:2]];
     assign MEM_lookup_ready0 = MEM_MemRead && MEM_bram_access &&
                                (MEM_cache_hit || MEM_store_bypass_hit);
     assign MEM_lookup_ready1 = MEM_S1_MemRead && MEM_S1_bram_access &&
@@ -1148,40 +1192,53 @@ module mycpu (
         end
     end
 
-    // 四项直接映射 store buffer 覆盖 O0 代码最常见的四个相邻栈槽。
-    // 完整字 store 可被后续 load 直接读取；部分 store 失效对应项。
+    // 八项直接映射 store buffer 覆盖 O0 代码常见的相邻栈槽。每项独立
+    // 记录四个字节的有效性，使 sb/sh 后的同范围 load 也可直接旁路。
     integer store_bypass_i;
+    integer store_byte_i;
     always_ff @(posedge clk) begin
         if (rst) begin
-            store_bypass_valid_q <= 4'b0;
-            for (store_bypass_i = 0; store_bypass_i < 4;
+            for (store_bypass_i = 0; store_bypass_i < 8;
                  store_bypass_i = store_bypass_i + 1) begin
+                store_bypass_byte_valid_q[store_bypass_i] = 4'b0;
                 store_bypass_tag_q[store_bypass_i] = '0;
                 store_bypass_data_q[store_bypass_i] = '0;
             end
         end else if (MEM_store_valid) begin
-            if (MEM_store_word) begin
-                store_bypass_valid_q[MEM_store_addr[3:2]] <= 1'b1;
-                store_bypass_tag_q[MEM_store_addr[3:2]] <= MEM_store_addr[17:4];
-                store_bypass_data_q[MEM_store_addr[3:2]] <= MEM_store_data;
-            end else if (store_bypass_valid_q[MEM_store_addr[3:2]] &&
-                         (store_bypass_tag_q[MEM_store_addr[3:2]] ==
-                          MEM_store_addr[17:4])) begin
-                store_bypass_valid_q[MEM_store_addr[3:2]] <= 1'b0;
+            if (store_bypass_tag_q[MEM_store_addr[4:2]] !=
+                MEM_store_addr[17:5]) begin
+                store_bypass_byte_valid_q[MEM_store_addr[4:2]] <=
+                    MEM_store_byte_mask;
+                store_bypass_tag_q[MEM_store_addr[4:2]] <= MEM_store_addr[17:5];
+                store_bypass_data_q[MEM_store_addr[4:2]] <= MEM_store_aligned_data;
+            end else begin
+                store_bypass_byte_valid_q[MEM_store_addr[4:2]] <=
+                    store_bypass_byte_valid_q[MEM_store_addr[4:2]] |
+                    MEM_store_byte_mask;
+                for (store_byte_i = 0; store_byte_i < 4;
+                     store_byte_i = store_byte_i + 1) begin
+                    if (MEM_store_byte_mask[store_byte_i]) begin
+                        store_bypass_data_q[MEM_store_addr[4:2]]
+                                           [store_byte_i*8 +: 8] <=
+                            MEM_store_aligned_data[store_byte_i*8 +: 8];
+                    end
+                end
             end
         end
     end
 
     always_comb begin
         EX_store_bypass_hit =
-            store_bypass_valid_q[EX_cache_probe_addr[3:2]] &&
-            (store_bypass_tag_q[EX_cache_probe_addr[3:2]] ==
-             EX_cache_probe_addr[17:4]);
+            (store_bypass_tag_q[EX_cache_probe_addr[4:2]] ==
+             EX_cache_probe_addr[17:5]) &&
+            ((store_bypass_byte_valid_q[EX_cache_probe_addr[4:2]] &
+              EX_load_byte_mask) == EX_load_byte_mask);
         // 当前 MEM store 比寄存的上一项更新。完整字可直接旁路；同字的
-        // byte/half store 必须屏蔽旧完整字。
+        // byte/half store 仅在覆盖 load 所需全部字节时直接旁路。
         if (MEM_store_valid &&
             (MEM_store_addr[17:2] == EX_cache_probe_addr[17:2])) begin
-            EX_store_bypass_hit = MEM_store_word;
+            EX_store_bypass_hit =
+                ((MEM_store_byte_mask & EX_load_byte_mask) == EX_load_byte_mask);
         end
     end
 
@@ -1202,16 +1259,18 @@ module mycpu (
                                    EX_cache_probe_addr[17:2]);
             EX_cache_probe_data = MEM_cache_fill_q_data;
         end
-        if (store_bypass_valid_q[EX_cache_probe_addr[3:2]] &&
-            (store_bypass_tag_q[EX_cache_probe_addr[3:2]] ==
-             EX_cache_probe_addr[17:4])) begin
+        if ((store_bypass_tag_q[EX_cache_probe_addr[4:2]] ==
+             EX_cache_probe_addr[17:5]) &&
+            ((store_bypass_byte_valid_q[EX_cache_probe_addr[4:2]] &
+              EX_load_byte_mask) == EX_load_byte_mask)) begin
             EX_cache_probe_hit  = 1'b1;
-            EX_cache_probe_data = store_bypass_data_q[EX_cache_probe_addr[3:2]];
+            EX_cache_probe_data = store_bypass_data_q[EX_cache_probe_addr[4:2]];
         end
         if (MEM_store_valid &&
             (MEM_store_addr[17:2] == EX_cache_probe_addr[17:2])) begin
-            EX_cache_probe_hit  = MEM_store_word;
-            EX_cache_probe_data = MEM_store_data;
+            EX_cache_probe_hit =
+                ((MEM_store_byte_mask & EX_load_byte_mask) == EX_load_byte_mask);
+            EX_cache_probe_data = MEM_store_aligned_data;
         end
     end
 
