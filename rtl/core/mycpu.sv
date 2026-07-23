@@ -522,8 +522,14 @@ module mycpu (
                                (MEM_cache_hit || MEM_store_bypass_hit);
     assign MEM_lookup_ready1 = MEM_S1_MemRead && MEM_S1_bram_access &&
                                (MEM_cache_hit || MEM_store_bypass_hit);
-    assign MEM_load_ready0 = MEM_early_cache_hit0 || MEM_lookup_ready0;
-    assign MEM_load_ready1 = MEM_early_cache_hit1 || MEM_lookup_ready1;
+    // hazard 已单独检查 MEM_MemRead；LoadReady 只需保留地址范围和命中，
+    // 避免同一 MemRead 控制重复串入 L0 返回路径。
+    assign MEM_load_ready0 = MEM_early_cache_hit0 ||
+                             (MEM_bram_access &&
+                              (MEM_cache_hit || MEM_store_bypass_hit));
+    assign MEM_load_ready1 = MEM_early_cache_hit1 ||
+                             (MEM_S1_bram_access &&
+                              (MEM_cache_hit || MEM_store_bypass_hit));
     assign Flush_EX_MEM       = redirect_valid_q;
 
     // redirect/flush 打拍提交：
@@ -1094,8 +1100,9 @@ module mycpu (
 
     // 64 项 BRAM load 结果缓存。外部访问保持不变；EX 提前探测命中时允许
     // 下一拍从 MEM1 前递，miss 仍沿原 BRAM→WB 路径返回。
-    assign MEM_cache_lookup_addr = MEM_use_s1_bus ? MEM_S1_perip_bus_addr :
-                                                     MEM_perip_bus_addr;
+    // L0 lookup 只服务 load；无需经过包含 store 的通用总线 lane 选择。
+    assign MEM_cache_lookup_addr = MEM_S1_MemRead ? MEM_S1_perip_bus_addr :
+                                                    MEM_perip_bus_addr;
 
     load_l0_cache #(.INDEX_WIDTH(6)) u_load_l0_cache (
         .clk          (clk),
