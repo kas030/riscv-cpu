@@ -61,16 +61,16 @@ cover: assets/cover.pdf
 
 设计已覆盖比赛基础考核涉及的 37 条 RV32I 指令。`fence` 和 `ebreak` 不属于这 37 条指令，`ecall` 则由机器模式 trap 通路处理。
 
-| 类别 | 指令 | 数量 |
-| --- | --- | ---: |
-| 高位立即数 | `lui`、`auipc` | 2 |
-| 跳转 | `jal`、`jalr` | 2 |
-| 条件分支 | `beq`、`bne`、`blt`、`bge`、`bltu`、`bgeu` | 6 |
-| Load | `lb`、`lh`、`lw`、`lbu`、`lhu` | 5 |
-| Store | `sb`、`sh`、`sw` | 3 |
-| 立即数运算 | `addi`、`slti`、`sltiu`、`xori`、`ori`、`andi`、`slli`、`srli`、`srai` | 9 |
-| 寄存器运算 | `add`、`sub`、`sll`、`slt`、`sltu`、`xor`、`srl`、`sra`、`or`、`and` | 10 |
-| 合计 |  | **37** |
+| 类别       | 指令                                                                   |   数量 |
+| ---------- | ---------------------------------------------------------------------- | -----: |
+| 高位立即数 | `lui`、`auipc`                                                         |      2 |
+| 跳转       | `jal`、`jalr`                                                          |      2 |
+| 条件分支   | `beq`、`bne`、`blt`、`bge`、`bltu`、`bgeu`                             |      6 |
+| Load       | `lb`、`lh`、`lw`、`lbu`、`lhu`                                         |      5 |
+| Store      | `sb`、`sh`、`sw`                                                       |      3 |
+| 立即数运算 | `addi`、`slti`、`sltiu`、`xori`、`ori`、`andi`、`slli`、`srli`、`srai` |      9 |
+| 寄存器运算 | `add`、`sub`、`sll`、`slt`、`sltu`、`xor`、`srl`、`sra`、`or`、`and`   |     10 |
+| 合计       |                                                                        | **37** |
 
 Table: RV32I 基础指令支持范围
 
@@ -86,15 +86,15 @@ CPU 核对外提供两组独立的 32 位只读取指接口。第一路读取当
 
 数据侧只有一组 32 位统一接口，包含地址、写数据、读数据、写使能和访问宽度控制。`perip_bridge` 依据地址将请求送往同步 BRAM 或 MMIO 外设；BRAM 读数据按流水时序返回，MMIO 读取使用独立的数据返回路径。当前地址映射如下。
 
-| 访问目标 | 地址范围或地址 | 接口属性 |
-| --- | --- | --- |
-| BRAM | `0x8010_0000`--`0x8013_FFFF` | 256 KiB 数据存储器，支持 byte、half 和 word 访问 |
-| SW0 | `0x8020_0000` | 低 32 位虚拟开关，只读 |
-| SW1 | `0x8020_0004` | 高 32 位虚拟开关，只读 |
-| KEY | `0x8020_0010` | 8 位虚拟按键，只读 |
-| SEG | `0x8020_0020` | 40 位数码管输出寄存器 |
-| LED | `0x8020_0040` | 32 位 LED 输出寄存器 |
-| COUNTER | `0x8020_0050` | 50 MHz 跨时钟域性能计数器 |
+| 访问目标 | 地址范围或地址               | 接口属性                                         |
+| -------- | ---------------------------- | ------------------------------------------------ |
+| BRAM     | `0x8010_0000`--`0x8013_FFFF` | 256 KiB 数据存储器，支持 byte、half 和 word 访问 |
+| SW0      | `0x8020_0000`                | 低 32 位虚拟开关，只读                           |
+| SW1      | `0x8020_0004`                | 高 32 位虚拟开关，只读                           |
+| KEY      | `0x8020_0010`                | 8 位虚拟按键，只读                               |
+| SEG      | `0x8020_0020`                | 40 位数码管输出寄存器                            |
+| LED      | `0x8020_0040`                | 32 位 LED 输出寄存器                             |
+| COUNTER  | `0x8020_0050`                | 50 MHz 跨时钟域性能计数器                        |
 
 Table: CPU 子系统地址映射
 
@@ -144,17 +144,17 @@ CPU 数据侧只有一个端口，因此同一发射包最多包含一条 load/s
 
 ## 主要数据通路选择
 
-| 指令类型 | ALU 输入 A | ALU 输入 B | 运算或地址路径 | 下一 PC | 写回数据 |
-| --- | --- | --- | --- | --- | --- |
-| R 型 | `rs1` | `rs2` | ALU | `pc+4/pc+8` | ALU 结果 |
-| I 型算术 | `rs1` | I 型立即数 | ALU | `pc+4/pc+8` | ALU 结果 |
-| Load | `rs1` | I 型立即数 | LSU 地址加法器 | `pc+4/pc+8` | Load 扩展结果 |
-| Store | `rs1` | S 型立即数 | LSU 地址加法器 | `pc+4/pc+8` | 无 |
-| Branch | `rs1` | `rs2` | 分支比较器 | 预测地址或 EX 重定向 | 无 |
-| `jal` | PC | J 型立即数 | 跳转目标加法 | 预测目标 | `pc+4` |
-| `jalr` | `rs1` | I 型立即数 | ALU 加法并清除 bit 0 | EX 重定向 | `pc+4` |
-| `lui` | 0 | U 型立即数 | 立即数直通 | `pc+4/pc+8` | U 型立即数 |
-| `auipc` | PC | U 型立即数 | ALU 加法 | `pc+4/pc+8` | ALU 结果 |
+| 指令类型 | ALU 输入 A | ALU 输入 B | 运算或地址路径       | 下一 PC              | 写回数据      |
+| -------- | ---------- | ---------- | -------------------- | -------------------- | ------------- |
+| R 型     | `rs1`      | `rs2`      | ALU                  | `pc+4/pc+8`          | ALU 结果      |
+| I 型算术 | `rs1`      | I 型立即数 | ALU                  | `pc+4/pc+8`          | ALU 结果      |
+| Load     | `rs1`      | I 型立即数 | LSU 地址加法器       | `pc+4/pc+8`          | Load 扩展结果 |
+| Store    | `rs1`      | S 型立即数 | LSU 地址加法器       | `pc+4/pc+8`          | 无            |
+| Branch   | `rs1`      | `rs2`      | 分支比较器           | 预测地址或 EX 重定向 | 无            |
+| `jal`    | PC         | J 型立即数 | 跳转目标加法         | 预测目标             | `pc+4`        |
+| `jalr`   | `rs1`      | I 型立即数 | ALU 加法并清除 bit 0 | EX 重定向            | `pc+4`        |
+| `lui`    | 0          | U 型立即数 | 立即数直通           | `pc+4/pc+8`          | U 型立即数    |
+| `auipc`  | PC         | U 型立即数 | ALU 加法             | `pc+4/pc+8`          | ALU 结果      |
 
 Table: RV32I 各类指令的数据通路选择
 
@@ -164,35 +164,35 @@ Table: RV32I 各类指令的数据通路选择
 
 ### 控制信号表
 
-| 指令类型 | `NpcOp` | `RegWrite` | `MemToReg` |
-| --- | --- | ---: | --- |
-| R 型/RV32M | `00` | 1 | `001` |
-| I 型算术 | `00` | 1 | `001` |
-| Load | `00` | 1 | `010` |
-| Store | `00` | 0 | `000` |
-| Branch | `01` | 0 | `000` |
-| `jal` | `11` | 1 | `000` |
-| `jalr` | `10` | 1 | `000` |
-| `lui` | `00` | 1 | `011` |
-| `auipc` | `00` | 1 | `001` |
-| Zicsr | `00` | 1 | `100` |
-| `ecall/mret` | `10` | 0 | `000` |
+| 指令类型     | `NpcOp` | `RegWrite` | `MemToReg` |
+| ------------ | ------- | ---------: | ---------- |
+| R 型/RV32M   | `00`    |          1 | `001`      |
+| I 型算术     | `00`    |          1 | `001`      |
+| Load         | `00`    |          1 | `010`      |
+| Store        | `00`    |          0 | `000`      |
+| Branch       | `01`    |          0 | `000`      |
+| `jal`        | `11`    |          1 | `000`      |
+| `jalr`       | `10`    |          1 | `000`      |
+| `lui`        | `00`    |          1 | `011`      |
+| `auipc`      | `00`    |          1 | `001`      |
+| Zicsr        | `00`    |          1 | `100`      |
+| `ecall/mret` | `10`    |          0 | `000`      |
 
 Table: 控制流与写回控制信号
 
-| 指令类型 | `MemRead` | `MemWrite` | `ALUSrcA` | `ALUSrcB` |
-| --- | ---: | ---: | ---: | ---: |
-| R 型/RV32M | 0 | 0 | 0 | 0 |
-| I 型算术 | 0 | 0 | 0 | 1 |
-| Load | 1 | 0 | 0 | 1 |
-| Store | 0 | 1 | 0 | 1 |
-| Branch | 0 | 0 | 0 | 0 |
-| `jal` | 0 | 0 | 0 | 1 |
-| `jalr` | 0 | 0 | 0 | 1 |
-| `lui` | 0 | 0 | 0 | 1 |
-| `auipc` | 0 | 0 | 1 | 1 |
-| Zicsr | 0 | 0 | 0 | 1 |
-| `ecall/mret` | 0 | 0 | 0 | 1 |
+| 指令类型     | `MemRead` | `MemWrite` | `ALUSrcA` | `ALUSrcB` |
+| ------------ | --------: | ---------: | --------: | --------: |
+| R 型/RV32M   |         0 |          0 |         0 |         0 |
+| I 型算术     |         0 |          0 |         0 |         1 |
+| Load         |         1 |          0 |         0 |         1 |
+| Store        |         0 |          1 |         0 |         1 |
+| Branch       |         0 |          0 |         0 |         0 |
+| `jal`        |         0 |          0 |         0 |         1 |
+| `jalr`       |         0 |          0 |         0 |         1 |
+| `lui`        |         0 |          0 |         0 |         1 |
+| `auipc`      |         0 |          0 |         1 |         1 |
+| Zicsr        |         0 |          0 |         0 |         1 |
+| `ecall/mret` |         0 |          0 |         0 |         1 |
 
 Table: 访存与 ALU 输入控制信号
 
@@ -222,15 +222,15 @@ Table: 访存与 ALU 输入控制信号
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| cpu_clk, cpu_rst | input | CPU 主时钟与高有效复位 |
-| irom_addr, irom_addr1 | output | 两路 32 位取指地址 |
-| irom_data, irom_data1 | input | 两路 32 位 IROM 指令数据 |
-| perip_addr | output | 32 位 BRAM/MMIO 统一地址 |
-| perip_wen, perip_mask | output | 写使能与 2 位访问宽度 |
-| perip_wdata | output | 32 位写数据 |
-| perip_rdata | input | 32 位读返回 |
+| 端口名                | 类型   | 描述                     |
+| --------------------- | ------ | ------------------------ |
+| cpu_clk, cpu_rst      | input  | CPU 主时钟与高有效复位   |
+| irom_addr, irom_addr1 | output | 两路 32 位取指地址       |
+| irom_data, irom_data1 | input  | 两路 32 位 IROM 指令数据 |
+| perip_addr            | output | 32 位 BRAM/MMIO 统一地址 |
+| perip_wen, perip_mask | output | 写使能与 2 位访问宽度    |
+| perip_wdata           | output | 32 位写数据              |
+| perip_rdata           | input  | 32 位读返回              |
 
 Table: mycpu 接口描述
 
@@ -240,19 +240,19 @@ Table: mycpu 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| irom_data, irom_data1 | input | 两路 32 位返回指令 |
-| IF_npc_redirect | input | 32 位 EX 纠错目标 |
-| clk, rst | input | 时钟与高有效复位 |
-| Stall, BranchRedirect | input | 前端冻结与重定向有效 |
-| BP_update_en, BP_update_taken | input | 预测器更新使能与实际方向 |
-| BP_update_pc | input | 32 位已解析分支 PC |
-| irom_addr, irom_addr1 | output | 两路 32 位取指地址 |
-| IF_pc | output | 32 位当前 PC |
-| IF_instr, IF_instr1 | output | 取指包的两条指令 |
-| IF_issue_dual | output | 双发射提示 |
-| IF_pred_taken, IF_pred_target | output | 预测方向与 32 位目标 |
+| 端口名                        | 类型   | 描述                     |
+| ----------------------------- | ------ | ------------------------ |
+| irom_data, irom_data1         | input  | 两路 32 位返回指令       |
+| IF_npc_redirect               | input  | 32 位 EX 纠错目标        |
+| clk, rst                      | input  | 时钟与高有效复位         |
+| Stall, BranchRedirect         | input  | 前端冻结与重定向有效     |
+| BP_update_en, BP_update_taken | input  | 预测器更新使能与实际方向 |
+| BP_update_pc                  | input  | 32 位已解析分支 PC       |
+| irom_addr, irom_addr1         | output | 两路 32 位取指地址       |
+| IF_pc                         | output | 32 位当前 PC             |
+| IF_instr, IF_instr1           | output | 取指包的两条指令         |
+| IF_issue_dual                 | output | 双发射提示               |
+| IF_pred_taken, IF_pred_target | output | 预测方向与 32 位目标     |
 
 Table: mycpu_if_stage 接口描述
 
@@ -262,19 +262,19 @@ Table: mycpu_if_stage 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| ID_instr | input | 32 位 ID 指令 |
-| ID_imm | output | 32 位扩展立即数 |
-| ID_RegWrite | output | 寄存器写使能 |
-| ID_MemWrite, ID_MemRead | output | store/load 控制 |
-| ID_ALUSrcA, ID_ALUSrcB | output | ALU 输入来源 |
-| ID_MemToReg | output | 3 位写回来源 |
+| 端口名                    | 类型   | 描述                |
+| ------------------------- | ------ | ------------------- |
+| ID_instr                  | input  | 32 位 ID 指令       |
+| ID_imm                    | output | 32 位扩展立即数     |
+| ID_RegWrite               | output | 寄存器写使能        |
+| ID_MemWrite, ID_MemRead   | output | store/load 控制     |
+| ID_ALUSrcA, ID_ALUSrcB    | output | ALU 输入来源        |
+| ID_MemToReg               | output | 3 位写回来源        |
 | ID_NpcOp, ID_OffsetOrigin | output | 两组 2 位控制流控制 |
-| ID_ALUControl | output | 22 位运算独热码 |
-| ID_csr_idx, ID_csr_zimm | output | CSR 地址与立即数 |
-| ID_CSRControll | output | 6 位 CSR/系统控制 |
-| ID_rs1, ID_rs2, ID_rd | output | 三组 5 位寄存器索引 |
+| ID_ALUControl             | output | 22 位运算独热码     |
+| ID_csr_idx, ID_csr_zimm   | output | CSR 地址与立即数    |
+| ID_CSRControll            | output | 6 位 CSR/系统控制   |
+| ID_rs1, ID_rs2, ID_rd     | output | 三组 5 位寄存器索引 |
 
 Table: mycpu_id_stage 接口描述
 
@@ -284,25 +284,25 @@ Table: mycpu_id_stage 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| EX_pc, EX_imm | input | 32 位 PC 与立即数 |
-| EX_rR1_data, EX_rR2_data | input | 两个 32 位原始操作数 |
-| EX_ALUControl | input | 22 位运算控制 |
-| EX_NpcOp, EX_OffsetOrigin | input | 控制流与目标来源控制 |
-| EX_csr_idx, EX_csr_zimm | input | CSR 地址与 5 位立即数 |
-| EX_CSRControll | input | 6 位 CSR/系统控制 |
-| ForwardAData, ForwardBData | input | 两个 32 位已选前递值 |
-| EX_ALUSrcA, EX_ALUSrcB | input | ALU 输入来源选择 |
-| EX_pred_taken, EX_pred_target | input | 预测方向与目标 |
-| EX_stall, EX_kill | input | 多周期保持与失效屏蔽 |
-| IF_npc_redirect_raw | output | 32 位实际下一 PC |
-| EX_alu_result | output | 32 位 ALU/RV32M 结果 |
-| EX_mem_addr | output | 32 位访存地址 |
-| EX_forward_B_out | output | 32 位前递后 rs2 |
-| EX_csr_wb | output | 32 位 CSR 旧值 |
-| BranchTaken, BranchMispredict | output | 实际转移与误预测标志 |
-| EX_busy | output | RV32M 未完成标志 |
+| 端口名                        | 类型   | 描述                  |
+| ----------------------------- | ------ | --------------------- |
+| EX_pc, EX_imm                 | input  | 32 位 PC 与立即数     |
+| EX_rR1_data, EX_rR2_data      | input  | 两个 32 位原始操作数  |
+| EX_ALUControl                 | input  | 22 位运算控制         |
+| EX_NpcOp, EX_OffsetOrigin     | input  | 控制流与目标来源控制  |
+| EX_csr_idx, EX_csr_zimm       | input  | CSR 地址与 5 位立即数 |
+| EX_CSRControll                | input  | 6 位 CSR/系统控制     |
+| ForwardAData, ForwardBData    | input  | 两个 32 位已选前递值  |
+| EX_ALUSrcA, EX_ALUSrcB        | input  | ALU 输入来源选择      |
+| EX_pred_taken, EX_pred_target | input  | 预测方向与目标        |
+| EX_stall, EX_kill             | input  | 多周期保持与失效屏蔽  |
+| IF_npc_redirect_raw           | output | 32 位实际下一 PC      |
+| EX_alu_result                 | output | 32 位 ALU/RV32M 结果  |
+| EX_mem_addr                   | output | 32 位访存地址         |
+| EX_forward_B_out              | output | 32 位前递后 rs2       |
+| EX_csr_wb                     | output | 32 位 CSR 旧值        |
+| BranchTaken, BranchMispredict | output | 实际转移与误预测标志  |
+| EX_busy                       | output | RV32M 未完成标志      |
 
 Table: mycpu_ex_stage 接口描述
 
@@ -314,12 +314,12 @@ Table: mycpu_ex_stage 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| A, B | input | 两个 32 位操作数 |
-| ALUControl | input | 22 位独热码，本模块使用低 14 位 |
-| Result | output | 32 位运算结果 |
-| isTrue | output | 分支条件布尔结果 |
+| 端口名     | 类型   | 描述                            |
+| ---------- | ------ | ------------------------------- |
+| A, B       | input  | 两个 32 位操作数                |
+| ALUControl | input  | 22 位独热码，本模块使用低 14 位 |
+| Result     | output | 32 位运算结果                   |
+| isTrue     | output | 分支条件布尔结果                |
 
 Table: alu 接口描述
 
@@ -329,15 +329,15 @@ Table: alu 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| clk, rst | input | 时钟与高有效同步复位 |
-| start | input | 运算启动脉冲 |
-| alu_control | input | 22 位独热码，使用高 8 位 |
-| operand_a, operand_b | input | 两个 32 位操作数 |
-| busy | output | 正在执行标志 |
-| done | output | 结果完成脉冲 |
-| result | output | 32 位结果 |
+| 端口名               | 类型   | 描述                     |
+| -------------------- | ------ | ------------------------ |
+| clk, rst             | input  | 时钟与高有效同步复位     |
+| start                | input  | 运算启动脉冲             |
+| alu_control          | input  | 22 位独热码，使用高 8 位 |
+| operand_a, operand_b | input  | 两个 32 位操作数         |
+| busy                 | output | 正在执行标志             |
+| done                 | output | 结果完成脉冲             |
+| result               | output | 32 位结果                |
 
 Table: rv32m_unit 接口描述
 
@@ -349,20 +349,20 @@ Table: rv32m_unit 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| ID_EX_rs1, ID_EX_rs2 | input | 两个 5 位源寄存器 |
-| ID_EX_data1, ID_EX_data2 | input | 两个 32 位原始值 |
-| EX_MEM_rd0, EX_MEM_rd1 | input | MEM1 两槽目的寄存器 |
-| EX_MEM_valid0, EX_MEM_valid1 | input | MEM1 两槽前递有效 |
-| MEM2_rd0, MEM2_rd1 | input | MEM2 两槽目的寄存器 |
-| MEM2_valid0, MEM2_valid1 | input | MEM2 两槽前递有效 |
-| MEM_WB_rd0, MEM_WB_rd1 | input | WB 两槽目的寄存器 |
-| MEM_WB_valid0, MEM_WB_valid1 | input | WB 两槽前递有效 |
-| EX_MEM_data0/1, MEM2_data0/1 | input | MEM1、MEM2 两槽候选数据 |
-| MEM_WB_data0, MEM_WB_data1 | input | WB 两槽候选数据 |
-| ForwardA, ForwardB | output | 两组 3 位来源编码 |
-| ForwardAData, ForwardBData | output | 两个 32 位最终操作数 |
+| 端口名                       | 类型   | 描述                    |
+| ---------------------------- | ------ | ----------------------- |
+| ID_EX_rs1, ID_EX_rs2         | input  | 两个 5 位源寄存器       |
+| ID_EX_data1, ID_EX_data2     | input  | 两个 32 位原始值        |
+| EX_MEM_rd0, EX_MEM_rd1       | input  | MEM1 两槽目的寄存器     |
+| EX_MEM_valid0, EX_MEM_valid1 | input  | MEM1 两槽前递有效       |
+| MEM2_rd0, MEM2_rd1           | input  | MEM2 两槽目的寄存器     |
+| MEM2_valid0, MEM2_valid1     | input  | MEM2 两槽前递有效       |
+| MEM_WB_rd0, MEM_WB_rd1       | input  | WB 两槽目的寄存器       |
+| MEM_WB_valid0, MEM_WB_valid1 | input  | WB 两槽前递有效         |
+| EX_MEM_data0/1, MEM2_data0/1 | input  | MEM1、MEM2 两槽候选数据 |
+| MEM_WB_data0, MEM_WB_data1   | input  | WB 两槽候选数据         |
+| ForwardA, ForwardB           | output | 两组 3 位来源编码       |
+| ForwardAData, ForwardBData   | output | 两个 32 位最终操作数    |
 
 Table: forwarding_unit 接口描述
 
@@ -372,21 +372,21 @@ Table: forwarding_unit 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| IF_ID_rs1/rs2, IF_ID_rs1_1/rs2_1 | input | 两槽源寄存器索引 |
-| IF_ID_uses_rs1/rs2 | input | 槽 0 源字段有效性 |
-| IF_ID_uses_rs1_1/rs2_1 | input | 槽 1 源字段有效性 |
-| IF_ID_valid_1 | input | 槽 1 有效 |
-| ID_EX_rd, ID_EX_rd_1 | input | ID/EX 两槽 load 目的寄存器 |
-| ID_EX_MemRead, ID_EX_MemRead_1 | input | ID/EX 两槽 load 标志 |
-| ID_EX_LoadReady, ID_EX_LoadReady_1 | input | ID/EX 数据可前递 |
-| EX_MEM_rd, EX_MEM_rd_1 | input | MEM1 两槽 load 目的寄存器 |
-| EX_MEM_MemRead, EX_MEM_MemRead_1 | input | MEM1 两槽 load 标志 |
-| EX_MEM_LoadReady, EX_MEM_LoadReady_1 | input | MEM1 数据已就绪 |
-| BranchMispredict | input | 误预测状态 |
-| Stall, Flush_IF_ID, Flush_ID_EX | output | 停顿与两级冲刷 |
-| LoadUseEX, LoadUseMEM | output | 两类 load-use 统计 |
+| 端口名                               | 类型   | 描述                       |
+| ------------------------------------ | ------ | -------------------------- |
+| IF_ID_rs1/rs2, IF_ID_rs1_1/rs2_1     | input  | 两槽源寄存器索引           |
+| IF_ID_uses_rs1/rs2                   | input  | 槽 0 源字段有效性          |
+| IF_ID_uses_rs1_1/rs2_1               | input  | 槽 1 源字段有效性          |
+| IF_ID_valid_1                        | input  | 槽 1 有效                  |
+| ID_EX_rd, ID_EX_rd_1                 | input  | ID/EX 两槽 load 目的寄存器 |
+| ID_EX_MemRead, ID_EX_MemRead_1       | input  | ID/EX 两槽 load 标志       |
+| ID_EX_LoadReady, ID_EX_LoadReady_1   | input  | ID/EX 数据可前递           |
+| EX_MEM_rd, EX_MEM_rd_1               | input  | MEM1 两槽 load 目的寄存器  |
+| EX_MEM_MemRead, EX_MEM_MemRead_1     | input  | MEM1 两槽 load 标志        |
+| EX_MEM_LoadReady, EX_MEM_LoadReady_1 | input  | MEM1 数据已就绪            |
+| BranchMispredict                     | input  | 误预测状态                 |
+| Stall, Flush_IF_ID, Flush_ID_EX      | output | 停顿与两级冲刷             |
+| LoadUseEX, LoadUseMEM                | output | 两类 load-use 统计         |
 
 Table: hazard_unit 接口描述
 
@@ -396,16 +396,16 @@ Table: hazard_unit 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| clk, rst | input | 时钟与高有效复位 |
-| lookup_addr | input | 32 位 MEM1 查询地址 |
+| 端口名                  | 类型   | 描述                 |
+| ----------------------- | ------ | -------------------- |
+| clk, rst                | input  | 时钟与高有效复位     |
+| lookup_addr             | input  | 32 位 MEM1 查询地址  |
 | lookup_hit, lookup_data | output | 命中及 32 位查询数据 |
-| probe_addr | input | 32 位 EX 探测地址 |
-| probe_hit, probe_data | output | 命中及 32 位探测数据 |
-| fill_en | input | 填充使能 |
-| fill_addr, fill_data | input | 32 位填充地址与数据 |
-| store_en, store_addr | input | store 失效使能与地址 |
+| probe_addr              | input  | 32 位 EX 探测地址    |
+| probe_hit, probe_data   | output | 命中及 32 位探测数据 |
+| fill_en                 | input  | 填充使能             |
+| fill_addr, fill_data    | input  | 32 位填充地址与数据  |
+| store_en, store_addr    | input  | store 失效使能与地址 |
 
 Table: load_l0_cache 接口描述
 
@@ -417,17 +417,17 @@ Table: load_l0_cache 接口描述
 
 接口描述：
 
-| 端口名 | 类型 | 描述 |
-| --- | --- | --- |
-| clk, cnt_clk | input | CPU 总线时钟与 50 MHz 计数时钟 |
-| rst | input | 高有效复位 |
-| perip_addr, perip_wdata | input | 32 位 CPU 地址与写数据 |
-| perip_wen, perip_mask | input | 写使能与 2 位访问宽度 |
-| perip_rdata | output | 32 位 BRAM/MMIO 返回 |
-| virtual_sw_input | input | 64 位虚拟开关 |
-| virtual_key_input | input | 8 位虚拟按键 |
-| virtual_seg_output | output | 40 位数码管状态 |
-| virtual_led_output | output | 32 位 LED 状态 |
+| 端口名                  | 类型   | 描述                           |
+| ----------------------- | ------ | ------------------------------ |
+| clk, cnt_clk            | input  | CPU 总线时钟与 50 MHz 计数时钟 |
+| rst                     | input  | 高有效复位                     |
+| perip_addr, perip_wdata | input  | 32 位 CPU 地址与写数据         |
+| perip_wen, perip_mask   | input  | 写使能与 2 位访问宽度          |
+| perip_rdata             | output | 32 位 BRAM/MMIO 返回           |
+| virtual_sw_input        | input  | 64 位虚拟开关                  |
+| virtual_key_input       | input  | 8 位虚拟按键                   |
+| virtual_seg_output      | output | 40 位数码管状态                |
+| virtual_led_output      | output | 32 位 LED 状态                 |
 
 Table: perip_bridge 接口描述
 
@@ -497,13 +497,13 @@ CSR 指令、`ecall` 和 `mret` 均按单发射处理，CSR 写、异常重定�
 
 在双槽流水结构稳定后，工程进一步针对 240 MHz 配置下的长组合路径和高扇出控制信号进行收敛。优化的重点不是增加新的指令功能，而是在保持流水行为不变的前提下，缩短 PC 反馈、前递选择、访存地址和 flush 控制等关键路径。主要措施如下：
 
-| 优化项目 | RTL 实现 | 作用 |
-| --- | --- | --- |
-| 在 EX/MEM1 边界提前形成前递结果 | 独立生成访存地址；将 L0 命中值、CSR 旧值、立即数、PC+4 和 ALU/RV32M 结果统一形成 `MEM_forward_data` 并随 EX/MEM1 寄存 | 避免下一拍再串接地址、写回来源和前递选择长链 |
-| 集中前递选择 | `forwarding_unit` 同时接收源寄存器原值和 MEM1/MEM2/WB 两槽候选数据，直接输出 `ForwardAData/ForwardBData` | 删除两个 EX 槽内重复的大型多路器，并统一优先级 |
-| 使用单一有效位降低 flush 扇出 | ID/EX 增加 `EX_pipe_valid`；flush 时只清 valid，数据和控制字段继续推进，顶层以 valid 统一屏蔽寄存器写、访存、CSR 和控制流副作用 | 将 flush 从整组寄存器和控制网络中移出，降低扇出与布线压力 |
-| 对第二槽不可达功能进行静态裁剪 | 槽 1 的 `NpcOp`、`OffsetOrigin`、CSR 地址及 CSR 控制接常量零，预测控制也固定为无跳转 | 允许综合器删除第二槽中不可达的控制流和 CSR 逻辑 |
-| IF 使用保守包内相关判断 | 候选配对时直接比较槽 0 的 rd 与槽 1 的 rs1/rs2 字段，并把结果训练到提示表；PC+4 与 PC+8 并行计算 | 允许少量假相关导致的单发射，以换取更短的 IROM 到下一 PC 关键路径 |
+| 优化项目                        | RTL 实现                                                                                                                        | 作用                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 在 EX/MEM1 边界提前形成前递结果 | 独立生成访存地址；将 L0 命中值、CSR 旧值、立即数、PC+4 和 ALU/RV32M 结果统一形成 `MEM_forward_data` 并随 EX/MEM1 寄存           | 避免下一拍再串接地址、写回来源和前递选择长链                     |
+| 集中前递选择                    | `forwarding_unit` 同时接收源寄存器原值和 MEM1/MEM2/WB 两槽候选数据，直接输出 `ForwardAData/ForwardBData`                        | 删除两个 EX 槽内重复的大型多路器，并统一优先级                   |
+| 使用单一有效位降低 flush 扇出   | ID/EX 增加 `EX_pipe_valid`；flush 时只清 valid，数据和控制字段继续推进，顶层以 valid 统一屏蔽寄存器写、访存、CSR 和控制流副作用 | 将 flush 从整组寄存器和控制网络中移出，降低扇出与布线压力        |
+| 对第二槽不可达功能进行静态裁剪  | 槽 1 的 `NpcOp`、`OffsetOrigin`、CSR 地址及 CSR 控制接常量零，预测控制也固定为无跳转                                            | 允许综合器删除第二槽中不可达的控制流和 CSR 逻辑                  |
+| IF 使用保守包内相关判断         | 候选配对时直接比较槽 0 的 rd 与槽 1 的 rs1/rs2 字段，并把结果训练到提示表；PC+4 与 PC+8 并行计算                                | 允许少量假相关导致的单发射，以换取更短的 IROM 到下一 PC 关键路径 |
 
 前递数据在 EX/MEM1 边界提前形成，使后续阶段只需在已经准备好的候选结果之间选择；集中式 `forwarding_unit` 则统一两个槽和三个后端阶段的优先级，避免在两个 EX 槽内分别复制大型多路器。对于 flush，流水寄存器主要清除 valid，而不是让冲刷信号直接扇出到所有数据和控制字段，后端再由 valid 统一屏蔽写回、存储与 CSR 副作用。
 
@@ -532,12 +532,12 @@ Table: RTL 仿真实验配置
 
 测试体系由四个层次组成。第一层为本项目自编定向测试，通过短程序分别验证单条指令、边界值和特定微架构场景；第二层采用 `riscv-software-src/riscv-tests` 开源处理器单元测试，对基础整数和乘除法指令进行独立交叉验证；第三层运行竞赛提供的 `irom-v2` 综合程序，考察长时间运行时的功能正确性和性能；第四层将同一综合程序部署到 FPGA 平台，以 LED、数码管和硬件计时器作为外部可观测结果。
 
-| 层次 | 测试集或程序名称 | 来源 | 主要用途 |
-| --- | --- | --- | --- |
-| 本项目定向测试 | `rv32i`、`rv32m`、`zicsr_trap`、`pipeline`、`memory`、`perf_micro` | 本项目 `verification/tests/` | 验证指令边界、流水线、访存和微架构定向场景 |
-| 开源交叉验证 | `riscv-tests/rv32ui-p`、`riscv-tests/rv32um-p` | `riscv-software-src/riscv-tests`，固定 commit `34e6b6d1...` | 分别交叉验证 RV32I 与 RV32M 指令语义 |
-| 竞赛端到端测试 | `irom-v2` 竞赛综合测试 | 竞赛提供的 `irom-v2.coe` 和 `dram.coe` | 综合验证 RV32I、RV32M、CSR/异常、矩阵运算及长期运行 |
-| FPGA 板级验证 | `irom-v2` 竞赛综合测试 | 与 CPU-only 仿真运行同一测试 | 验证实现后硬件运行结果及计时 |
+| 层次           | 测试集或程序名称                                                   | 来源                                                        | 主要用途                                            |
+| -------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- | --------------------------------------------------- |
+| 本项目定向测试 | `rv32i`、`rv32m`、`zicsr_trap`、`pipeline`、`memory`、`perf_micro` | 本项目 `verification/tests/`                                | 验证指令边界、流水线、访存和微架构定向场景          |
+| 开源交叉验证   | `riscv-tests/rv32ui-p`、`riscv-tests/rv32um-p`                     | `riscv-software-src/riscv-tests`，固定 commit `34e6b6d1...` | 分别交叉验证 RV32I 与 RV32M 指令语义                |
+| 竞赛端到端测试 | `irom-v2` 竞赛综合测试                                             | 竞赛提供的 `irom-v2.coe` 和 `dram.coe`                      | 综合验证 RV32I、RV32M、CSR/异常、矩阵运算及长期运行 |
+| FPGA 板级验证  | `irom-v2` 竞赛综合测试                                             | 与 CPU-only 仿真运行同一测试                                | 验证实现后硬件运行结果及计时                        |
 
 Table: 实际执行的测试集、来源与用途
 
@@ -596,17 +596,17 @@ CSR 与异常功能由本项目自编的 `zicsr_trap` 程序验证。该程序�
 
 ## 功能测试汇总 {#sec-functional-summary}
 
-| 来源 | 测试集或程序名称 | 用例数量 | 结果 | 主要覆盖内容 |
-| --- | --- | ---: | ---: | --- |
-| 本项目定向测试 | `rv32i` | 1 组 | 通过 | 37 条 RV32I 基础整数指令及边界值 |
-| 本项目定向测试 | `rv32m` | 1 组 | 通过 | RV32M 的 8 条乘除法指令及特殊语义 |
-| 本项目定向测试 | `zicsr_trap` | 1 组 | 通过 | Zicsr、`ecall`、`mret` |
-| 本项目定向测试 | `pipeline` | 1 组 | 通过 | 双槽约束、前递、停顿和冲刷 |
-| 本项目定向测试 | `memory` | 1 组 | 通过 | BRAM、子字访问、L0 与 MMIO |
-| 本项目性能微基准 | `perf_micro` | 1 组 | 通过 | ALU、访存、分支和 RV32M 混合负载 |
-| `riscv-software-src/riscv-tests` | `rv32ui-p` | 37 项 | 37/37 通过 | RV32I 指令语义独立交叉验证 |
-| `riscv-software-src/riscv-tests` | `rv32um-p` | 8 项 | 8/8 通过 | RV32M 指令语义独立交叉验证 |
-| 竞赛测试 | `irom-v2` 竞赛综合测试 | 1 组 | 通过 | 指令自检、矩阵运算和端到端运行 |
+| 来源                             | 测试集或程序名称       | 用例数量 |       结果 | 主要覆盖内容                      |
+| -------------------------------- | ---------------------- | -------: | ---------: | --------------------------------- |
+| 本项目定向测试                   | `rv32i`                |     1 组 |       通过 | 37 条 RV32I 基础整数指令及边界值  |
+| 本项目定向测试                   | `rv32m`                |     1 组 |       通过 | RV32M 的 8 条乘除法指令及特殊语义 |
+| 本项目定向测试                   | `zicsr_trap`           |     1 组 |       通过 | Zicsr、`ecall`、`mret`            |
+| 本项目定向测试                   | `pipeline`             |     1 组 |       通过 | 双槽约束、前递、停顿和冲刷        |
+| 本项目定向测试                   | `memory`               |     1 组 |       通过 | BRAM、子字访问、L0 与 MMIO        |
+| 本项目性能微基准                 | `perf_micro`           |     1 组 |       通过 | ALU、访存、分支和 RV32M 混合负载  |
+| `riscv-software-src/riscv-tests` | `rv32ui-p`             |    37 项 | 37/37 通过 | RV32I 指令语义独立交叉验证        |
+| `riscv-software-src/riscv-tests` | `rv32um-p`             |     8 项 |   8/8 通过 | RV32M 指令语义独立交叉验证        |
+| 竞赛测试                         | `irom-v2` 竞赛综合测试 |     1 组 |       通过 | 指令自检、矩阵运算和端到端运行    |
 
 Table: 功能验证结果汇总
 
@@ -616,36 +616,36 @@ Table: 功能验证结果汇总
 
 本节数据全部来自本项目 `verification/tests/` 中的自编程序，不是 `riscv-tests`、Embench-IoT 或 CoreMark 的性能结果。其中，`rv32i`、`rv32m`、`zicsr_trap`、`pipeline` 和 `memory` 以功能覆盖为主要目的；只有 `perf_micro` 是用于观察流水线计数器的固定混合微基准。
 
-| 测试程序 | 周期 | 退休指令 | CPI | MIPS | 双发射包 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `rv32i` | 259 | 158 | 1.639 | 146.409 | 0 |
-| `rv32m` | 403 | 91 | 4.429 | 54.194 | 0 |
-| `zicsr_trap` | 167 | 106 | 1.575 | 152.335 | 1 |
-| `pipeline` | 369 | 211 | 1.749 | 137.236 | 32 |
-| `memory` | 600,155 | 600,105 | 1.000 | 239.980 | 0 |
-| `perf_micro` | 21,299 | 22,273 | **0.956** | **250.975** | 6,501 |
+| 测试程序     |    周期 | 退休指令 |       CPI |        MIPS | 双发射包 |
+| ------------ | ------: | -------: | --------: | ----------: | -------: |
+| `rv32i`      |     259 |      158 |     1.639 |     146.409 |        0 |
+| `rv32m`      |     403 |       91 |     4.429 |      54.194 |        0 |
+| `zicsr_trap` |     167 |      106 |     1.575 |     152.335 |        1 |
+| `pipeline`   |     369 |      211 |     1.749 |     137.236 |       32 |
+| `memory`     | 600,155 |  600,105 |     1.000 |     239.980 |        0 |
+| `perf_micro` |  21,299 |   22,273 | **0.956** | **250.975** |    6,501 |
 
 Table: 定向负载性能结果
 
 `perf_micro` 由一个固定执行 2,000 轮的循环构成，每轮混合整数 ALU 运算、同地址 load/add/store、条件分支，并每 8 轮执行一次 `mul`，用于同时触发可双发射指令、load-use 停顿、控制流和 RV32M busy。该程序退休 22,273 条指令，使用 21,299 个周期，CPI 为 0.956，对应 IPC 为 1.046；退休指令数高于周期数说明负载有效利用了双槽提交能力。该结果只证明处理器在这一人工构造负载下能够达到平均每周期超过一条指令，不代表标准应用基准得分。
 
-| 测试程序 | 前端停顿 | load-use EX | load-use MEM | 执行级忙 |
-| --- | ---: | ---: | ---: | ---: |
-| `rv32i` | 0 | 0 | 0 | 0 |
-| `rv32m` | 256 | 0 | 0 | 256 |
-| `zicsr_trap` | 0 | 0 | 0 | 0 |
-| `pipeline` | 40 | 2 | 3 | 35 |
-| `memory` | 6 | 1 | 5 | 0 |
-| `perf_micro` | 4,502 | 2,001 | 2,001 | 500 |
+| 测试程序     | 前端停顿 | load-use EX | load-use MEM | 执行级忙 |
+| ------------ | -------: | ----------: | -----------: | -------: |
+| `rv32i`      |        0 |           0 |            0 |        0 |
+| `rv32m`      |      256 |           0 |            0 |      256 |
+| `zicsr_trap` |        0 |           0 |            0 |        0 |
+| `pipeline`   |       40 |           2 |            3 |       35 |
+| `memory`     |        6 |           1 |            5 |        0 |
+| `perf_micro` |    4,502 |       2,001 |        2,001 |      500 |
 
 Table: 定向负载流水线停顿统计
 
-| 测试程序 | L0 命中次数 | BRAM load 次数 | 命中率 |
-| --- | ---: | ---: | ---: |
-| `rv32i` | 6 | 8 | 75.000% |
-| `pipeline` | 0 | 3 | 0.000% |
-| `memory` | 4 | 11 | 36.364% |
-| `perf_micro` | 0 | 2,001 | 0.000% |
+| 测试程序     | L0 命中次数 | BRAM load 次数 |  命中率 |
+| ------------ | ----------: | -------------: | ------: |
+| `rv32i`      |           6 |              8 | 75.000% |
+| `pipeline`   |           0 |              3 |  0.000% |
+| `memory`     |           4 |             11 | 36.364% |
+| `perf_micro` |           0 |          2,001 |  0.000% |
 
 Table: 定向负载 L0 缓存统计
 
@@ -711,21 +711,21 @@ Table: 综合测试程序性能结果
 
 ## 代码清单
 
-| 文件或目录 | 主要用途 |
-| --- | --- |
-| `rtl/core/mycpu.sv` | CPU 顶层，连接双槽流水线、前递、冒险、CSR、L0 和访存接口 |
-| `rtl/pipeline/stage/` | IF、ID、EX、MEM1 和 WB 组合逻辑 |
-| `rtl/pipeline/register/` | 五组流水级间寄存器 |
-| `rtl/control/` | 主译码、ALU/CSR 控制、立即数和重定向控制 |
-| `rtl/datapath/` | ALU、PC、寄存器组和 RV32M 单元 |
-| `rtl/hazard/` | 双槽 load-use 冒险检测和多级前递 |
-| `rtl/memory/` | LSU、load mask、BRAM 驱动和 L0 load 缓存 |
-| `rtl/bus/perip_bridge.sv` | BRAM/MMIO 地址译码和板级访存时序 |
-| `rtl/soc/student_top.sv` | CPU、双路 IROM 和外设桥连接 |
-| `sim_cpu_only/` | Verilator/Icarus CPU-only 仿真环境 |
-| `tb/` | Vivado CPU、板级和 UART testbench |
-| `verification/` | CPU-only 测试入口、测试程序文件和回归工具 |
-| `vivado/tests/` | 历史开发测试与程序文件生成工具；本文测试结果以 `verification/` 为准 |
+| 文件或目录                | 主要用途                                                            |
+| ------------------------- | ------------------------------------------------------------------- |
+| `rtl/core/mycpu.sv`       | CPU 顶层，连接双槽流水线、前递、冒险、CSR、L0 和访存接口            |
+| `rtl/pipeline/stage/`     | IF、ID、EX、MEM1 和 WB 组合逻辑                                     |
+| `rtl/pipeline/register/`  | 五组流水级间寄存器                                                  |
+| `rtl/control/`            | 主译码、ALU/CSR 控制、立即数和重定向控制                            |
+| `rtl/datapath/`           | ALU、PC、寄存器组和 RV32M 单元                                      |
+| `rtl/hazard/`             | 双槽 load-use 冒险检测和多级前递                                    |
+| `rtl/memory/`             | LSU、load mask、BRAM 驱动和 L0 load 缓存                            |
+| `rtl/bus/perip_bridge.sv` | BRAM/MMIO 地址译码和板级访存时序                                    |
+| `rtl/soc/student_top.sv`  | CPU、双路 IROM 和外设桥连接                                         |
+| `sim_cpu_only/`           | Verilator/Icarus CPU-only 仿真环境                                  |
+| `tb/`                     | Vivado CPU、板级和 UART testbench                                   |
+| `verification/`           | CPU-only 测试入口、测试程序文件和回归工具                           |
+| `vivado/tests/`           | 历史开发测试与程序文件生成工具；本文测试结果以 `verification/` 为准 |
 
 Table: 关键源码与验证文件
 
