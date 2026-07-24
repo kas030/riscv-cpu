@@ -7,7 +7,7 @@ toc-depth: 3
 number-sections: true
 section-divs: true
 figure-caption-position: below
-table-caption-position: below
+table-caption-position: above
 resource-path:
   - .
   - assets
