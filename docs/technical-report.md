@@ -61,18 +61,27 @@ cover: assets/cover.pdf
 
 设计已覆盖比赛基础考核涉及的 37 条 RV32I 指令。`fence` 和 `ebreak` 不属于这 37 条指令，`ecall` 则由机器模式 trap 通路处理。
 
-| 类别       | 指令                                                                   |   数量 |
-| ---------- | ---------------------------------------------------------------------- | -----: |
-| 高位立即数 | `lui`、`auipc`                                                         |      2 |
-| 跳转       | `jal`、`jalr`                                                          |      2 |
-| 条件分支   | `beq`、`bne`、`blt`、`bge`、`bltu`、`bgeu`                             |      6 |
-| Load       | `lb`、`lh`、`lw`、`lbu`、`lhu`                                         |      5 |
-| Store      | `sb`、`sh`、`sw`                                                       |      3 |
-| 立即数运算 | `addi`、`slti`、`sltiu`、`xori`、`ori`、`andi`、`slli`、`srli`、`srai` |      9 |
-| 寄存器运算 | `add`、`sub`、`sll`、`slt`、`sltu`、`xor`、`srl`、`sra`、`or`、`and`   |     10 |
-| 合计       |                                                                        | **37** |
-
-Table: RV32I 基础指令支持范围
+\begin{longtable}{@{}p{2.2cm}p{10.5cm}r@{}}
+\caption{RV32I 基础指令支持范围}\\
+\toprule
+类别 & 指令 & 数量 \\
+\midrule
+\endfirsthead
+\toprule
+类别 & 指令 & 数量 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+高位立即数 & \mbox{\texttt{lui}、\texttt{auipc}} & 2 \\
+跳转 & \mbox{\texttt{jal}、\texttt{jalr}} & 2 \\
+条件分支 & \mbox{\texttt{beq}、\texttt{bne}、\texttt{blt}、\texttt{bge}、\texttt{bltu}、\texttt{bgeu}} & 6 \\
+Load & \mbox{\texttt{lb}、\texttt{lh}、\texttt{lw}、\texttt{lbu}、\texttt{lhu}} & 5 \\
+Store & \mbox{\texttt{sb}、\texttt{sh}、\texttt{sw}} & 3 \\
+立即数运算 & \mbox{\texttt{addi}、\texttt{slti}、\texttt{sltiu}、\texttt{xori}、\texttt{ori}、\texttt{andi}、\texttt{slli}、\texttt{srli}、\texttt{srai}} & 9 \\
+寄存器运算 & \mbox{\texttt{add}、\texttt{sub}、\texttt{sll}、\texttt{slt}、\texttt{sltu}、\texttt{xor}、\texttt{srl}、\texttt{sra}、\texttt{or}、\texttt{and}} & 10 \\
+合计 & & \textbf{37} \\
+\end{longtable}
 
 算术结果按 32 位回绕，移位量取低 5 位；`x0` 恒为零，`jalr` 目标地址的最低位清零。设计只保证自然对齐访存，暂不处理非法指令、未对齐访问和总线访问故障异常。
 
@@ -86,23 +95,38 @@ CPU 核对外提供两组独立的 32 位只读取指接口。第一路读取当
 
 数据侧只有一组 32 位统一接口，包含地址、写数据、读数据、写使能和访问宽度控制。`perip_bridge` 依据地址将请求送往同步 BRAM 或 MMIO 外设；BRAM 读数据按流水时序返回，MMIO 读取使用独立的数据返回路径。当前地址映射如下。
 
-| 访问目标 | 地址范围或地址               | 接口属性                                         |
-| -------- | ---------------------------- | ------------------------------------------------ |
-| BRAM     | `0x8010_0000`--`0x8013_FFFF` | 256 KiB 数据存储器，支持 byte、half 和 word 访问 |
-| SW0      | `0x8020_0000`                | 低 32 位虚拟开关，只读                           |
-| SW1      | `0x8020_0004`                | 高 32 位虚拟开关，只读                           |
-| KEY      | `0x8020_0010`                | 8 位虚拟按键，只读                               |
-| SEG      | `0x8020_0020`                | 40 位数码管输出寄存器                            |
-| LED      | `0x8020_0040`                | 32 位 LED 输出寄存器                             |
-| COUNTER  | `0x8020_0050`                | 50 MHz 跨时钟域性能计数器                        |
-
-Table: CPU 子系统地址映射
+\begin{longtable}{@{}p{2.0cm}p{5.2cm}p{7.0cm}@{}}
+\caption{CPU 子系统地址映射}\\
+\toprule
+访问目标 & 地址范围或地址 & 接口属性 \\
+\midrule
+\endfirsthead
+\toprule
+访问目标 & 地址范围或地址 & 接口属性 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+BRAM & \mbox{\texttt{0x8010\_0000}--\texttt{0x8013\_FFFF}} & 256 KiB 数据存储器，支持 byte、half 和 word 访问 \\
+SW0 & \texttt{0x8020\_0000} & 低 32 位虚拟开关，只读 \\
+SW1 & \texttt{0x8020\_0004} & 高 32 位虚拟开关，只读 \\
+KEY & \texttt{0x8020\_0010} & 8 位虚拟按键，只读 \\
+SEG & \texttt{0x8020\_0020} & 40 位数码管输出寄存器 \\
+LED & \texttt{0x8020\_0040} & 32 位 LED 输出寄存器 \\
+COUNTER & \texttt{0x8020\_0050} & 50 MHz 跨时钟域性能计数器 \\
+\end{longtable}
 
 ## CPU 核心微架构 {#sec-core-microarchitecture}
 
 CPU 采用双槽顺序发射、顺序提交结构。源码仍按 IF、ID、EX、MEM 和 WB 五类功能模块组织，但为适配同步 BRAM，访存后端被拆分为 MEM1 和 MEM2，因此实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`。图中的上、下两条主数据通路分别对应槽 0 和槽 1：槽 0 保存包内较老指令，槽 1 保存较年轻指令。
 
-![CPU 双槽流水微架构](assets/cpu-core-microarchitecture.png){ width=100% }
+\clearpage
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{assets/cpu-core-microarchitecture.png}
+\caption{CPU 双槽流水微架构}
+\end{figure}
 
 蓝色主通路表示取指、级间数据传递和寄存器写回，橙色通路表示共享 LSU、数据总线与 L0 cache 的访存路径，紫色通路表示 MEM1、MEM2、WB 到 EX 的前递网络，红色通路表示 stall、flush、busy 和重定向等控制反馈。数据与控制信号都随 valid 一起经过级间寄存器；复位、冲刷或气泡会清除有效性，并屏蔽错误路径上的所有体系结构副作用。
 
@@ -144,19 +168,33 @@ CPU 数据侧只有一个端口，因此同一发射包最多包含一条 load/s
 
 ## 主要数据通路选择
 
-| 指令类型 | ALU 输入 A | ALU 输入 B | 运算或地址路径       | 下一 PC              | 写回数据      |
-| -------- | ---------- | ---------- | -------------------- | -------------------- | ------------- |
-| R 型     | `rs1`      | `rs2`      | ALU                  | `pc+4/pc+8`          | ALU 结果      |
-| I 型算术 | `rs1`      | I 型立即数 | ALU                  | `pc+4/pc+8`          | ALU 结果      |
-| Load     | `rs1`      | I 型立即数 | LSU 地址加法器       | `pc+4/pc+8`          | Load 扩展结果 |
-| Store    | `rs1`      | S 型立即数 | LSU 地址加法器       | `pc+4/pc+8`          | 无            |
-| Branch   | `rs1`      | `rs2`      | 分支比较器           | 预测地址或 EX 重定向 | 无            |
-| `jal`    | PC         | J 型立即数 | 跳转目标加法         | 预测目标             | `pc+4`        |
-| `jalr`   | `rs1`      | I 型立即数 | ALU 加法并清除 bit 0 | EX 重定向            | `pc+4`        |
-| `lui`    | 0          | U 型立即数 | 立即数直通           | `pc+4/pc+8`          | U 型立即数    |
-| `auipc`  | PC         | U 型立即数 | ALU 加法             | `pc+4/pc+8`          | ALU 结果      |
+| 指令类型 | ALU 输入 A | ALU 输入 B | 运算或地址路径       |
+| -------- | ---------- | ---------- | -------------------- |
+| R 型     | `rs1`      | `rs2`      | ALU                  |
+| I 型算术 | `rs1`      | I 型立即数 | ALU                  |
+| Load     | `rs1`      | I 型立即数 | LSU 地址加法器       |
+| Store    | `rs1`      | S 型立即数 | LSU 地址加法器       |
+| Branch   | `rs1`      | `rs2`      | 分支比较器           |
+| `jal`    | PC         | J 型立即数 | 跳转目标加法         |
+| `jalr`   | `rs1`      | I 型立即数 | ALU 加法并清除 bit 0 |
+| `lui`    | 0          | U 型立即数 | 立即数直通           |
+| `auipc`  | PC         | U 型立即数 | ALU 加法             |
 
-Table: RV32I 各类指令的数据通路选择
+Table: RV32I 各类指令的执行数据通路选择
+
+| 指令类型 | 下一 PC              | 写回数据      |
+| -------- | -------------------- | ------------- |
+| R 型     | `pc+4/pc+8`          | ALU 结果      |
+| I 型算术 | `pc+4/pc+8`          | ALU 结果      |
+| Load     | `pc+4/pc+8`          | Load 扩展结果 |
+| Store    | `pc+4/pc+8`          | 无            |
+| Branch   | 预测地址或 EX 重定向 | 无            |
+| `jal`    | 预测目标             | `pc+4`        |
+| `jalr`   | EX 重定向            | `pc+4`        |
+| `lui`    | `pc+4/pc+8`          | U 型立即数    |
+| `auipc`  | `pc+4/pc+8`          | ALU 结果      |
+
+Table: RV32I 各类指令的下一 PC 与写回数据选择
 
 写回多路器根据 `MemToReg` 选择数据：`000` 对应 `pc+4`，`001` 对应 ALU/RV32M 结果，`010` 对应 load 数据，`011` 对应 U 型立即数，`100` 对应 CSR 旧值。两个槽共用这套编码。
 
@@ -497,13 +535,11 @@ CSR 指令、`ecall` 和 `mret` 均按单发射处理，CSR 写、异常重定�
 
 在双槽流水结构稳定后，工程进一步针对 240 MHz 配置下的长组合路径和高扇出控制信号进行收敛。优化的重点不是增加新的指令功能，而是在保持流水行为不变的前提下，缩短 PC 反馈、前递选择、访存地址和 flush 控制等关键路径。主要措施如下：
 
-| 优化项目                        | RTL 实现                                                                                                                        | 作用                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 在 EX/MEM1 边界提前形成前递结果 | 独立生成访存地址；将 L0 命中值、CSR 旧值、立即数、PC+4 和 ALU/RV32M 结果统一形成 `MEM_forward_data` 并随 EX/MEM1 寄存           | 避免下一拍再串接地址、写回来源和前递选择长链                     |
-| 集中前递选择                    | `forwarding_unit` 同时接收源寄存器原值和 MEM1/MEM2/WB 两槽候选数据，直接输出 `ForwardAData/ForwardBData`                        | 删除两个 EX 槽内重复的大型多路器，并统一优先级                   |
-| 使用单一有效位降低 flush 扇出   | ID/EX 增加 `EX_pipe_valid`；flush 时只清 valid，数据和控制字段继续推进，顶层以 valid 统一屏蔽寄存器写、访存、CSR 和控制流副作用 | 将 flush 从整组寄存器和控制网络中移出，降低扇出与布线压力        |
-| 对第二槽不可达功能进行静态裁剪  | 槽 1 的 `NpcOp`、`OffsetOrigin`、CSR 地址及 CSR 控制接常量零，预测控制也固定为无跳转                                            | 允许综合器删除第二槽中不可达的控制流和 CSR 逻辑                  |
-| IF 使用保守包内相关判断         | 候选配对时直接比较槽 0 的 rd 与槽 1 的 rs1/rs2 字段，并把结果训练到提示表；PC+4 与 PC+8 并行计算                                | 允许少量假相关导致的单发射，以换取更短的 IROM 到下一 PC 关键路径 |
+- 在 EX/MEM1 边界提前形成前递结果：RTL 独立生成访存地址，并将 L0 命中值、CSR 旧值、立即数、PC+4 和 ALU/RV32M 结果统一形成 `MEM_forward_data` 后随 EX/MEM1 寄存。该处理避免下一拍再串接地址、写回来源和前递选择长链。
+- 集中前递选择：`forwarding_unit` 同时接收源寄存器原值和 MEM1/MEM2/WB 两槽候选数据，直接输出 `ForwardAData/ForwardBData`。该处理删除两个 EX 槽内重复的大型多路器，并统一前递优先级。
+- 使用单一有效位降低 flush 扇出：ID/EX 增加 `EX_pipe_valid`，flush 时只清 valid，数据和控制字段继续推进，顶层以 valid 统一屏蔽寄存器写、访存、CSR 和控制流副作用。该处理将 flush 从整组寄存器和控制网络中移出，降低扇出与布线压力。
+- 对第二槽不可达功能进行静态裁剪：槽 1 的 `NpcOp`、`OffsetOrigin`、CSR 地址及 CSR 控制接常量零，预测控制也固定为无跳转。该处理允许综合器删除第二槽中不可达的控制流和 CSR 逻辑。
+- IF 使用保守包内相关判断：候选配对时直接比较槽 0 的 rd 与槽 1 的 rs1/rs2 字段，并把结果训练到提示表，同时并行计算 PC+4 与 PC+8。该处理允许少量假相关导致的单发射，以换取更短的 IROM 到下一 PC 关键路径。
 
 前递数据在 EX/MEM1 边界提前形成，使后续阶段只需在已经准备好的候选结果之间选择；集中式 `forwarding_unit` 则统一两个槽和三个后端阶段的优先级，避免在两个 EX 槽内分别复制大型多路器。对于 flush，流水寄存器主要清除 valid，而不是让冲刷信号直接扇出到所有数据和控制字段，后端再由 valid 统一屏蔽写回、存储与 CSR 副作用。
 
@@ -532,14 +568,10 @@ Table: RTL 仿真实验配置
 
 测试体系由四个层次组成。第一层为本项目自编定向测试，通过短程序分别验证单条指令、边界值和特定微架构场景；第二层采用 `riscv-software-src/riscv-tests` 开源处理器单元测试，对基础整数和乘除法指令进行独立交叉验证；第三层运行竞赛提供的 `irom-v2` 综合程序，考察长时间运行时的功能正确性和性能；第四层将同一综合程序部署到 FPGA 平台，以 LED、数码管和硬件计时器作为外部可观测结果。
 
-| 层次           | 测试集或程序名称                                                   | 来源                                                        | 主要用途                                            |
-| -------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- | --------------------------------------------------- |
-| 本项目定向测试 | `rv32i`、`rv32m`、`zicsr_trap`、`pipeline`、`memory`、`perf_micro` | 本项目 `verification/tests/`                                | 验证指令边界、流水线、访存和微架构定向场景          |
-| 开源交叉验证   | `riscv-tests/rv32ui-p`、`riscv-tests/rv32um-p`                     | `riscv-software-src/riscv-tests`，固定 commit `34e6b6d1...` | 分别交叉验证 RV32I 与 RV32M 指令语义                |
-| 竞赛端到端测试 | `irom-v2` 竞赛综合测试                                             | 竞赛提供的 `irom-v2.coe` 和 `dram.coe`                      | 综合验证 RV32I、RV32M、CSR/异常、矩阵运算及长期运行 |
-| FPGA 板级验证  | `irom-v2` 竞赛综合测试                                             | 与 CPU-only 仿真运行同一测试                                | 验证实现后硬件运行结果及计时                        |
-
-Table: 实际执行的测试集、来源与用途
+- 本项目定向测试：测试程序包括 `rv32i`、`rv32m`、`zicsr_trap`、`pipeline`、`memory` 和 `perf_micro`，来源为本项目 `verification/tests/`。主要用于验证指令边界、流水线、访存和微架构定向场景。
+- 开源交叉验证：测试集包括 `riscv-tests/rv32ui-p` 和 `riscv-tests/rv32um-p`，来源为 `riscv-software-src/riscv-tests`，固定 commit `34e6b6d1...`。主要用于分别交叉验证 RV32I 与 RV32M 指令语义。
+- 竞赛端到端测试：测试程序为 `irom-v2` 竞赛综合测试，来源为竞赛提供的 `irom-v2.coe` 和 `dram.coe`。主要用于综合验证 RV32I、RV32M、CSR/异常、矩阵运算及长期运行。
+- FPGA 板级验证：测试程序同样为 `irom-v2` 竞赛综合测试，运行内容与 CPU-only 仿真一致。主要用于验证实现后硬件运行结果及计时。
 
 其中，`rv32ui-p` 和 `rv32um-p` 是 `riscv-tests` 中的测试组名称，分别面向 RV32 用户级基础整数指令和 M 扩展乘除法指令；后缀 `p` 表示无虚拟内存、单核启动的物理地址测试环境。当前 45 项白名单只覆盖 RV32I/RV32M。该套件是广泛使用的开源处理器单元测试，但不等同于完整的 RISC-V 架构认证。本项目还锁定了 RISC-V Architectural Certification Tests（`riscv-arch-test`/ACT4）和 Embench-IoT 的上游版本，但二者尚未完成平台适配，因此未启用，也未产生本文中的通过率或性能数据。
 
@@ -555,7 +587,7 @@ Table: 实际执行的测试集、来源与用途
 \end{equation}
 
 \begin{equation}
-  \mathrm{MIPS}=\frac{f_{\mathrm{clk}}}{\mathrm{CPI}},\qquad
+  \mathrm{MIPS}=\frac{f_{\mathrm{clk}}}{\mathrm{CPI}},\quad
   f_{\mathrm{clk}}=240\ \mathrm{{MHz}}
   \label{eq:mips}
 \end{equation}
@@ -596,19 +628,24 @@ CSR 与异常功能由本项目自编的 `zicsr_trap` 程序验证。该程序�
 
 ## 功能测试汇总 {#sec-functional-summary}
 
-| 来源                             | 测试集或程序名称       | 用例数量 |       结果 | 主要覆盖内容                      |
-| -------------------------------- | ---------------------- | -------: | ---------: | --------------------------------- |
-| 本项目定向测试                   | `rv32i`                |     1 组 |       通过 | 37 条 RV32I 基础整数指令及边界值  |
-| 本项目定向测试                   | `rv32m`                |     1 组 |       通过 | RV32M 的 8 条乘除法指令及特殊语义 |
-| 本项目定向测试                   | `zicsr_trap`           |     1 组 |       通过 | Zicsr、`ecall`、`mret`            |
-| 本项目定向测试                   | `pipeline`             |     1 组 |       通过 | 双槽约束、前递、停顿和冲刷        |
-| 本项目定向测试                   | `memory`               |     1 组 |       通过 | BRAM、子字访问、L0 与 MMIO        |
-| 本项目性能微基准                 | `perf_micro`           |     1 组 |       通过 | ALU、访存、分支和 RV32M 混合负载  |
-| `riscv-software-src/riscv-tests` | `rv32ui-p`             |    37 项 | 37/37 通过 | RV32I 指令语义独立交叉验证        |
-| `riscv-software-src/riscv-tests` | `rv32um-p`             |     8 项 |   8/8 通过 | RV32M 指令语义独立交叉验证        |
-| 竞赛测试                         | `irom-v2` 竞赛综合测试 |     1 组 |       通过 | 指令自检、矩阵运算和端到端运行    |
+| 来源 | 测试程序 | 用例数量 | 结果 | 主要覆盖内容 |
+| --- | --- | ---: | ---: | --- |
+| 本项目定向测试 | `rv32i` | 1 组 | 通过 | 37 条 RV32I 基础整数指令及边界值 |
+| 本项目定向测试 | `rv32m` | 1 组 | 通过 | RV32M 的 8 条乘除法指令及特殊语义 |
+| 本项目定向测试 | `zicsr_trap` | 1 组 | 通过 | Zicsr、`ecall`、`mret` |
+| 本项目定向测试 | `pipeline` | 1 组 | 通过 | 双槽约束、前递、停顿和冲刷 |
+| 本项目定向测试 | `memory` | 1 组 | 通过 | BRAM、子字访问、L0 与 MMIO |
+| 本项目性能微基准 | `perf_micro` | 1 组 | 通过 | ALU、访存、分支和 RV32M 混合负载 |
+| 竞赛测试 | `irom-v2` 竞赛综合测试 | 1 组 | 通过 | 指令自检、矩阵运算和端到端运行 |
 
-Table: 功能验证结果汇总
+Table: 本项目与竞赛功能验证结果汇总
+
+| 来源 | 测试集 | 用例数量 | 结果 | 主要覆盖内容 |
+| --- | --- | ---: | ---: | --- |
+| `riscv-tests` | `rv32ui-p` | 37 项 | 37/37 通过 | RV32I 指令语义独立交叉验证 |
+| `riscv-tests` | `rv32um-p` | 8 项 | 8/8 通过 | RV32M 指令语义独立交叉验证 |
+
+Table: 开源指令测试交叉验证结果
 
 # 性能评估 {#sec-performance-evaluation}
 
@@ -651,7 +688,7 @@ Table: 定向负载 L0 缓存统计
 
 `rv32i` 和 `memory` 的 BRAM load 样本分别只有 8 次和 11 次，其命中率主要用于辅助检查缓存行为，不适合作为总体性能结论。`perf_micro` 每轮先读取再写回同一地址，store 会使对应 L0 项失效，因此下一轮读取重新未命中，最终得到 0/2,001；该结果不是流式访问造成的。
 
-## 竞赛 `irom-v2` 综合程序性能 {#sec-irom-v2-performance}
+## 竞赛 irom-v2 综合程序性能 {#sec-irom-v2-performance}
 
 本节数据来自竞赛提供的 `irom-v2` 与配套 `dram.coe`，不属于 `riscv-tests`。该程序首先执行 RV32I、RV32M 和 CSR/异常自检，随后连续运行 10 轮 80×80 矩阵乘法。每轮分别采用直接三重循环和带局部转置的数据访问方式计算结果，并对两个输出矩阵逐元素比较。该负载具有较长运行时间和较高访存比例，可同时考察功能稳定性、流水线吞吐率和 L0 缓存行为。
 
@@ -711,23 +748,32 @@ Table: 综合测试程序性能结果
 
 ## 代码清单
 
-| 文件或目录                | 主要用途                                                            |
-| ------------------------- | ------------------------------------------------------------------- |
-| `rtl/core/mycpu.sv`       | CPU 顶层，连接双槽流水线、前递、冒险、CSR、L0 和访存接口            |
-| `rtl/pipeline/stage/`     | IF、ID、EX、MEM1 和 WB 组合逻辑                                     |
-| `rtl/pipeline/register/`  | 五组流水级间寄存器                                                  |
-| `rtl/control/`            | 主译码、ALU/CSR 控制、立即数和重定向控制                            |
-| `rtl/datapath/`           | ALU、PC、寄存器组和 RV32M 单元                                      |
-| `rtl/hazard/`             | 双槽 load-use 冒险检测和多级前递                                    |
-| `rtl/memory/`             | LSU、load mask、BRAM 驱动和 L0 load 缓存                            |
-| `rtl/bus/perip_bridge.sv` | BRAM/MMIO 地址译码和板级访存时序                                    |
-| `rtl/soc/student_top.sv`  | CPU、双路 IROM 和外设桥连接                                         |
-| `sim_cpu_only/`           | Verilator/Icarus CPU-only 仿真环境                                  |
-| `tb/`                     | Vivado CPU、板级和 UART testbench                                   |
-| `verification/`           | CPU-only 测试入口、测试程序文件和回归工具                           |
-| `vivado/tests/`           | 历史开发测试与程序文件生成工具；本文测试结果以 `verification/` 为准 |
-
-Table: 关键源码与验证文件
+\begin{longtable}{@{}p{5.0cm}p{9.2cm}@{}}
+\caption{关键源码与验证文件}\\
+\toprule
+文件或目录 & 主要用途 \\
+\midrule
+\endfirsthead
+\toprule
+文件或目录 & 主要用途 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\texttt{rtl/core/mycpu.sv} & CPU 顶层，连接双槽流水线、前递、冒险、CSR、L0 和访存接口 \\
+\texttt{rtl/pipeline/stage/} & IF、ID、EX、MEM1 和 WB 组合逻辑 \\
+\texttt{rtl/pipeline/register/} & 五组流水级间寄存器 \\
+\texttt{rtl/control/} & 主译码、ALU/CSR 控制、立即数和重定向控制 \\
+\texttt{rtl/datapath/} & ALU、PC、寄存器组和 RV32M 单元 \\
+\texttt{rtl/hazard/} & 双槽 load-use 冒险检测和多级前递 \\
+\texttt{rtl/memory/} & LSU、load mask、BRAM 驱动和 L0 load 缓存 \\
+\texttt{rtl/bus/perip\_bridge.sv} & BRAM/MMIO 地址译码和板级访存时序 \\
+\texttt{rtl/soc/student\_top.sv} & CPU、双路 IROM 和外设桥连接 \\
+\texttt{sim\_cpu\_only/} & Verilator/Icarus CPU-only 仿真环境 \\
+\texttt{tb/} & Vivado CPU、板级和 UART testbench \\
+\texttt{verification/} & CPU-only 测试入口、测试程序文件和回归工具 \\
+\texttt{vivado/tests/} & 历史开发测试与程序文件生成工具；本文测试结果以 \texttt{verification/} 为准 \\
+\end{longtable}
 
 ## 工程目录结构
 
