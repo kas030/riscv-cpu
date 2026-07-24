@@ -22,24 +22,7 @@ local function front_matter(doc)
   return blocks
 end
 
-local function keep_long_table_together(table_block)
-  local row_count = 0
-  for _, body in ipairs(table_block.bodies) do
-    row_count = row_count + #body.body
-  end
-
-  if row_count >= 6 then
-    return {
-      latex_block("\\Needspace{16\\baselineskip}"),
-      table_block,
-    }
-  end
-
-  return table_block
-end
-
 function Pandoc(doc)
-  doc = doc:walk({ Table = keep_long_table_together })
   doc = pandoc.utils.citeproc(doc)
 
   local blocks = front_matter(doc)

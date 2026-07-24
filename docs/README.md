@@ -7,7 +7,7 @@
 ## 环境要求
 
 - Pandoc 3.7 或兼容版本
-- TeX Live 2025 或兼容版本，需包含 XeLaTeX、CTeX、`pdfpages`、`titlesec`、`caption`、`setspace` 和 `needspace`
+- TeX Live 2025 或兼容版本，需包含 XeLaTeX、CTeX、`pdfpages`、`titlesec`、`caption` 和 `setspace`
 - 字体：宋体（SimSun）、黑体（SimHei）、Times New Roman
 - PowerShell 5.1 或 PowerShell 7
 
