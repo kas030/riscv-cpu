@@ -628,24 +628,42 @@ CSR 与异常功能由本项目自编的 `zicsr_trap` 程序验证。该程序�
 
 ## 功能测试汇总 {#sec-functional-summary}
 
-| 来源 | 测试程序 | 用例数量 | 结果 | 主要覆盖内容 |
-| --- | --- | ---: | ---: | --- |
-| 本项目定向测试 | `rv32i` | 1 组 | 通过 | 37 条 RV32I 基础整数指令及边界值 |
-| 本项目定向测试 | `rv32m` | 1 组 | 通过 | RV32M 的 8 条乘除法指令及特殊语义 |
-| 本项目定向测试 | `zicsr_trap` | 1 组 | 通过 | Zicsr、`ecall`、`mret` |
-| 本项目定向测试 | `pipeline` | 1 组 | 通过 | 双槽约束、前递、停顿和冲刷 |
-| 本项目定向测试 | `memory` | 1 组 | 通过 | BRAM、子字访问、L0 与 MMIO |
-| 本项目性能微基准 | `perf_micro` | 1 组 | 通过 | ALU、访存、分支和 RV32M 混合负载 |
-| 竞赛测试 | `irom-v2` 竞赛综合测试 | 1 组 | 通过 | 指令自检、矩阵运算和端到端运行 |
+\begin{longtable}{@{}p{2.8cm}p{2.5cm}p{1.2cm}l@{}}
+\caption{本项目与竞赛功能验证结果汇总}\\
+\toprule
+来源 & 测试程序 & 结果 & 主要覆盖内容 \\
+\midrule
+\endfirsthead
+\toprule
+来源 & 测试程序 & 结果 & 主要覆盖内容 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+项目定向测试 & \texttt{rv32i} & 通过 & 37 条 RV32I 基础整数指令及边界值 \\
+项目定向测试 & \texttt{rv32m} & 通过 & RV32M 的 8 条乘除法指令及特殊语义 \\
+项目定向测试 & \texttt{zicsr\_trap} & 通过 & Zicsr、\texttt{ecall}、\texttt{mret} \\
+项目定向测试 & \texttt{pipeline} & 通过 & 双槽约束、前递、停顿和冲刷 \\
+项目定向测试 & \texttt{memory} & 通过 & BRAM、子字访问、L0 与 MMIO \\
+性能微基准 & \texttt{perf\_micro} & 通过 & ALU、访存、分支和 RV32M 混合负载 \\
+竞赛测试 & \texttt{irom-v2} 竞赛综合测试 & 通过 & 指令自检、矩阵运算和端到端运行 \\
+\end{longtable}
 
-Table: 本项目与竞赛功能验证结果汇总
-
-| 来源 | 测试集 | 用例数量 | 结果 | 主要覆盖内容 |
-| --- | --- | ---: | ---: | --- |
-| `riscv-tests` | `rv32ui-p` | 37 项 | 37/37 通过 | RV32I 指令语义独立交叉验证 |
-| `riscv-tests` | `rv32um-p` | 8 项 | 8/8 通过 | RV32M 指令语义独立交叉验证 |
-
-Table: 开源指令测试交叉验证结果
+\begin{longtable}{@{}p{2.4cm}p{2.0cm}lll@{}}
+\caption{开源指令测试交叉验证结果}\\
+\toprule
+来源 & 测试集 & 用例数量 & 结果 & 主要覆盖内容 \\
+\midrule
+\endfirsthead
+\toprule
+来源 & 测试集 & 用例数量 & 结果 & 主要覆盖内容 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+\texttt{riscv-tests} & \texttt{rv32ui-p} & 37 项 & 37/37 通过 & RV32I 指令语义独立交叉验证 \\
+\texttt{riscv-tests} & \texttt{rv32um-p} & 8 项 & 8/8 通过 & RV32M 指令语义独立交叉验证 \\
+\end{longtable}
 
 # 性能评估 {#sec-performance-evaluation}
 
@@ -664,7 +682,9 @@ Table: 开源指令测试交叉验证结果
 
 Table: 定向负载性能结果
 
-`perf_micro` 由一个固定执行 2,000 轮的循环构成，每轮混合整数 ALU 运算、同地址 load/add/store、条件分支，并每 8 轮执行一次 `mul`，用于同时触发可双发射指令、load-use 停顿、控制流和 RV32M busy。该程序退休 22,273 条指令，使用 21,299 个周期，CPI 为 0.956，对应 IPC 为 1.046；退休指令数高于周期数说明负载有效利用了双槽提交能力。该结果只证明处理器在这一人工构造负载下能够达到平均每周期超过一条指令，不代表标准应用基准得分。
+`perf_micro` 由一个固定执行 2,000 轮的循环构成，每轮混合整数 ALU 运算、同地址 load/add/store、条件分支，并每 8 轮执行一次 `mul`，用于同时触发可双发射指令、load-use 停顿、控制流和 RV32M busy。该程序 CPI 为 0.956，对应 IPC 为 1.046。
+
+结果显示退休指令数高于周期数，说明负载有效利用了双槽提交能力。
 
 | 测试程序     | 前端停顿 | load-use EX | load-use MEM | 执行级忙 |
 | ------------ | -------: | ----------: | -----------: | -------: |
