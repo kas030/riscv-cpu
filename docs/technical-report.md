@@ -15,16 +15,24 @@ cover: assets/cover.pdf
 
 本作品在固定 CPU 顶层接口和 SoC 地址映射下，实现了一款面向 FPGA 的 32 位 RISC-V 处理器。核心设计采用双槽顺序发射与顺序提交，在适配同步 IROM、BRAM 时序的同时，通过动态分支预测、多级前递、精确冒险控制、RV32M 多周期执行和 L0 load cache 提升流水线利用率。作品已完成 CPU-only 仿真、开源指令测试交叉验证、竞赛综合程序验证和 FPGA 板级验证。
 
-| 预览项 | 核心内容 |
-| --- | --- |
-| 指令与异常支持 | 37 条 RV32I 基础指令、RV32M 全部 8 条指令，以及项目所需的 Zicsr、`ecall` 和 `mret` |
-| 流水线组织 | 双槽顺序发射、顺序提交，实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB` |
-| 性能优化 | 64 项 2 位饱和计数 BHT、BTFNT 冷启动预测、256 项双发射提示表、多级前递和 64 项直接映射 L0 load cache |
-| 存储与接口 | 单数据端口，支持 BRAM 与 MMIO、byte/half/word 小端访问；L0 对 BRAM load 缓存完整 32 位字，store 写穿并失效缓存行 |
-| 功能验证 | 项目定向测试全部通过；`riscv-tests` 的 37 项 `rv32ui-p` 与 8 项 `rv32um-p` 白名单测试共 45 项全部通过 |
-| 性能与板级结果 | `perf_micro` 的 CPI 为 0.956；竞赛 `irom-v2` 综合程序 CPI 为 1.062、L0 命中率为 62.995%；240 MHz FPGA 板级计时为 1,683 ms，与仿真结果一致 |
-
-Table: 作品核心内容快速预览
+- 指令与异常支持：  
+  核心内容：37 条 RV32I 基础指令、RV32M 全部 8 条指令，以及项目所需的 Zicsr、`ecall` 和 `mret`。  
+  正文索引：RV32I 指令集支持情况（第 \pageref{sec-rv32i-support} 页）、RV32M 多周期运算（第 \pageref{sec-rv32m-design} 页）、Zicsr 与机器模式异常返回（第 \pageref{sec-zicsr-trap} 页）。
+- 流水线组织：  
+  核心内容：双槽顺序发射、顺序提交，实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`。  
+  正文索引：CPU 核心微架构（第 \pageref{sec-core-microarchitecture} 页）、双槽顺序发射与流水化访存（第 \pageref{sec-dual-issue-memory} 页）。
+- 性能优化：  
+  核心内容：64 项 2 位饱和计数 BHT、BTFNT 冷启动预测、256 项双发射提示表、多级前递和 64 项直接映射 L0 load cache。  
+  正文索引：动态分支预测（第 \pageref{sec-branch-prediction} 页）、L0 load cache（第 \pageref{sec-l0-cache-design} 页）、面向时序收敛的性能优化（第 \pageref{sec-timing-optimization} 页）。
+- 存储与接口：  
+  核心内容：单数据端口，支持 BRAM 与 MMIO、byte/half/word 小端访问；L0 对 BRAM load 缓存完整 32 位字，store 写穿并失效缓存行。  
+  正文索引：共享访存端口与 L0 cache（第 \pageref{sec-mem-l0-microarchitecture} 页）、load_l0_cache（第 \pageref{sec-load-l0-cache-module} 页）、perip_bridge（第 \pageref{sec-perip-bridge} 页）。
+- 功能验证：  
+  核心内容：项目定向测试全部通过；`riscv-tests` 的 37 项 `rv32ui-p` 与 8 项 `rv32um-p` 白名单测试共 45 项全部通过。  
+  正文索引：测试体系（第 \pageref{sec-test-system} 页）、功能验证（第 \pageref{sec-functional-verification} 页）、功能测试汇总（第 \pageref{sec-functional-summary} 页）。
+- 性能与板级结果：  
+  核心内容：`perf_micro` 的 CPI 为 0.956；竞赛 `irom-v2` 综合程序 CPI 为 1.062、L0 命中率为 62.995%；240 MHz FPGA 板级计时为 1,683 ms，与仿真结果一致。  
+  正文索引：性能评估（第 \pageref{sec-performance-evaluation} 页）、竞赛 `irom-v2` 综合程序性能（第 \pageref{sec-irom-v2-performance} 页）、FPGA 板级验证（第 \pageref{sec-fpga-validation} 页）。
 
 ## 设计目标
 
@@ -49,7 +57,7 @@ Table: 作品核心内容快速预览
 
 # RISC-V CPU 架构设计
 
-## RV32I 指令集支持情况
+## RV32I 指令集支持情况 {#sec-rv32i-support}
 
 设计已覆盖比赛基础考核涉及的 37 条 RV32I 指令。`fence` 和 `ebreak` 不属于这 37 条指令，`ecall` 则由机器模式 trap 通路处理。
 
@@ -90,7 +98,7 @@ CPU 核对外提供两组独立的 32 位只读取指接口。第一路读取当
 
 Table: CPU 子系统地址映射
 
-## CPU 核心微架构
+## CPU 核心微架构 {#sec-core-microarchitecture}
 
 CPU 采用双槽顺序发射、顺序提交结构。源码仍按 IF、ID、EX、MEM 和 WB 五类功能模块组织，但为适配同步 BRAM，访存后端被拆分为 MEM1 和 MEM2，因此实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`。图中的上、下两条主数据通路分别对应槽 0 和槽 1：槽 0 保存包内较老指令，槽 1 保存较年轻指令。
 
@@ -118,7 +126,7 @@ RV32M 单元启动时锁存操作数与类型。普通 `mul` 等待一个周期�
 
 槽 0 还包含 CSR 文件与统一重定向逻辑。CSR 文件实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`；`ecall` 保存异常 PC 并写入 `mcause=11` 后跳转到 `mtvec`，`mret` 恢复相关状态并跳转到 `mepc`。EX 将分支实际方向和目标与预测元数据比较，只有不一致时才把正确 PC 反馈到 IF，并冲刷 IF/ID 与 ID/EX。
 
-### 共享访存端口与 L0 cache（MEM1/MEM2）
+### 共享访存端口与 L0 cache（MEM1/MEM2） {#sec-mem-l0-microarchitecture}
 
 CPU 数据侧只有一个端口，因此同一发射包最多包含一条 load/store。MEM1 从两个槽中选择有效访存请求，通过共享 LSU 输出地址、写数据和访问宽度；LSU 按小端字节序生成 `sb`、`sh`、`sw` 所需的写数据与 byte mask。MEM2 将同步 BRAM 返回的完整 32 位原始字与相应流水元数据对齐，byte/half lane 选择及符号或零扩展留到写回路径完成。
 
@@ -366,7 +374,7 @@ Table: forwarding_unit 接口描述
 
 Table: hazard_unit 接口描述
 
-### load_l0_cache
+### load_l0_cache {#sec-load-l0-cache-module}
 
 功能描述：64 项直接映射的 BRAM load 结果缓存，保存完整 32 位字。lookup 端口服务 MEM1，probe 端口供 EX 提前判断 load-to-use；BRAM 返回数据通过 fill 端口写入。Store 仍写穿到 BRAM，并使同一字地址的缓存行失效；MMIO 不进入缓存。
 
@@ -387,7 +395,7 @@ Table: load_l0_cache 接口描述
 
 ## SoC 数据访问边界
 
-### perip_bridge
+### perip_bridge {#sec-perip-bridge}
 
 功能描述：CPU 单一数据端口的地址译码与返回时序模块。它把 0x8010_0000--0x8013_FFFF 映射到 BRAM，并映射 SW0、SW1、KEY、SEG、LED 和 COUNTER；BRAM 按同步读时序返回，MMIO 使用独立的数据选择路径。
 
@@ -409,7 +417,7 @@ Table: perip_bridge 接口描述
 
 # CPU 特色功能设计
 
-## 双槽顺序发射与流水化访存
+## 双槽顺序发射与流水化访存 {#sec-dual-issue-memory}
 
 处理器每拍最多顺序发射两条指令。槽 1 只有在包内不存在 RAW 相关且访存、RV32M 和控制流资源允许时才有效；不能安全配对时自动退化为单发射。两个槽共享提交次序和数据总线仲裁，因此软件不需要专用指令，也不会改变程序的顺序语义。
 
@@ -423,7 +431,7 @@ IF 级使用 256 项直接映射双发射提示表，记录某个取指包能否
 
 同步 BRAM 的请求和返回被拆分到 MEM1、MEM2 两级，WB 再完成 byte/half 选择及符号扩展。MEM1 在两个槽之间仲裁唯一的数据端口并发出请求，MEM2 接收与流水元数据对齐的返回值。前递网络覆盖 MEM1、MEM2 和 WB，普通 ALU 相关优先通过前递解决；只有 load 数据尚未返回时，load-use 检测才按照数据真正可用的阶段插入停顿。两槽的 valid、stall、flush 和 busy 统一控制，保证气泡或错误路径不会产生寄存器写入和存储副作用。
 
-## 动态分支预测
+## 动态分支预测 {#sec-branch-prediction}
 
 条件分支使用 64 项 2 位饱和计数 BHT，未训练分支采用 BTFNT 作为初始方向。`jal` 在 IF 级直接预测目标，`jalr`、异常入口和 `mret` 在 EX 级解析。EX 将实际方向、目标与预测元数据比较，只有预测错误时才重定向 PC 并冲刷前端。
 
@@ -433,7 +441,7 @@ BHT 由 PC 低位索引，每个表项保存 valid 位和 2 位计数器。计�
 
 上图展示了 BHT 的 64 项直接索引方式。PC 低两位固定为字节对齐位，其上的 6 位选择表项；每个有效表项只保存 2 位饱和计数器，不额外保存完整目标地址。绿色状态表示预测跳转，白色状态表示预测不跳转，实际分支结果在 EX 级回写计数器，使循环分支在多次执行后稳定到更符合历史行为的方向。
 
-## L0 load cache
+## L0 load cache {#sec-l0-cache-design}
 
 L0 cache 用于缩短连续 load 相关的等待时间。缓存包含 64 个直接映射表项，每项保存 BRAM 的完整 32 位字、局部 tag 和 valid 位；byte/half 的 lane 选择与符号扩展在缓存外完成，因此不同宽度的 load 可以共享同一缓存字。缓存范围仅限 0x8010_0000--0x8013_FFFF，MMIO 访问始终绕过缓存。
 
@@ -449,7 +457,7 @@ Store 采用写穿策略，数据始终写入 BRAM，同时失效同一字地址
 
 L0 cache 不替代 BRAM，也不改变软件可见的存储地址空间。缓存命中只影响 load 结果可被前递的时间，未命中和 MMIO 访问仍保持原有返回路径。因此即使缓存未命中或表项被覆盖，处理器也只损失性能，不会改变程序执行结果。
 
-## RV32M 多周期运算
+## RV32M 多周期运算 {#sec-rv32m-design}
 
 RV32M 单元支持 `mul`、`mulh`、`mulhsu`、`mulhu`、`div`、`divu`、`rem` 和 `remu`。普通 `mul` 等待一个周期，三种高位乘法等待两个周期，普通除法与余数运算迭代 32 次。除数为零时，除法返回全 1、余数返回被除数；只有有符号 `div/rem` 对 `INT_MIN/-1` 启用溢出快速路径。
 
@@ -459,7 +467,7 @@ RV32M 单元支持 `mul`、`mulh`、`mulhsu`、`mulhu`、`div`、`divu`、`rem` 
 
 操作数和运算类型在启动时锁存，busy 期间前端与 ID/EX 保持，防止多周期运算被后续指令覆盖。单元完成后产生 done，结果沿 MEM1、MEM2、WB 和统一前递网络继续传递，紧随其后的相关指令可以取得最新结果。双发射判定不允许两条 RV32M 指令同拍占用该资源，因此不需要在单元内部增加多请求仲裁。
 
-## Zicsr 与机器模式异常返回
+## Zicsr 与机器模式异常返回 {#sec-zicsr-trap}
 
 CSR 控制器支持 `csrrw/csrrwi`、`csrrs/csrrsi` 与 `csrrc/csrrci`，并实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`。软件可设置 `mtvec`，通过 `ecall` 进入处理程序，再读取异常原因、调整返回地址并执行 `mret` 返回。
 
@@ -469,7 +477,7 @@ CSR 控制器支持 `csrrw/csrrwi`、`csrrs/csrrsi` 与 `csrrc/csrrci`，并实�
 
 CSR 指令、`ecall` 和 `mret` 均按单发射处理，CSR 写、异常重定向和返回操作还受流水 valid 与 kill 信号约束，错误路径不会产生架构副作用。这部分只覆盖项目测试需要的最小机器模式子集，不含中断、PMP、虚拟内存、U/S 模式、非法指令异常和完整 CSR 权限检查，因此不等同于完整的 RISC-V 特权架构实现。
 
-## 面向时序收敛的性能优化
+## 面向时序收敛的性能优化 {#sec-timing-optimization}
 
 在双槽流水结构稳定后，工程进一步针对 240 MHz 配置下的长组合路径和高扇出控制信号进行收敛。优化的重点不是增加新的指令功能，而是在保持流水行为不变的前提下，缩短 PC 反馈、前递选择、访存地址和 flush 控制等关键路径。主要措施如下：
 
@@ -504,7 +512,7 @@ RTL 仿真采用 Verilator 5.020，测试程序由 RISC-V GNU 工具链 13.2.0 �
 
 Table: RTL 仿真实验配置
 
-## 测试体系
+## 测试体系 {#sec-test-system}
 
 测试体系由四个层次组成。第一层为本项目自编定向测试，通过短程序分别验证单条指令、边界值和特定微架构场景；第二层采用 `riscv-software-src/riscv-tests` 开源处理器单元测试，对基础整数和乘除法指令进行独立交叉验证；第三层运行竞赛提供的 `irom-v2` 综合程序，考察长时间运行时的功能正确性和性能；第四层将同一综合程序部署到 FPGA 平台，以 LED、数码管和硬件计时器作为外部可观测结果。
 
@@ -538,7 +546,7 @@ Table: 实际执行的测试集、来源与用途
 
 缓存命中率定义为 L0 命中次数与 BRAM load 请求次数之比。对于不存在 BRAM load 请求的用例，不计算命中率。
 
-# 功能验证
+# 功能验证 {#sec-functional-verification}
 
 ## RV32I 基础整数指令
 
@@ -570,7 +578,7 @@ CSR 与异常功能由本项目自编的 `zicsr_trap` 程序验证。该程序�
 
 本项目自编的 `memory` 定向程序覆盖数据存储器首尾地址、四个 byte lane、五种 load、三种 store、L0 tag 替换、store 失效和内存映射外设访问。同步存储器返回延迟、子字节写掩码和符号扩展均通过检查，重复读取和写后再读场景未出现陈旧数据。
 
-## 功能测试汇总
+## 功能测试汇总 {#sec-functional-summary}
 
 | 来源 | 测试集或程序名称 | 用例数量 | 结果 | 主要覆盖内容 |
 | --- | --- | ---: | ---: | --- |
@@ -586,7 +594,7 @@ CSR 与异常功能由本项目自编的 `zicsr_trap` 程序验证。该程序�
 
 Table: 功能验证结果汇总
 
-# 性能评估
+# 性能评估 {#sec-performance-evaluation}
 
 ## 本项目定向测试与混合微基准
 
@@ -627,7 +635,7 @@ Table: 定向负载 L0 缓存统计
 
 `rv32i` 和 `memory` 的 BRAM load 样本分别只有 8 次和 11 次，其命中率主要用于辅助检查缓存行为，不适合作为总体性能结论。`perf_micro` 每轮先读取再写回同一地址，store 会使对应 L0 项失效，因此下一轮读取重新未命中，最终得到 0/2,001；该结果不是流式访问造成的。
 
-## 竞赛 `irom-v2` 综合程序性能
+## 竞赛 `irom-v2` 综合程序性能 {#sec-irom-v2-performance}
 
 本节数据来自竞赛提供的 `irom-v2` 与配套 `dram.coe`，不属于 `riscv-tests`。该程序首先执行 RV32I、RV32M 和 CSR/异常自检，随后连续运行 10 轮 80×80 矩阵乘法。每轮分别采用直接三重循环和带局部转置的数据访问方式计算结果，并对两个输出矩阵逐元素比较。该负载具有较长运行时间和较高访存比例，可同时考察功能稳定性、流水线吞吐率和 L0 缓存行为。
 
@@ -650,7 +658,7 @@ Table: 综合测试程序性能结果
 
 综合程序在 404,056,765 个周期后正确结束，未出现错误状态。按 240 MHz 计算的执行时间约为 1.684 s，与 50 MHz 计时器得到的 1,683 ms 基本一致。测试期间 L0 load 缓存命中 69,677,186 次，命中率为 62.995%，说明矩阵运算和综合自检程序存在可被小容量数据缓存利用的局部性。
 
-# FPGA 板级验证
+# FPGA 板级验证 {#sec-fpga-validation}
 
 ## 硬件平台
 
