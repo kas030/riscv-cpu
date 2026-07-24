@@ -84,6 +84,26 @@ module mycpu_if_stage #(
         instr_is_m_ext = (instr[6:0] == `R_TYPE) && (instr[31:25] == 7'b0000001);
     endfunction
 
+    function automatic logic instr_uses_rs1(input logic [DATAWIDTH - 1:0] instr);
+        logic [6:0] opcode;
+        begin
+            opcode = instr[6:0];
+            instr_uses_rs1 = (opcode == `R_TYPE ) ||
+                             (opcode == `I_TYPE ) ||
+                             (opcode == `IL_TYPE) ||
+                             (opcode == `S_TYPE );
+        end
+    endfunction
+
+    function automatic logic instr_uses_rs2(input logic [DATAWIDTH - 1:0] instr);
+        logic [6:0] opcode;
+        begin
+            opcode = instr[6:0];
+            instr_uses_rs2 = (opcode == `R_TYPE) ||
+                             (opcode == `S_TYPE);
+        end
+    endfunction
+
     function automatic logic instr_can_dual(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
         begin
@@ -111,13 +131,14 @@ module mycpu_if_stage #(
         .IF_pred_target  (IF_pred_target )
     );
 
-    // IF 级处在 PC -> IROM -> issue -> next-PC 关键回路上。这里保守地
-    // 同时比较第二槽的 rs1/rs2 字段，避免串接 opcode -> uses_rs 译码。
-    // I/U 类指令可能因立即数字段偶合而少发射，但不影响正确性。
+    // 提示训练路径按第二条指令的实际源操作数检查包内 RAW，避免把 I 型
+    // 立即数字段误当作 rs2。训练结果先打拍，不进入当前 PC 反馈回路。
     assign IF_slot_raw_hazard = instr_writes_rd(IF_instr) &&
                                 (IF_instr[11:7] != 5'd0) &&
-                                ((IF_instr[11:7] == irom_data1[19:15]) ||
-                                 (IF_instr[11:7] == irom_data1[24:20]));
+                                ((instr_uses_rs1(irom_data1) &&
+                                  (IF_instr[11:7] == irom_data1[19:15])) ||
+                                 (instr_uses_rs2(irom_data1) &&
+                                  (IF_instr[11:7] == irom_data1[24:20])));
     assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(irom_data1);
     assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(irom_data1);
     assign IF_dual_candidate = instr_can_dual(IF_instr) &&
