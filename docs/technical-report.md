@@ -759,7 +759,7 @@ riscv-cpu-remote/
 2. RISC-V International. *The RISC-V Instruction Set Manual, Volume II: Privileged Architecture*.
 3. AMD. *Vivado Design Suite User Guide: Synthesis (UG901)*.
 4. IEEE. *IEEE Standard for SystemVerilog, IEEE Std 1800-2017*.
-5. `riscv-software-src`. [`riscv-tests`](https://github.com/riscv-software-src/riscv-tests), commit `34e6b6d1e7936b526075432fb730d89148623484`.
+5. `riscv-software-src`. [`riscv-tests`](https://github.com/riscv-software-src/riscv-tests), commit `34e6b6d1e7936b526075432fb730d891` `48623484`.
 
 ## AI 工具声明
 
