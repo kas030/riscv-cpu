@@ -600,17 +600,23 @@ module mycpu (
             redirect_bp_target_q <= '0;
             redirect_bp_is_jal_q <= 1'b0;
         end else begin
-            // 预测器训练不依赖分支比较/误预测结果，避免操作数长路径进入
-            // update pulse。EX_NpcOp_eff 已包含 pipe_valid 屏蔽。
+            // 预测器训练不依赖误预测结果。branch/jal 使用固定 PC 相对目标；
+            // 普通 jalr 使用本次实际目标，后续目标变化仍由 EX 比较纠正。
             redirect_bp_update_q <= !redirect_valid_q &&
                                     ((EX_NpcOp_eff == 2'b01) ||
-                                     (EX_NpcOp_eff == 2'b11));
+                                     (EX_NpcOp_eff == 2'b11) ||
+                                     ((EX_NpcOp_eff == 2'b10) &&
+                                      (EX_OffsetOrigin == 2'b01)));
             // 记录分支 PC，用于更新预测器历史表
             redirect_bp_pc_q     <= EX_pc;
             // branch/jal 的预测目标始终是 PC+imm；分支本次不跳转时
             // IF_npc_redirect_raw 是 PC+4，不能用来训练后续 taken 目标。
-            redirect_bp_target_q <= EX_pc + EX_imm;
-            redirect_bp_is_jal_q <= (EX_NpcOp_eff == 2'b11);
+            redirect_bp_target_q <= ((EX_NpcOp_eff == 2'b10) &&
+                                     (EX_OffsetOrigin == 2'b01)) ?
+                                    IF_npc_redirect_raw : EX_pc + EX_imm;
+            redirect_bp_is_jal_q <= (EX_NpcOp_eff == 2'b11) ||
+                                    ((EX_NpcOp_eff == 2'b10) &&
+                                     (EX_OffsetOrigin == 2'b01));
 
             // pending 重定向期间始终保持已锁存目标。消费重定向只需清 valid，
             // 无需让 load-use stall 进入 target/taken 寄存器的 CE 路径。

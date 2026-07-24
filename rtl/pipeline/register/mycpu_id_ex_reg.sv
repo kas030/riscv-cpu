@@ -65,7 +65,9 @@ module mycpu_id_ex_reg #(
     output logic [11:0]             EX_csr_idx      ,
     output logic [4:0]              EX_csr_zimm     ,
     output logic [5:0]              EX_CSRControll  ,
+    (* max_fanout = 16 *)
     output logic [2:0]              EX_ForwardA     ,
+    (* max_fanout = 16 *)
     output logic [2:0]              EX_ForwardB     ,
     (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
     output logic [DATAWIDTH - 1:0]  EX_late_data1   ,
