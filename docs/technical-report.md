@@ -15,22 +15,22 @@ cover: assets/cover.pdf
 
 本作品在固定 CPU 顶层接口和 SoC 地址映射下，实现了一款面向 FPGA 的 32 位 RISC-V 处理器。核心设计采用双槽顺序发射与顺序提交，在适配同步 IROM、BRAM 时序的同时，通过动态分支预测、多级前递、精确冒险控制、RV32M 多周期执行和 L0 load cache 提升流水线利用率。作品已完成 CPU-only 仿真、开源指令测试交叉验证、竞赛综合程序验证和 FPGA 板级验证。
 
-- 指令与异常支持：  
+- **指令与异常支持：**  
   核心内容：37 条 RV32I 基础指令、RV32M 全部 8 条指令，以及项目所需的 Zicsr、`ecall` 和 `mret`。  
   正文索引：RV32I 指令集支持情况（第 \pageref{sec-rv32i-support} 页）、RV32M 多周期运算（第 \pageref{sec-rv32m-design} 页）、Zicsr 与机器模式异常返回（第 \pageref{sec-zicsr-trap} 页）。
-- 流水线组织：  
+- **流水线组织：**  
   核心内容：双槽顺序发射、顺序提交，实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`。  
   正文索引：CPU 核心微架构（第 \pageref{sec-core-microarchitecture} 页）、双槽顺序发射与流水化访存（第 \pageref{sec-dual-issue-memory} 页）。
-- 性能优化：  
+- **性能优化：**  
   核心内容：64 项 2 位饱和计数 BHT、BTFNT 冷启动预测、256 项双发射提示表、多级前递和 64 项直接映射 L0 load cache。  
   正文索引：动态分支预测（第 \pageref{sec-branch-prediction} 页）、L0 load cache（第 \pageref{sec-l0-cache-design} 页）、面向时序收敛的性能优化（第 \pageref{sec-timing-optimization} 页）。
-- 存储与接口：  
+- **存储与接口：**  
   核心内容：单数据端口，支持 BRAM 与 MMIO、byte/half/word 小端访问；L0 对 BRAM load 缓存完整 32 位字，store 写穿并失效缓存行。  
   正文索引：共享访存端口与 L0 cache（第 \pageref{sec-mem-l0-microarchitecture} 页）、load_l0_cache（第 \pageref{sec-load-l0-cache-module} 页）、perip_bridge（第 \pageref{sec-perip-bridge} 页）。
-- 功能验证：  
+- **功能验证：**  
   核心内容：项目定向测试全部通过；`riscv-tests` 的 37 项 `rv32ui-p` 与 8 项 `rv32um-p` 白名单测试共 45 项全部通过。  
   正文索引：测试体系（第 \pageref{sec-test-system} 页）、功能验证（第 \pageref{sec-functional-verification} 页）、功能测试汇总（第 \pageref{sec-functional-summary} 页）。
-- 性能与板级结果：  
+- **性能与板级结果：**  
   核心内容：`perf_micro` 的 CPI 为 0.956；竞赛 `irom-v2` 综合程序 CPI 为 1.062、L0 命中率为 62.995%；240 MHz FPGA 板级计时为 1,683 ms，与仿真结果一致。  
   正文索引：性能评估（第 \pageref{sec-performance-evaluation} 页）、竞赛 `irom-v2` 综合程序性能（第 \pageref{sec-irom-v2-performance} 页）、FPGA 板级验证（第 \pageref{sec-fpga-validation} 页）。
 
