@@ -31,7 +31,9 @@ module mycpu_if_stage #(
     output logic [DATAWIDTH - 1:0] IF_instr1       ,        // pc+4 取到的指令
     output logic                   IF_issue_dual   ,
     output logic                   IF_pred_taken   ,
-    output logic [DATAWIDTH - 1:0] IF_pred_target
+    output logic [DATAWIDTH - 1:0] IF_pred_target  ,
+    output logic                   IF_S1_pred_taken,
+    output logic [DATAWIDTH - 1:0] IF_S1_pred_target
 );
     // 取下一条指令地址：纠错重定向优先，其次使用动态分支预测。
     logic [DATAWIDTH - 1:0] IF_next_pc;
@@ -47,6 +49,7 @@ module mycpu_if_stage #(
     logic [5:0] dual_hint_tag [0:DUAL_HINT_ENTRIES-1];
     logic       dual_hint_valid [0:DUAL_HINT_ENTRIES-1];
     logic       dual_hint_value [0:DUAL_HINT_ENTRIES-1];
+    logic       dual_hint_branch1 [0:DUAL_HINT_ENTRIES-1];
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_index;
     logic [5:0] dual_hint_pc_tag;
     logic       dual_hint_hit;
@@ -54,6 +57,9 @@ module mycpu_if_stage #(
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_pending_index;
     logic [5:0] dual_hint_pending_tag;
     logic       dual_hint_pending_value;
+    logic       dual_hint_pending_branch1;
+    logic       BP_S1_pred_taken;
+    logic [DATAWIDTH - 1:0] BP_S1_pred_target;
 
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
@@ -84,6 +90,20 @@ module mycpu_if_stage #(
         instr_is_m_ext = (instr[6:0] == `R_TYPE) && (instr[31:25] == 7'b0000001);
     endfunction
 
+    function automatic logic instr_result_ready_ex(input logic [DATAWIDTH - 1:0] instr);
+        logic [6:0] opcode;
+        begin
+            opcode = instr[6:0];
+            // 普通 ALU/LUI/AUIPC 的结果可从第一槽 EX 组合旁路给第二槽分支。
+            // load 和多周期 M 的结果当拍不可用，仍按包内 RAW 拒绝。
+            instr_result_ready_ex = ((opcode == `R_TYPE) &&
+                                     !instr_is_m_ext(instr)) ||
+                                    (opcode == `I_TYPE) ||
+                                    (opcode == `U_TYPE) ||
+                                    (opcode == `UA_TYPE);
+        end
+    endfunction
+
     function automatic logic instr_uses_rs1(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
         begin
@@ -91,7 +111,8 @@ module mycpu_if_stage #(
             instr_uses_rs1 = (opcode == `R_TYPE ) ||
                              (opcode == `I_TYPE ) ||
                              (opcode == `IL_TYPE) ||
-                             (opcode == `S_TYPE );
+                             (opcode == `S_TYPE ) ||
+                             (opcode == `B_TYPE );
         end
     endfunction
 
@@ -100,21 +121,36 @@ module mycpu_if_stage #(
         begin
             opcode = instr[6:0];
             instr_uses_rs2 = (opcode == `R_TYPE) ||
-                             (opcode == `S_TYPE);
+                             (opcode == `S_TYPE) ||
+                             (opcode == `B_TYPE);
         end
     endfunction
 
-    function automatic logic instr_can_dual(input logic [DATAWIDTH - 1:0] instr);
+    function automatic logic instr_can_dual_first(input logic [DATAWIDTH - 1:0] instr);
         logic [6:0] opcode;
         begin
             opcode = instr[6:0];
-            // 只把无控制流/无 CSR 副作用的普通整数、M 扩展和单访存指令放进双发射包。
-            instr_can_dual = (opcode == `R_TYPE ) ||
-                             (opcode == `I_TYPE ) ||
-                             (opcode == `IL_TYPE) ||
-                             (opcode == `S_TYPE ) ||
-                             (opcode == `U_TYPE ) ||
-                             (opcode == `UA_TYPE);
+            instr_can_dual_first = (opcode == `R_TYPE ) ||
+                                   (opcode == `I_TYPE ) ||
+                                   (opcode == `IL_TYPE) ||
+                                   (opcode == `S_TYPE ) ||
+                                   (opcode == `U_TYPE ) ||
+                                   (opcode == `UA_TYPE);
+        end
+    endfunction
+
+    function automatic logic instr_can_dual_second(input logic [DATAWIDTH - 1:0] instr);
+        logic [6:0] opcode;
+        begin
+            opcode = instr[6:0];
+            // 第二槽额外允许条件分支；第一槽仍无控制流，保持顺序提交。
+            instr_can_dual_second = (opcode == `R_TYPE ) ||
+                                    (opcode == `I_TYPE ) ||
+                                    (opcode == `IL_TYPE) ||
+                                    (opcode == `S_TYPE ) ||
+                                    (opcode == `U_TYPE ) ||
+                                    (opcode == `UA_TYPE) ||
+                                    (opcode == `B_TYPE );
         end
     endfunction
 
@@ -122,13 +158,16 @@ module mycpu_if_stage #(
         .clk             (clk            ),
         .rst             (rst            ),
         .IF_pc           (IF_pc          ),
+        .IF_pc1          (IF_pc_plus4    ),
         .update_en       (BP_update_en   ),
         .update_pc       (BP_update_pc   ),
         .update_target   (BP_update_target),
         .update_is_jal   (BP_update_is_jal),
         .update_taken    (BP_update_taken),
         .IF_pred_taken   (IF_pred_taken  ),
-        .IF_pred_target  (IF_pred_target )
+        .IF_pred_target  (IF_pred_target ),
+        .IF_S1_pred_taken(BP_S1_pred_taken),
+        .IF_S1_pred_target(BP_S1_pred_target)
     );
 
     // 提示训练路径按第二条指令的实际源操作数检查包内 RAW，避免把 I 型
@@ -138,11 +177,16 @@ module mycpu_if_stage #(
                                 ((instr_uses_rs1(irom_data1) &&
                                   (IF_instr[11:7] == irom_data1[19:15])) ||
                                  (instr_uses_rs2(irom_data1) &&
-                                  (IF_instr[11:7] == irom_data1[24:20])));
+                                  (IF_instr[11:7] == irom_data1[24:20]))) &&
+                                !((irom_data1[6:0] == `B_TYPE) &&
+                                  instr_result_ready_ex(IF_instr));
     assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(irom_data1);
-    assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(irom_data1);
-    assign IF_dual_candidate = instr_can_dual(IF_instr) &&
-                               instr_can_dual(irom_data1) &&
+    // 多周期 M 指令占住 EX 时，不能让同包的年轻分支提前完成并重定向。
+    assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) &&
+                                  (instr_is_m_ext(irom_data1) ||
+                                   (irom_data1[6:0] == `B_TYPE));
+    assign IF_dual_candidate = instr_can_dual_first(IF_instr) &&
+                               instr_can_dual_second(irom_data1) &&
                                !IF_slot_mem_conflict &&
                                !IF_slot_m_conflict &&
                                !IF_slot_raw_hazard;
@@ -154,6 +198,10 @@ module mycpu_if_stage #(
                            (dual_hint_tag[dual_hint_index] == dual_hint_pc_tag);
     assign IF_issue_dual = !IF_pred_taken && dual_hint_hit &&
                            dual_hint_value[dual_hint_index];
+    assign IF_S1_pred_taken = IF_issue_dual &&
+                              dual_hint_branch1[dual_hint_index] &&
+                              BP_S1_pred_taken;
+    assign IF_S1_pred_target = BP_S1_pred_target;
 
     integer hint_i;
     always_ff @(posedge clk) begin
@@ -168,6 +216,8 @@ module mycpu_if_stage #(
                 dual_hint_valid[dual_hint_pending_index] <= 1'b1;
                 dual_hint_tag[dual_hint_pending_index]   <= dual_hint_pending_tag;
                 dual_hint_value[dual_hint_pending_index] <= dual_hint_pending_value;
+                dual_hint_branch1[dual_hint_pending_index] <=
+                    dual_hint_pending_branch1;
             end
             // Stall 时 PC/指令保持，重复训练同一项不改变结果。
             // 始终更新 pending 可将 hazard 从这组寄存器 CE 路径移除。
@@ -175,6 +225,8 @@ module mycpu_if_stage #(
             dual_hint_pending_index <= dual_hint_index;
             dual_hint_pending_tag   <= dual_hint_pc_tag;
             dual_hint_pending_value <= IF_dual_candidate;
+            dual_hint_pending_branch1 <= IF_dual_candidate &&
+                                         (irom_data1[6:0] == `B_TYPE);
         end
     end
     // 并行预计算两个顺序地址，避免 IF_issue_dual 进入 32 位加法器
@@ -184,6 +236,7 @@ module mycpu_if_stage #(
     assign IF_seq_pc   = IF_issue_dual ? IF_pc_plus8 : IF_pc_plus4;
     assign IF_next_pc    = BranchRedirect ? IF_npc_redirect :
                            IF_pred_taken  ? IF_pred_target   :
+                           IF_S1_pred_taken ? IF_S1_pred_target :
                                             IF_seq_pc;
 
     // pc_reg 寄存器；Stall=1 时 en=0，pc_reg 保持
@@ -209,24 +262,29 @@ module branch_predictor #(
     input  logic                   clk,
     input  logic                   rst,
     input  logic [DATAWIDTH-1:0]   IF_pc,
+    input  logic [DATAWIDTH-1:0]   IF_pc1,
     input  logic                   update_en,
     input  logic [DATAWIDTH-1:0]   update_pc,
     input  logic [DATAWIDTH-1:0]   update_target,
     input  logic                   update_is_jal,
     input  logic                   update_taken,
     output logic                   IF_pred_taken,
-    output logic [DATAWIDTH-1:0]   IF_pred_target
+    output logic [DATAWIDTH-1:0]   IF_pred_target,
+    output logic                   IF_S1_pred_taken,
+    output logic [DATAWIDTH-1:0]   IF_S1_pred_target
 );
     localparam BHT_ENTRIES = (1 << INDEX_WIDTH);
 
     logic [1:0] bht [0:BHT_ENTRIES-1];
     logic [INDEX_WIDTH-1:0] IF_index;
+    logic [INDEX_WIDTH-1:0] IF_S1_index;
     logic [INDEX_WIDTH-1:0] update_index;
     logic [5:0] btb_tag [0:BHT_ENTRIES-1];
     logic [DATAWIDTH-1:0] btb_target [0:BHT_ENTRIES-1];
     logic btb_valid [0:BHT_ENTRIES-1];
     logic btb_is_jal [0:BHT_ENTRIES-1];
     logic btb_hit;
+    logic btb_hit_s1;
     logic [3:0] loop_trip [0:BHT_ENTRIES-1];
     logic [3:0] loop_count [0:BHT_ENTRIES-1];
     logic [1:0] loop_conf [0:BHT_ENTRIES-1];
@@ -234,20 +292,34 @@ module branch_predictor #(
     logic loop_exit [0:BHT_ENTRIES-1];
     logic loop_pred_valid;
     logic loop_pred_taken;
+    logic loop_pred_valid_s1;
+    logic loop_pred_taken_s1;
 
     assign IF_index     = IF_pc[INDEX_WIDTH+1:2];
+    assign IF_S1_index  = IF_pc1[INDEX_WIDTH+1:2];
     assign update_index = update_pc[INDEX_WIDTH+1:2];
     assign btb_hit = btb_valid[IF_index] &&
                      (btb_tag[IF_index] == IF_pc[13:8]);
+    assign btb_hit_s1 = btb_valid[IF_S1_index] &&
+                        (btb_tag[IF_S1_index] == IF_pc1[13:8]);
     assign loop_pred_valid = btb_hit && !btb_is_jal[IF_index] &&
                              loop_conf[IF_index][1] &&
                              (loop_trip[IF_index] != 4'd0);
     assign loop_pred_taken = !loop_exit[IF_index];
+    assign loop_pred_valid_s1 = btb_hit_s1 && !btb_is_jal[IF_S1_index] &&
+                                loop_conf[IF_S1_index][1] &&
+                                (loop_trip[IF_S1_index] != 4'd0);
+    assign loop_pred_taken_s1 = !loop_exit[IF_S1_index];
     assign IF_pred_taken = btb_hit &&
                            (btb_is_jal[IF_index] ||
                             (loop_pred_valid ? loop_pred_taken :
                                                bht[IF_index][1]));
     assign IF_pred_target = btb_target[IF_index];
+    assign IF_S1_pred_taken = btb_hit_s1 &&
+                              (btb_is_jal[IF_S1_index] ||
+                               (loop_pred_valid_s1 ? loop_pred_taken_s1 :
+                                                     bht[IF_S1_index][1]));
+    assign IF_S1_pred_target = btb_target[IF_S1_index];
 
     integer i;
     always_ff @(posedge clk) begin

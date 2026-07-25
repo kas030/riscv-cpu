@@ -11,8 +11,8 @@
 //       perip_wdata / perip_rdata             外设/BRAM 访存接口
 //   内部信号按 IF→ID→EX→MEM→WB 五级分组。第一槽沿用 `<stage>_<信号>` 命名，
 //   第二槽使用 `_S1` 后缀。当前双发射为顺序提交版本：允许无槽内 RAW 的
-//   普通整数/M 扩展/单访存指令同发；同包双访存、同包双 M 和控制流组合
-//   自动退化为单发射。
+//   普通整数/M 扩展/单访存指令同发，并允许普通第一槽携带第二槽条件分支；
+//   同包双访存、同包双 M 和其余控制流组合自动退化为单发射。
 // =============================================================================
 module mycpu (
     input  logic         cpu_rst   ,
@@ -51,11 +51,13 @@ module mycpu (
     logic [2:0]  ID_ForwardA, ID_ForwardB, ID_ForwardA_S1, ID_ForwardB_S1;
     logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
     logic [31:0] ForwardAData, ForwardBData, ForwardAData_S1, ForwardBData_S1;
+    logic        EX_pair_forwardA_S1, EX_pair_forwardB_S1;
     logic        BranchTaken, BranchTaken_raw;
 `ifndef SYNTHESIS
     logic        BranchTaken_stat_q, BranchTaken_stat_pending_q;
 `endif
     logic        BranchMispredict, BranchMispredict_raw;
+    logic        BranchMispredict_raw_any;
     logic [31:0] IF_npc_redirect_raw;
     logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
     logic        redirect_bp_is_jal_q;
@@ -152,6 +154,8 @@ module mycpu (
     logic        IF_issue_dual;
     logic        IF_pred_taken;
     logic [31:0] IF_pred_target;
+    logic        IF_S1_pred_taken;
+    logic [31:0] IF_S1_pred_target;
 
     // -------------------------------------------------------------------------
     // IF/ID 寄存器输出（即 ID 级输入）
@@ -160,6 +164,8 @@ module mycpu (
     logic        ID_issue_dual;
     logic        ID_pred_taken;
     logic [31:0] ID_pred_target;
+    logic        ID_S1_pred_taken;
+    logic [31:0] ID_S1_pred_target;
 
     // -------------------------------------------------------------------------
     // ID 级信号
@@ -207,7 +213,7 @@ module mycpu (
     logic        EX_RegWrite_eff, EX_MemWrite_eff, EX_MemRead_eff;
     logic        EX_S1_RegWrite_eff, EX_S1_MemWrite_eff, EX_S1_MemRead_eff;
     logic [`ALU_OP_WIDTH - 1:0] EX_ALUControl_eff, EX_S1_ALUControl_eff;
-    logic [1:0]  EX_NpcOp_eff;
+    logic [1:0]  EX_NpcOp_eff, EX_S1_NpcOp_eff;
     logic [5:0]  EX_CSRControll_eff;
     logic [31:0] EX_pred_target;
     logic [31:0] EX_S1_pc, EX_S1_imm, EX_S1_rR1_data, EX_S1_rR2_data;
@@ -231,8 +237,11 @@ module mycpu (
     assign EX_S1_MemWrite_eff = EX_S1_pipe_valid && EX_S1_MemWrite;
     assign EX_S1_MemRead_eff  = EX_S1_pipe_valid && EX_S1_MemRead;
     assign EX_ALUControl_eff = EX_pipe_valid ? EX_ALUControl : '0;
-    assign EX_S1_ALUControl_eff = EX_S1_pipe_valid ? EX_S1_ALUControl : '0;
+    assign EX_S1_ALUControl_eff = (EX_S1_pipe_valid &&
+                                   (EX_S1_NpcOp != 2'b01)) ?
+                                  EX_S1_ALUControl : '0;
     assign EX_NpcOp_eff = EX_pipe_valid ? EX_NpcOp : 2'b0;
+    assign EX_S1_NpcOp_eff = EX_S1_pipe_valid ? EX_S1_NpcOp : 2'b0;
     assign EX_CSRControll_eff = EX_pipe_valid ? EX_CSRControll : 6'b0;
 
     // -------------------------------------------------------------------------
@@ -240,7 +249,8 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] EX_alu_result, EX_mem_addr, EX_forward_B_out;
     logic [31:0] EX_csr_wb;
-    logic [31:0] EX_S1_alu_result, EX_S1_mem_addr, EX_S1_forward_B_out;
+    logic [31:0] EX_S1_alu_result, EX_S1_alu_result_to_mem;
+    logic [31:0] EX_S1_mem_addr, EX_S1_forward_B_out;
     logic [31:0] EX_S1_csr_wb;
     logic [31:0] IF_npc_redirect_raw_S1;
     logic        BranchTaken_raw_S1, BranchMispredict_raw_S1, EX_busy_S1;
@@ -260,6 +270,14 @@ module mycpu (
     logic        MEM_S1_RegWrite, MEM_S1_MemWrite, MEM_S1_MemRead;
     logic [2:0]  MEM_S1_MemToReg, MEM_S1_funct3;
     logic [31:0] MEM_S1_csr_wb;
+    logic        MEM_S1_branch_valid, MEM_S1_branch_pred_taken;
+    logic        MEM_S1_branch_pair_a, MEM_S1_branch_pair_b;
+    logic        MEM_S1_branch_taken, MEM_S1_branch_mispredict;
+    logic [2:0]  MEM_S1_branch_funct3;
+    logic [31:0] MEM_S1_branch_pair_result;
+    logic [31:0] MEM_S1_branch_pc, MEM_S1_branch_target;
+    logic [31:0] MEM_S1_branch_fallthrough, MEM_S1_branch_redirect;
+    logic [31:0] MEM_S1_branch_cmp_a, MEM_S1_branch_cmp_b;
 
     // MEM 级中转给 EX 级前递的候选数据 / 外设原始读数
     logic [31:0] MEM_mdata;
@@ -580,7 +598,60 @@ module mycpu (
     assign MEM_load_ready1 = MEM_early_cache_hit1 ||
                              (MEM_S1_bram_access &&
                               (MEM_cache_hit || MEM_store_bypass_hit));
-    assign Flush_EX_MEM       = redirect_valid_q;
+    // 第二槽分支在 MEM1 判定。EX 只分别锁存第一槽结果与第二槽原操作数，
+    // 避免形成“旧值前递→第一槽 ALU→第二槽比较→重定向”的单拍长路径。
+    always_ff @(posedge clk) begin
+        if (rst || Flush_EX_MEM) begin
+            MEM_S1_branch_valid <= 1'b0;
+        end else if (EX_any_busy) begin
+            MEM_S1_branch_valid <= 1'b0;
+        end else begin
+            MEM_S1_branch_valid       <= (EX_S1_NpcOp_eff == 2'b01);
+            MEM_S1_branch_pred_taken  <= EX_S1_pred_taken;
+            MEM_S1_branch_pair_a      <= EX_pair_forwardA_S1;
+            MEM_S1_branch_pair_b      <= EX_pair_forwardB_S1;
+            MEM_S1_branch_funct3      <= EX_S1_funct3;
+            MEM_S1_branch_pair_result <= EX_alu_result;
+        end
+    end
+
+    assign MEM_S1_branch_cmp_a = MEM_S1_branch_pair_a ?
+                                 MEM_S1_branch_pair_result :
+                                 MEM_S1_alu_result;
+    assign MEM_S1_branch_cmp_b = MEM_S1_branch_pair_b ?
+                                 MEM_S1_branch_pair_result :
+                                 MEM_S1_rR2_data;
+    assign MEM_S1_branch_pc = MEM_S1_pcadd4 - 32'd4;
+    assign MEM_S1_branch_target = MEM_S1_branch_pc + MEM_S1_imm;
+    assign MEM_S1_branch_fallthrough = MEM_S1_pcadd4;
+    always_comb begin
+        case (MEM_S1_branch_funct3)
+            3'b000: MEM_S1_branch_taken = (MEM_S1_branch_cmp_a ==
+                                           MEM_S1_branch_cmp_b);
+            3'b001: MEM_S1_branch_taken = (MEM_S1_branch_cmp_a !=
+                                           MEM_S1_branch_cmp_b);
+            3'b100: MEM_S1_branch_taken = ($signed(MEM_S1_branch_cmp_a) <
+                                           $signed(MEM_S1_branch_cmp_b));
+            3'b101: MEM_S1_branch_taken = ($signed(MEM_S1_branch_cmp_a) >=
+                                           $signed(MEM_S1_branch_cmp_b));
+            3'b110: MEM_S1_branch_taken = (MEM_S1_branch_cmp_a <
+                                           MEM_S1_branch_cmp_b);
+            3'b111: MEM_S1_branch_taken = (MEM_S1_branch_cmp_a >=
+                                           MEM_S1_branch_cmp_b);
+            default: MEM_S1_branch_taken = 1'b0;
+        endcase
+    end
+    assign MEM_S1_branch_mispredict = MEM_S1_branch_valid &&
+                                      (MEM_S1_branch_pred_taken !=
+                                       MEM_S1_branch_taken);
+    assign MEM_S1_branch_redirect = MEM_S1_branch_taken ?
+                                    MEM_S1_branch_target :
+                                    MEM_S1_branch_fallthrough;
+    // MEM1 误预测必须当拍阻止年轻 EX 指令进入 MEM1；随后打拍的
+    // redirect_valid_q 继续冲刷 ID/EX 和下一拍 EX/MEM。
+    assign Flush_EX_MEM = redirect_valid_q | MEM_S1_branch_mispredict;
+    assign BranchMispredict_raw_any = MEM_S1_branch_mispredict |
+                                      BranchMispredict_raw;
 
     // redirect/flush 打拍提交：
     //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
@@ -603,26 +674,35 @@ module mycpu (
             // 预测器训练不依赖误预测结果。branch/jal 使用固定 PC 相对目标；
             // 普通 jalr 使用本次实际目标，后续目标变化仍由 EX 比较纠正。
             redirect_bp_update_q <= !redirect_valid_q &&
-                                    ((EX_NpcOp_eff == 2'b01) ||
+                                    (MEM_S1_branch_valid ||
+                                     (EX_NpcOp_eff == 2'b01) ||
                                      (EX_NpcOp_eff == 2'b11) ||
                                      ((EX_NpcOp_eff == 2'b10) &&
                                       (EX_OffsetOrigin == 2'b01)));
             // 记录分支 PC，用于更新预测器历史表
-            redirect_bp_pc_q     <= EX_pc;
+            redirect_bp_pc_q     <= MEM_S1_branch_valid ?
+                                    MEM_S1_branch_pc : EX_pc;
             // branch/jal 的预测目标始终是 PC+imm；分支本次不跳转时
             // IF_npc_redirect_raw 是 PC+4，不能用来训练后续 taken 目标。
-            redirect_bp_target_q <= ((EX_NpcOp_eff == 2'b10) &&
-                                     (EX_OffsetOrigin == 2'b01)) ?
-                                    IF_npc_redirect_raw : EX_pc + EX_imm;
-            redirect_bp_is_jal_q <= (EX_NpcOp_eff == 2'b11) ||
+            redirect_bp_target_q <= MEM_S1_branch_valid ?
+                                    MEM_S1_branch_target :
+                                    (((EX_NpcOp_eff == 2'b10) &&
+                                      (EX_OffsetOrigin == 2'b01)) ?
+                                     IF_npc_redirect_raw : EX_pc + EX_imm);
+            redirect_bp_is_jal_q <= !MEM_S1_branch_valid &&
+                                    ((EX_NpcOp_eff == 2'b11) ||
                                     ((EX_NpcOp_eff == 2'b10) &&
-                                     (EX_OffsetOrigin == 2'b01));
+                                     (EX_OffsetOrigin == 2'b01)));
 
             // pending 重定向期间始终保持已锁存目标。消费重定向只需清 valid，
             // 无需让 load-use stall 进入 target/taken 寄存器的 CE 路径。
             if (!redirect_valid_q) begin
-                redirect_target_q <= IF_npc_redirect_raw;
-                redirect_taken_q  <= BranchTaken_raw;
+                redirect_target_q <= MEM_S1_branch_mispredict ?
+                                     MEM_S1_branch_redirect :
+                                     IF_npc_redirect_raw;
+                redirect_taken_q  <= MEM_S1_branch_valid ?
+                                     MEM_S1_branch_taken :
+                                     BranchTaken_raw;
             end
 
             // [优先级 1] 当前重定向正在被 IF 消费
@@ -631,7 +711,7 @@ module mycpu (
                     redirect_valid_q <= 1'b0;
                 end
             // [优先级 2] EX 刚检测到分支误预测，立即发起重定向
-            end else if (BranchMispredict_raw) begin
+            end else if (BranchMispredict_raw_any) begin
                 redirect_valid_q  <= 1'b1;
             end
         end
@@ -659,7 +739,8 @@ module mycpu (
             if (BranchTaken_stat_pending_q && !Stall_Front) begin
                 BranchTaken_stat_q         <= 1'b1;
                 BranchTaken_stat_pending_q <= 1'b0;
-            end else if (BranchTaken_raw) begin
+            end else if (BranchTaken_raw |
+                         (MEM_S1_branch_valid && MEM_S1_branch_taken)) begin
                 if (Stall_Front) begin
                     BranchTaken_stat_pending_q <= 1'b1;
                 end else begin
@@ -671,7 +752,8 @@ module mycpu (
 
     assign BranchTaken     = BranchTaken_stat_q;
 `else
-    assign BranchTaken     = BranchTaken_raw;
+    assign BranchTaken     = BranchTaken_raw |
+                             (MEM_S1_branch_valid && MEM_S1_branch_taken);
 `endif
     assign BranchMispredict = redirect_valid_q;
     assign BP_update_en    = redirect_bp_update_q;
@@ -709,6 +791,19 @@ module mycpu (
         .ForwardBData    (ForwardBData_S1)
     );
 
+    // 第二槽条件分支可直接消费同包第一槽的普通 ALU 结果。IF 合法性已
+    // 排除 load 和多周期 M，因此这里不会旁路尚未完成的数据。
+    assign EX_pair_forwardA_S1 = (EX_S1_NpcOp_eff == 2'b01) &&
+                                 EX_RegWrite_eff && (EX_rd != 5'd0) &&
+                                 (EX_rd == EX_S1_rs1);
+    assign EX_pair_forwardB_S1 = (EX_S1_NpcOp_eff == 2'b01) &&
+                                 EX_RegWrite_eff && (EX_rd != 5'd0) &&
+                                 (EX_rd == EX_S1_rs2);
+    // 分支本身不写回，复用 EX/MEM1 的 ALU 结果字段保存其 rs1。
+    assign EX_S1_alu_result_to_mem = (EX_S1_NpcOp_eff == 2'b01) ?
+                                     ForwardAData_S1 :
+                                     EX_S1_alu_result;
+
     // =========================================================================
     // STAGE 1：IF（取指）
     // =========================================================================
@@ -732,7 +827,9 @@ module mycpu (
         .IF_instr1       (IF_instr1      ),
         .IF_issue_dual   (IF_issue_dual  ),
         .IF_pred_taken   (IF_pred_taken  ),
-        .IF_pred_target  (IF_pred_target )
+        .IF_pred_target  (IF_pred_target ),
+        .IF_S1_pred_taken(IF_S1_pred_taken),
+        .IF_S1_pred_target(IF_S1_pred_target)
     );
 
     assign IF_pc1 = IF_pc + 32'd4;
@@ -750,13 +847,17 @@ module mycpu (
         .IF_issue_dual(IF_issue_dual),
         .IF_pred_taken (IF_pred_taken),
         .IF_pred_target(IF_pred_target),
+        .IF_S1_pred_taken(IF_S1_pred_taken),
+        .IF_S1_pred_target(IF_S1_pred_target),
         .ID_pc       (ID_pc      ),
         .ID_instr    (ID_instr   ),
         .ID_pc1      (ID_pc1     ),
         .ID_instr1   (ID_instr1  ),
         .ID_issue_dual(ID_issue_dual),
         .ID_pred_taken (ID_pred_taken),
-        .ID_pred_target(ID_pred_target)
+        .ID_pred_target(ID_pred_target),
+        .ID_S1_pred_taken(ID_S1_pred_taken),
+        .ID_S1_pred_target(ID_S1_pred_target)
     );
 
     // =========================================================================
@@ -928,8 +1029,8 @@ module mycpu (
         .ID_late_data1   (ID_S1_late_data1),
         .ID_late_data2   (ID_S1_late_data2),
         .ID_late_load_word(ID_late_load_word),
-        .ID_pred_taken   (1'b0           ),
-        .ID_pred_target  ('0             ),
+        .ID_pred_taken   (ID_S1_pred_taken),
+        .ID_pred_target  (ID_S1_pred_target),
         .clk             (clk            ),
         .rst             (rst            ),
         .Flush_ID_EX     (Flush_ID_EX_comb),
@@ -1021,8 +1122,7 @@ module mycpu (
         .EX_rR1_data      (EX_S1_rR1_data  ),
         .EX_rR2_data      (EX_S1_rR2_data  ),
         .EX_ALUControl    (EX_S1_ALUControl_eff),
-        // lane1 只接收 IF 级筛选后的普通整数/M/单访存指令，
-        // 静态关闭不可达的控制流与 CSR 通路，便于综合删除冗余状态。
+        // 第二槽分支在 MEM1 使用独立比较器判定，EX 不产生控制流反馈。
         .EX_NpcOp         (2'b00           ),
         .EX_OffsetOrigin  (2'b00           ),
         .EX_csr_idx       (12'b0           ),
@@ -1091,7 +1191,7 @@ module mycpu (
 
     mycpu_ex_mem_reg #(DATAWIDTH, ADDR_WIDTH) u_ex_mem_reg_s1 (
         .EX_pc            (EX_S1_pc        ),
-        .EX_alu_result    (EX_S1_alu_result),
+        .EX_alu_result    (EX_S1_alu_result_to_mem),
         .EX_mem_addr      (EX_S1_mem_addr  ),
         .EX_forward_B_out (EX_S1_forward_B_out),
         .EX_imm           (EX_S1_imm       ),

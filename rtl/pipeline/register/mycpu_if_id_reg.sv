@@ -20,13 +20,17 @@ module mycpu_if_id_reg #(
     input  logic                   IF_issue_dual,
     input  logic                   IF_pred_taken,
     input  logic [DATAWIDTH - 1:0] IF_pred_target,
+    input  logic                   IF_S1_pred_taken,
+    input  logic [DATAWIDTH - 1:0] IF_S1_pred_target,
     output logic [DATAWIDTH - 1:0] ID_pc       ,
     output logic [DATAWIDTH - 1:0] ID_instr    ,
     output logic [DATAWIDTH - 1:0] ID_pc1      ,
     output logic [DATAWIDTH - 1:0] ID_instr1   ,
     output logic                   ID_issue_dual,
     output logic                   ID_pred_taken,
-    output logic [DATAWIDTH - 1:0] ID_pred_target
+    output logic [DATAWIDTH - 1:0] ID_pred_target,
+    output logic                   ID_S1_pred_taken,
+    output logic [DATAWIDTH - 1:0] ID_S1_pred_target
 );
     always_ff @(posedge clk) begin
         if (rst || Flush_IF_ID) begin
@@ -38,6 +42,8 @@ module mycpu_if_id_reg #(
             ID_issue_dual <= 1'b0;
             ID_pred_taken  <= 1'b0;
             ID_pred_target <= '0;
+            ID_S1_pred_taken  <= 1'b0;
+            ID_S1_pred_target <= '0;
         end else if (!Stall) begin
             // 非 Stall 才更新；Stall 时本寄存器保持
             ID_pc    <= IF_pc;
@@ -47,6 +53,8 @@ module mycpu_if_id_reg #(
             ID_issue_dual <= IF_issue_dual;
             ID_pred_taken  <= IF_pred_taken;
             ID_pred_target <= IF_pred_target;
+            ID_S1_pred_taken  <= IF_S1_pred_taken;
+            ID_S1_pred_target <= IF_S1_pred_target;
         end
     end
 endmodule
