@@ -227,13 +227,26 @@ module branch_predictor #(
     logic btb_valid [0:BHT_ENTRIES-1];
     logic btb_is_jal [0:BHT_ENTRIES-1];
     logic btb_hit;
+    logic [3:0] loop_trip [0:BHT_ENTRIES-1];
+    logic [3:0] loop_count [0:BHT_ENTRIES-1];
+    logic [1:0] loop_conf [0:BHT_ENTRIES-1];
+    logic loop_overflow [0:BHT_ENTRIES-1];
+    logic loop_exit [0:BHT_ENTRIES-1];
+    logic loop_pred_valid;
+    logic loop_pred_taken;
 
     assign IF_index     = IF_pc[INDEX_WIDTH+1:2];
     assign update_index = update_pc[INDEX_WIDTH+1:2];
     assign btb_hit = btb_valid[IF_index] &&
                      (btb_tag[IF_index] == IF_pc[13:8]);
+    assign loop_pred_valid = btb_hit && !btb_is_jal[IF_index] &&
+                             loop_conf[IF_index][1] &&
+                             (loop_trip[IF_index] != 4'd0);
+    assign loop_pred_taken = !loop_exit[IF_index];
     assign IF_pred_taken = btb_hit &&
-                           (btb_is_jal[IF_index] || bht[IF_index][1]);
+                           (btb_is_jal[IF_index] ||
+                            (loop_pred_valid ? loop_pred_taken :
+                                               bht[IF_index][1]));
     assign IF_pred_target = btb_target[IF_index];
 
     integer i;
@@ -242,6 +255,11 @@ module branch_predictor #(
             for (i = 0; i < BHT_ENTRIES; i = i + 1) begin
                 bht[i] <= 2'b01;
                 btb_valid[i] = 1'b0;
+                loop_trip[i] <= 4'd0;
+                loop_count[i] <= 4'd0;
+                loop_conf[i] <= 2'd0;
+                loop_overflow[i] <= 1'b0;
+                loop_exit[i] <= 1'b0;
             end
         end else if (update_en) begin
             btb_valid[update_index]  <= 1'b1;
@@ -249,6 +267,44 @@ module branch_predictor #(
             btb_target[update_index] <= update_target;
             btb_is_jal[update_index] <= update_is_jal;
             if (!update_is_jal) begin
+                if (!btb_valid[update_index] ||
+                    (btb_tag[update_index] != update_pc[13:8])) begin
+                    loop_trip[update_index] <= 4'd0;
+                    loop_count[update_index] <= update_taken ? 4'd1 : 4'd0;
+                    loop_conf[update_index] <= 2'd0;
+                    loop_overflow[update_index] <= 1'b0;
+                    loop_exit[update_index] <= 1'b0;
+                end else if (update_taken) begin
+                    if (loop_count[update_index] == 4'hf) begin
+                        loop_conf[update_index] <= 2'd0;
+                        loop_overflow[update_index] <= 1'b1;
+                        loop_exit[update_index] <= 1'b0;
+                    end else begin
+                        loop_count[update_index] <= loop_count[update_index] + 1'b1;
+                        if (loop_exit[update_index])
+                            loop_conf[update_index] <= 2'd0;
+                        loop_exit[update_index] <=
+                            ((loop_count[update_index] + 1'b1) ==
+                             loop_trip[update_index]);
+                    end
+                end else begin
+                    if (loop_overflow[update_index] ||
+                        (loop_count[update_index] == 4'd0)) begin
+                        loop_trip[update_index] <= 4'd0;
+                        loop_conf[update_index] <= 2'd0;
+                    end else if (loop_trip[update_index] ==
+                                 loop_count[update_index]) begin
+                        if (loop_conf[update_index] != 2'b11)
+                            loop_conf[update_index] <=
+                                loop_conf[update_index] + 1'b1;
+                    end else begin
+                        loop_trip[update_index] <= loop_count[update_index];
+                        loop_conf[update_index] <= 2'd0;
+                    end
+                    loop_count[update_index] <= 4'd0;
+                    loop_overflow[update_index] <= 1'b0;
+                    loop_exit[update_index] <= 1'b0;
+                end
                 if (update_taken) begin
                     if (bht[update_index] != 2'b11) begin
                         bht[update_index] <= bht[update_index] + 2'b01;
