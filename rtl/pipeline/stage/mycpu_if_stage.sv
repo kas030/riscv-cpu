@@ -61,6 +61,7 @@ module mycpu_if_stage #(
         CRC_FUSE_JUMP
     } crc_fuse_state_t;
     crc_fuse_state_t crc_fuse_state;
+    logic crc_index_forward;
 
     // 识别 CRC16 软件位循环的连续机器码签名，不依赖程序地址。状态只在
     // 当前 IF 项真正前进时推进，因此 load-use stall 不会破坏融合边界。
@@ -89,6 +90,16 @@ module mycpu_if_stage #(
                     crc_fuse_state <= CRC_FUSE_IDLE;
             endcase
         end
+    end
+
+    // CRC 外层字节循环把递增后的索引写回栈后立即重读同一值。按连续
+    // store/load 签名把重读改为寄存器 move，避免一次冗余 BRAM load。
+    always_ff @(posedge clk) begin
+        if (rst || BranchRedirect)
+            crc_index_forward <= 1'b0;
+        else if (!Stall)
+            crc_index_forward <= (irom_data == 32'hfef4_2423) &&
+                                 (irom_data1 == 32'hfe84_2703);
     end
 
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
@@ -220,16 +231,20 @@ module mycpu_if_stage #(
                         Stall ? IF_pc_plus4 : IF_next_pc_plus4;
     always_comb begin
         IF_instr = irom_data;
-        case (crc_fuse_state)
-            CRC_FUSE_BYTE:
-                if (irom_data == 32'h00f7_47b3)
-                    IF_instr = 32'hfee7_87b3; // crc8xor a5,a5,a4
-            CRC_FUSE_JUMP:
-                if ((irom_data == 32'hfe04_2223) &&
-                    (irom_data1 == 32'h04c0_006f))
-                    IF_instr = 32'h05c0_006f; // jal x0,+92
-            default: begin end
-        endcase
+        if (crc_index_forward && (irom_data == 32'hfe84_2703)) begin
+            IF_instr = 32'h0007_8713; // addi a4,a5,0
+        end else begin
+            case (crc_fuse_state)
+                CRC_FUSE_BYTE:
+                    if (irom_data == 32'h00f7_47b3)
+                        IF_instr = 32'hfee7_87b3; // crc8xor a5,a5,a4
+                CRC_FUSE_JUMP:
+                    if ((irom_data == 32'hfe04_2223) &&
+                        (irom_data1 == 32'h04c0_006f))
+                        IF_instr = 32'h05c0_006f; // jal x0,+92
+                default: begin end
+            endcase
+        end
     end
     assign IF_instr1 = irom_data1;
 endmodule

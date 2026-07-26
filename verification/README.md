@@ -16,7 +16,7 @@ make regression
 - `rv32i`：37 条 RV32I、寄存器边界、分支/跳转和对齐 load/store；
 - `rv32m`：八条 RV32M、除零、溢出和多周期相关；
 - `zicsr_trap`：六种 CSR 指令、五个 CSR、`ecall/mret`；
-- `pipeline`：双槽、前递、load-use、flush、RV32M busy、CRC 字节异或融合和 `orc.b`；
+- `pipeline`：双槽、前递、load-use、flush、RV32M busy、CRC 字节/索引融合和 `orc.b`；
 - `memory`：BRAM 边界、子字访问、L0、MMIO 和 COUNTER；
 - `perf_micro`：只展示性能计数的固定混合负载。
 

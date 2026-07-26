@@ -86,6 +86,12 @@ TEST_START
     CHECK_REG t0, 0xe993, 311
     CHECK_REG a5, 0xe993, 312
 
+    # CRC 索引写回后的同地址 reload 可直接使用仍在 a5 中的值。
+    li a5, 37
+    .word 0xfef42423    # sw a5,-24(s0)
+    .word 0xfe842703    # lw a4,-24(s0) -> addi a4,a5,0
+    CHECK_REG a4, 37, 318
+
     # orc.b x6,x5 的固定编码为 0x2872d313。
     li x5, 0x00000000
     .word 0x2872d313
