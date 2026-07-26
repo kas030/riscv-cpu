@@ -55,7 +55,7 @@ module tb_cpu_only;
     longint unsigned cnt_bram_load = 64'd0;
     longint unsigned cnt_retired = 64'd0;
     longint unsigned crc_completed_rounds = 64'd0;
-    localparam logic [31:0] CRC_ROUND_DONE_PC = 32'h8000_0668;
+    localparam logic [31:0] CRC_ROUND_DONE_PC = 32'h8000_066c;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;

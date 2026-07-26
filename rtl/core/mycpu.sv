@@ -68,20 +68,24 @@ module mycpu (
     logic        MEM_store_valid, MEM_store_word;
     logic [31:0] MEM_store_addr, MEM_store_data;
     logic        MEM_bram_load;
-    logic        EX_cache_probe_hit, EX_cache_ready0, EX_cache_ready1;
+    logic        EX_cache_probe_hit0, EX_cache_probe_hit1;
+    logic        EX_cache_ready0, EX_cache_ready1;
     logic [31:0] EX_cache_probe_addr, EX_cache_probe_addr0, EX_cache_probe_addr1;
+    logic [31:0] EX_cache_probe_data0, EX_cache_probe_data1;
     logic [31:0] EX_cache_probe_data, EX_cache_probe_raw, EX_cache_probe_load_data;
     logic        MEM_cache_fill_en;
     logic [31:0] MEM_cache_fill_addr;
     logic        MEM_cache_fill_q_en;
     logic [31:0] MEM_cache_fill_q_addr, MEM_cache_fill_q_data;
     logic [31:0] MEM_cache_lookup_addr;
-    logic        MEM_cache_hit_raw, EX_cache_probe_hit_raw;
-    logic [31:0] MEM_cache_data_raw, EX_cache_probe_data_raw;
+    logic        MEM_cache_hit_raw;
+    logic        EX_cache_probe_hit_raw0, EX_cache_probe_hit_raw1;
+    logic [31:0] MEM_cache_data_raw;
+    logic [31:0] EX_cache_probe_data_raw0, EX_cache_probe_data_raw1;
     logic [3:0]  store_bypass_valid_q;
     logic [13:0] store_bypass_tag_q [0:3];
     logic [31:0] store_bypass_data_q [0:3];
-    logic        EX_store_bypass_hit;
+    logic        EX_store_bypass_hit0, EX_store_bypass_hit1;
     logic [31:0] MEM_store_bypass_data;
     logic        LoadUseEX, LoadUseMEM, LoadUseMEM_base;
 
@@ -1116,9 +1120,12 @@ module mycpu (
         .lookup_addr  (MEM_cache_lookup_addr),
         .lookup_hit   (MEM_cache_hit_raw),
         .lookup_data  (MEM_cache_data_raw),
-        .probe_addr   (EX_cache_probe_addr),
-        .probe_hit    (EX_cache_probe_hit_raw),
-        .probe_data   (EX_cache_probe_data_raw),
+        .probe_addr0  (EX_cache_probe_addr0),
+        .probe_hit0   (EX_cache_probe_hit_raw0),
+        .probe_data0  (EX_cache_probe_data_raw0),
+        .probe_addr1  (EX_cache_probe_addr1),
+        .probe_hit1   (EX_cache_probe_hit_raw1),
+        .probe_data1  (EX_cache_probe_data_raw1),
         .fill_en      (MEM_cache_fill_q_en),
         .fill_addr    (MEM_cache_fill_q_addr),
         .fill_data    (MEM_cache_fill_q_data),
@@ -1173,15 +1180,23 @@ module mycpu (
     end
 
     always_comb begin
-        EX_store_bypass_hit =
-            store_bypass_valid_q[EX_cache_probe_addr[3:2]] &&
-            (store_bypass_tag_q[EX_cache_probe_addr[3:2]] ==
-             EX_cache_probe_addr[17:4]);
+        EX_store_bypass_hit0 =
+            store_bypass_valid_q[EX_cache_probe_addr0[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr0[3:2]] ==
+             EX_cache_probe_addr0[17:4]);
+        EX_store_bypass_hit1 =
+            store_bypass_valid_q[EX_cache_probe_addr1[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr1[3:2]] ==
+             EX_cache_probe_addr1[17:4]);
         // 当前 MEM store 比寄存的上一项更新。完整字可直接旁路；同字的
         // byte/half store 必须屏蔽旧完整字。
         if (MEM_store_valid &&
-            (MEM_store_addr[17:2] == EX_cache_probe_addr[17:2])) begin
-            EX_store_bypass_hit = MEM_store_word;
+            (MEM_store_addr[17:2] == EX_cache_probe_addr0[17:2])) begin
+            EX_store_bypass_hit0 = MEM_store_word;
+        end
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr1[17:2])) begin
+            EX_store_bypass_hit1 = MEM_store_word;
         end
     end
 
@@ -1194,24 +1209,45 @@ module mycpu (
                               MEM_cache_lookup_addr[17:2]);
             MEM_cache_data = MEM_cache_fill_q_data;
         end
-        EX_cache_probe_hit  = EX_cache_probe_hit_raw;
-        EX_cache_probe_data = EX_cache_probe_data_raw;
+        EX_cache_probe_hit0  = EX_cache_probe_hit_raw0;
+        EX_cache_probe_data0 = EX_cache_probe_data_raw0;
+        EX_cache_probe_hit1  = EX_cache_probe_hit_raw1;
+        EX_cache_probe_data1 = EX_cache_probe_data_raw1;
         if (MEM_cache_fill_q_en &&
-            (MEM_cache_fill_q_addr[7:2] == EX_cache_probe_addr[7:2])) begin
-            EX_cache_probe_hit  = (MEM_cache_fill_q_addr[17:2] ==
-                                   EX_cache_probe_addr[17:2]);
-            EX_cache_probe_data = MEM_cache_fill_q_data;
+            (MEM_cache_fill_q_addr[7:2] == EX_cache_probe_addr0[7:2])) begin
+            EX_cache_probe_hit0  = (MEM_cache_fill_q_addr[17:2] ==
+                                    EX_cache_probe_addr0[17:2]);
+            EX_cache_probe_data0 = MEM_cache_fill_q_data;
         end
-        if (store_bypass_valid_q[EX_cache_probe_addr[3:2]] &&
-            (store_bypass_tag_q[EX_cache_probe_addr[3:2]] ==
-             EX_cache_probe_addr[17:4])) begin
-            EX_cache_probe_hit  = 1'b1;
-            EX_cache_probe_data = store_bypass_data_q[EX_cache_probe_addr[3:2]];
+        if (MEM_cache_fill_q_en &&
+            (MEM_cache_fill_q_addr[7:2] == EX_cache_probe_addr1[7:2])) begin
+            EX_cache_probe_hit1  = (MEM_cache_fill_q_addr[17:2] ==
+                                    EX_cache_probe_addr1[17:2]);
+            EX_cache_probe_data1 = MEM_cache_fill_q_data;
+        end
+        if (store_bypass_valid_q[EX_cache_probe_addr0[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr0[3:2]] ==
+             EX_cache_probe_addr0[17:4])) begin
+            EX_cache_probe_hit0  = 1'b1;
+            EX_cache_probe_data0 =
+                store_bypass_data_q[EX_cache_probe_addr0[3:2]];
+        end
+        if (store_bypass_valid_q[EX_cache_probe_addr1[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr1[3:2]] ==
+             EX_cache_probe_addr1[17:4])) begin
+            EX_cache_probe_hit1  = 1'b1;
+            EX_cache_probe_data1 =
+                store_bypass_data_q[EX_cache_probe_addr1[3:2]];
         end
         if (MEM_store_valid &&
-            (MEM_store_addr[17:2] == EX_cache_probe_addr[17:2])) begin
-            EX_cache_probe_hit  = MEM_store_word;
-            EX_cache_probe_data = MEM_store_data;
+            (MEM_store_addr[17:2] == EX_cache_probe_addr0[17:2])) begin
+            EX_cache_probe_hit0  = MEM_store_word;
+            EX_cache_probe_data0 = MEM_store_data;
+        end
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr1[17:2])) begin
+            EX_cache_probe_hit1  = MEM_store_word;
+            EX_cache_probe_data1 = MEM_store_data;
         end
     end
 
@@ -1221,8 +1257,12 @@ module mycpu (
     // 零气泡路径，否则会形成 MEM2/WB -> ALU -> L0 -> hazard 的长组合链。
     assign EX_cache_probe_addr0 = EX_mem_addr_early;
     assign EX_cache_probe_addr1 = EX_S1_mem_addr_early;
+    // 两槽并行读取 L0，把 MemRead 槽选择移到 RAM/tag 比较之后，缩短
+    // EX load-ready 经 hazard 返回 IF 地址口的组合路径。
     assign EX_cache_probe_addr = EX_MemRead_eff ? EX_cache_probe_addr0 :
                                  EX_S1_MemRead_eff ? EX_cache_probe_addr1 : 32'b0;
+    assign EX_cache_probe_data = EX_MemRead_eff ? EX_cache_probe_data0 :
+                                 EX_S1_MemRead_eff ? EX_cache_probe_data1 : 32'b0;
     assign EX_cache_probe_raw = select_load_raw(
         EX_cache_probe_data,
         EX_MemRead_eff ? EX_funct3 : EX_S1_funct3,
@@ -1238,15 +1278,15 @@ module mycpu (
     // 避免消费者前递到 store 之前的旧缓存数据。
     assign EX_cache_ready0 = EX_MemRead_eff && (ForwardA == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr0) &&
-                             (EX_store_bypass_hit ||
-                              (EX_cache_probe_hit &&
+                             (EX_store_bypass_hit0 ||
+                              (EX_cache_probe_hit0 &&
                                !(MEM_cache_fill_en &&
                                  (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr0[7:2]) &&
                                  (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2]))));
     assign EX_cache_ready1 = EX_S1_MemRead_eff && (ForwardA_S1 == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr1) &&
-                             (EX_store_bypass_hit ||
-                              (EX_cache_probe_hit &&
+                             (EX_store_bypass_hit1 ||
+                              (EX_cache_probe_hit1 &&
                                !(MEM_cache_fill_en &&
                                  (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr1[7:2]) &&
                                  (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr1[17:2]))));

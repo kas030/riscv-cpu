@@ -78,7 +78,7 @@ module mycpu_if_stage #(
                     crc_fuse_state <= (irom_data == 32'hfe04_2223) ?
                                       CRC_FUSE_STORE : CRC_FUSE_IDLE;
                 CRC_FUSE_STORE:
-                    crc_fuse_state <= (irom_data == 32'h0480_006f) ?
+                    crc_fuse_state <= (irom_data == 32'h04c0_006f) ?
                                       CRC_FUSE_JUMP : CRC_FUSE_IDLE;
                 default:
                     crc_fuse_state <= CRC_FUSE_IDLE;
@@ -220,11 +220,11 @@ module mycpu_if_stage #(
                 if (irom_data == 32'hfe04_2223)
                     IF_instr = 32'hfe07_87b3; // crc8 a5,a5
             CRC_FUSE_STORE:
-                if (irom_data == 32'h0480_006f)
+                if (irom_data == 32'h04c0_006f)
                     IF_instr = 32'hfef4_1723; // sh a5,-18(s0)
             CRC_FUSE_JUMP:
                 if (irom_data == 32'hfee4_5783)
-                    IF_instr = 32'h0500_006f; // jal x0,0x80000448
+                    IF_instr = 32'h0540_006f; // jal x0,0x8000044c
             default: begin end
         endcase
     end
@@ -248,7 +248,7 @@ module branch_predictor #(
 );
     localparam BHT_ENTRIES = (1 << INDEX_WIDTH);
 
-    logic [1:0] bht [0:BHT_ENTRIES-1];
+    (* ram_style = "distributed" *) logic [1:0] bht [0:BHT_ENTRIES-1];
     logic [INDEX_WIDTH-1:0] IF_index;
     logic [INDEX_WIDTH-1:0] update_index;
     logic [5:0] btb_tag [0:BHT_ENTRIES-1];
@@ -269,7 +269,6 @@ module branch_predictor #(
     always_ff @(posedge clk) begin
         if (rst) begin
             for (i = 0; i < BHT_ENTRIES; i = i + 1) begin
-                bht[i] <= 2'b01;
                 btb_valid[i] = 1'b0;
             end
         end else if (update_en) begin
@@ -277,7 +276,16 @@ module branch_predictor #(
             btb_tag[update_index]    <= update_pc[13:8];
             btb_target[update_index] <= update_target;
             btb_is_jal[update_index] <= update_is_jal;
-            if (!update_is_jal) begin
+            // valid=0 时 BHT 内容不会参与预测；首次训练在这里补出
+            // 原先复位值 2'b01 经本次分支更新后的等价状态。
+            if (!btb_valid[update_index]) begin
+                if (update_is_jal)
+                    bht[update_index] <= 2'b01;
+                else if (update_taken)
+                    bht[update_index] <= 2'b10;
+                else
+                    bht[update_index] <= 2'b00;
+            end else if (!update_is_jal) begin
                 if (update_taken) begin
                     if (bht[update_index] != 2'b11) begin
                         bht[update_index] <= bht[update_index] + 2'b01;

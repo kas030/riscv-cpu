@@ -72,15 +72,32 @@ TEST_START
 .Lcrc_fuse_start:
     .word 0xfef41723    # sh a5,-18(s0)
     .word 0xfe042223    # sw zero,-28(s0) -> crc8 a5,a5
-    .word 0x0480006f    # jal x0,+72          -> sh a5,-18(s0)
-    .word 0xfee45783    # lhu a5,-18(s0)      -> jal x0,+80
-    .rept 19
+    .word 0x04c0006f    # jal x0,+76          -> sh a5,-18(s0)
+    .word 0xfee45783    # lhu a5,-18(s0)      -> jal x0,+84
+    .rept 20
     nop
     .endr
 .Lcrc_fuse_target:
     lhu t0, -18(s0)
     CHECK_REG t0, 0xd713, 311
     CHECK_REG a5, 0xd713, 312
+
+    # orc.b x6,x5 的固定编码为 0x2872d313。
+    li x5, 0x00000000
+    .word 0x2872d313
+    CHECK_REG x6, 0x00000000, 313
+    li x5, 0x00000001
+    .word 0x2872d313
+    CHECK_REG x6, 0x000000ff, 314
+    li x5, 0x00010000
+    .word 0x2872d313
+    CHECK_REG x6, 0x00ff0000, 315
+    li x5, 0x12003400
+    .word 0x2872d313
+    CHECK_REG x6, 0xff00ff00, 316
+    li x5, 0x12345678
+    .word 0x2872d313
+    CHECK_REG x6, 0xffffffff, 317
 
     j test_pass
 TEST_END
