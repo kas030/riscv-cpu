@@ -2,7 +2,7 @@
 // alu.sv —— 32 位算术逻辑单元
 //   位于 EX 级，根据 alu_ctrl 译码出的独热 ALUControl 选择本次运算：
 //     [0] add  [1] sub  [2] and [3] or  [4] xor [5] sll [6] srl [7] sra
-//     [8] beq  [9] bne [10] blt [11] bge [12] bgeu [13] bltu
+//     [8] beq  [9] bne [10] blt [11] bge [12] bgeu [13] bltu [22] ctz
 //   设计要点：
 //     - add/sub/blt/bge/bgeu/bltu 共享同一加减法器，减法/比较时通过
 //       B 端取反 + cin=1 实现 A - B。
@@ -22,13 +22,15 @@ module alu #(
     output logic                           isTrue
 );
     logic m_add , m_sub , m_and , m_or  , m_xor , m_sll , m_srl;
-    logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu, m_crc8;
+    logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu, m_ctz, m_crc8;
     logic [DATAWIDTH-1:0] add_lhs, add_rhs;
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
-    logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra, r_crc8;
+    logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra, r_ctz, r_crc8;
     logic [DATAWIDTH-1:0] r_logic_shift, r_non_arith;
     logic                 cmp_eq, cmp_lt, cmp_ltu, cmp_result_selected;
+    logic                 ctz_found;
+    integer               ctz_i;
 
     assign m_add  = ALUControl[ 0];
     assign m_sub  = ALUControl[ 1];
@@ -44,6 +46,7 @@ module alu #(
     assign m_bge  = ALUControl[11];
     assign m_bgeu = ALUControl[12];
     assign m_bltu = ALUControl[13];
+    assign m_ctz  = ALUControl[22];
     assign m_crc8 = ALUControl[23];
 
     function automatic logic [15:0] crc16_advance_byte(input logic [15:0] value);
@@ -72,6 +75,16 @@ module alu #(
     assign r_sll  = A << B[4:0];
     assign r_srl  = A >> B[4:0];
     assign r_sra  = ($signed(A)) >>> B[4:0];
+    always_comb begin
+        r_ctz = DATAWIDTH;
+        ctz_found = 1'b0;
+        for (ctz_i = 0; ctz_i < DATAWIDTH; ctz_i = ctz_i + 1) begin
+            if (!ctz_found && A[ctz_i]) begin
+                r_ctz = ctz_i;
+                ctz_found = 1'b1;
+            end
+        end
+    end
     assign r_crc8 = {{DATAWIDTH - 16{1'b0}},
                      crc16_advance_byte(A[15:0] ^ B[15:0])};
 
@@ -95,6 +108,7 @@ module alu #(
                            {DATAWIDTH{m_sll}} & r_sll |
                            {DATAWIDTH{m_srl}} & r_srl |
                            {DATAWIDTH{m_sra}} & r_sra |
+                           {DATAWIDTH{m_ctz}} & r_ctz |
                            {DATAWIDTH{m_crc8}} & r_crc8;
 
     assign cmp_result_selected = (m_blt & cmp_lt) | (m_bltu & cmp_ltu);
