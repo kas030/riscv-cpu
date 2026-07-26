@@ -53,6 +53,7 @@ module mycpu_decoder #(
     alu_ctrl u_alu_ctrl (
         .opcode     (ID_instr[6:0]              ),
         .funct      ({ID_instr[31:25], ID_funct3}),
+        .funct5     (ID_instr[24:20]            ),
         .ALUControl (ID_ALUControl              )
     );
 
