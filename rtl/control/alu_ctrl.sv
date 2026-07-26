@@ -34,12 +34,13 @@ module alu_ctrl(
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_DIVU   = 22'h080000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_REM    = 22'h100000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_REMU   = 22'h200000;
+    localparam logic [`ALU_OP_WIDTH - 1:0] OP_XPERM4 = 23'h400000;
     localparam logic [`ALU_OP_WIDTH - 1:0] OP_CRC8   = 24'h800000;
 
     logic do_add , do_sub , do_and , do_or  , do_xor , do_sll , do_srl;
     logic do_sra , do_beq , do_bne , do_blt , do_bge , do_bgeu, do_bltu;
     logic do_mul , do_mulh, do_mulhsu, do_mulhu, do_div, do_divu, do_rem, do_remu;
-    logic do_crc8;
+    logic do_xperm4, do_crc8;
 
     assign ALUControl = {`ALU_OP_WIDTH{do_add   }} & OP_ADD    |
                         {`ALU_OP_WIDTH{do_sub   }} & OP_SUB    |
@@ -63,6 +64,7 @@ module alu_ctrl(
                         {`ALU_OP_WIDTH{do_divu  }} & OP_DIVU   |
                         {`ALU_OP_WIDTH{do_rem   }} & OP_REM    |
                         {`ALU_OP_WIDTH{do_remu  }} & OP_REMU   |
+                        {`ALU_OP_WIDTH{do_xperm4}} & OP_XPERM4 |
                         {`ALU_OP_WIDTH{do_crc8  }} & OP_CRC8;
 
     logic kind_r, kind_i, kind_load, kind_store, kind_jalr, kind_auipc, kind_branch;
@@ -105,6 +107,7 @@ module alu_ctrl(
     assign do_sll  = ((r_base && funct7 == 7'b0000000) || (i_shift_base && funct7 == 7'b0000000)) && funct3 == 3'b001;
     assign do_srl  = ((r_base && funct7 == 7'b0000000) || (i_shift_base && funct7 == 7'b0000000)) && funct3 == 3'b101;
     assign do_sra  = ((r_base && funct7 == 7'b0100000) || (i_shift_base && funct7 == 7'b0100000)) && funct3 == 3'b101;
+    assign do_xperm4 = kind_r && funct7 == 7'b0010100 && funct3 == 3'b010;
     // CRC 指令融合器使用保留 R 型编码执行 crc16_advance(rs1 ^ rs2)。
     assign do_crc8 = kind_r && funct7 == 7'b1111111 && funct3 == 3'b000;
 
