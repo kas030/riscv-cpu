@@ -75,7 +75,8 @@ module alu #(
     assign r_sra  = ($signed(A)) >>> B[4:0];
     assign r_orcb = {{8{|A[31:24]}}, {8{|A[23:16]}},
                      {8{|A[15: 8]}}, {8{|A[ 7: 0]}}};
-    assign r_crc8 = {{DATAWIDTH - 16{1'b0}}, crc16_advance_byte(A[15:0])};
+    assign r_crc8 = {{DATAWIDTH - 16{1'b0}},
+                     crc16_advance_byte(A[15:0] ^ B[15:0])};
 
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);

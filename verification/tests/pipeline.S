@@ -68,19 +68,23 @@ TEST_START
 
     # CRC 软件位循环融合必须只依赖连续指令签名，与代码地址无关。
     mv s0, sp
-    li a5, 0x1234
+    li t0, 0x1234
+    sh t0, -18(s0)
+    li a5, 0x56
 .Lcrc_fuse_start:
+    .word 0x00078713    # addi a4,a5,0
+    .word 0xfee45783    # lhu a5,-18(s0)
+    .word 0x00f747b3    # xor a5,a4,a5 -> crc8xor a5,a5,a4
     .word 0xfef41723    # sh a5,-18(s0)
-    .word 0xfe042223    # sw zero,-28(s0) -> crc8 a5,a5
-    .word 0x04c0006f    # jal x0,+76          -> sh a5,-18(s0)
-    .word 0xfee45783    # lhu a5,-18(s0)      -> jal x0,+84
-    .rept 20
+    .word 0xfe042223    # sw zero,-28(s0) -> jal x0,+92
+    .word 0x04c0006f    # jal x0,+76
+    .rept 21
     nop
     .endr
 .Lcrc_fuse_target:
     lhu t0, -18(s0)
-    CHECK_REG t0, 0xd713, 311
-    CHECK_REG a5, 0xd713, 312
+    CHECK_REG t0, 0xe993, 311
+    CHECK_REG a5, 0xe993, 312
 
     # orc.b x6,x5 的固定编码为 0x2872d313。
     li x5, 0x00000000

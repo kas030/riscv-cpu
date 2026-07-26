@@ -110,7 +110,7 @@ module alu_ctrl(
     assign do_sra  = ((r_base && funct7 == 7'b0100000) || (i_shift_base && funct7 == 7'b0100000)) && funct3 == 3'b101;
     assign do_orcb = kind_i && funct7 == 7'b0010100 &&
                      funct5 == 5'b00111 && funct3 == 3'b101;
-    // CRC 指令融合器使用保留 R 型编码执行一次 CRC16 字节推进。
+    // CRC 指令融合器使用保留 R 型编码执行 crc16_advance(rs1 ^ rs2)。
     assign do_crc8 = kind_r && funct7 == 7'b1111111 && funct3 == 3'b000;
 
     assign do_bltu = (r_base && funct7 == 7'b0000000 && funct3 == 3'b011) || (kind_branch && funct3 == 3'b110) || (kind_i && funct3 == 3'b011);

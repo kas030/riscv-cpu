@@ -56,7 +56,7 @@ module mycpu_if_stage #(
     logic       dual_hint_pending_value;
     typedef enum logic [1:0] {
         CRC_FUSE_IDLE,
-        CRC_FUSE_OP,
+        CRC_FUSE_BYTE,
         CRC_FUSE_STORE,
         CRC_FUSE_JUMP
     } crc_fuse_state_t;
@@ -71,14 +71,19 @@ module mycpu_if_stage #(
             case (crc_fuse_state)
                 CRC_FUSE_IDLE:
                     crc_fuse_state <=
+                        ((irom_data == 32'h0007_8713) &&
+                         (irom_data1 == 32'hfee4_5783)) ?
+                        CRC_FUSE_BYTE : CRC_FUSE_IDLE;
+                CRC_FUSE_BYTE:
+                    if (irom_data == 32'hfee4_5783)
+                        crc_fuse_state <= CRC_FUSE_BYTE;
+                    else
+                        crc_fuse_state <= (irom_data == 32'h00f7_47b3) ?
+                                          CRC_FUSE_STORE : CRC_FUSE_IDLE;
+                CRC_FUSE_STORE:
+                    crc_fuse_state <=
                         ((irom_data == 32'hfef4_1723) &&
                          (irom_data1 == 32'hfe04_2223)) ?
-                        CRC_FUSE_OP : CRC_FUSE_IDLE;
-                CRC_FUSE_OP:
-                    crc_fuse_state <= (irom_data == 32'hfe04_2223) ?
-                                      CRC_FUSE_STORE : CRC_FUSE_IDLE;
-                CRC_FUSE_STORE:
-                    crc_fuse_state <= (irom_data == 32'h04c0_006f) ?
                                       CRC_FUSE_JUMP : CRC_FUSE_IDLE;
                 default:
                     crc_fuse_state <= CRC_FUSE_IDLE;
@@ -216,15 +221,13 @@ module mycpu_if_stage #(
     always_comb begin
         IF_instr = irom_data;
         case (crc_fuse_state)
-            CRC_FUSE_OP:
-                if (irom_data == 32'hfe04_2223)
-                    IF_instr = 32'hfe07_87b3; // crc8 a5,a5
-            CRC_FUSE_STORE:
-                if (irom_data == 32'h04c0_006f)
-                    IF_instr = 32'hfef4_1723; // sh a5,-18(s0)
+            CRC_FUSE_BYTE:
+                if (irom_data == 32'h00f7_47b3)
+                    IF_instr = 32'hfee7_87b3; // crc8xor a5,a5,a4
             CRC_FUSE_JUMP:
-                if (irom_data == 32'hfee4_5783)
-                    IF_instr = 32'h0540_006f; // jal x0,0x8000044c
+                if ((irom_data == 32'hfe04_2223) &&
+                    (irom_data1 == 32'h04c0_006f))
+                    IF_instr = 32'h05c0_006f; // jal x0,+92
             default: begin end
         endcase
     end
