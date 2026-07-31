@@ -13,6 +13,10 @@
 
 #include "board.h"
 
+#ifdef RT_USING_FINSH
+#include <shell.h>
+#endif
+
 #define LED_ADDR 0x80200040ul
 
 #ifndef DEMO_RUN_MS
@@ -70,6 +74,13 @@ void rt_application_init(void)
     fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
     if (fin != RT_NULL)
         rt_thread_startup(fin);
+
+#ifdef RT_USING_FINSH
+    /* 串口命令行：finsh 线程（优先级 21）
+     * 注意：本函数在 rt_system_scheduler_start() 之前调用，finsh_system_init
+     * 内部用 rt_thread_init 创建线程，不依赖调度器已启动 */
+    finsh_system_init();
+#endif
 }
 
 void rtthread_startup(void);

@@ -9,6 +9,7 @@
 
 ROOT := ../../..
 KERNEL := ../../kernel
+FINSH := ../../components/finsh
 
 # ---- 工具链：本机 riscv32-unknown-elf-gcc 位于 ~/.local/riscv-tc/bin（不在 PATH）
 TOOLCHAIN_DIR ?= $(HOME)/.local/riscv-tc/bin
@@ -26,7 +27,7 @@ BUILD := build
 ARCH_FLAGS := -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medany \
 	-msmall-data-limit=0 -mno-relax
 OPT := -Os -ffunction-sections -fdata-sections -ffreestanding
-CFLAGS := $(ARCH_FLAGS) $(OPT) -I. -I$(KERNEL)/include -MMD -MP
+CFLAGS := $(ARCH_FLAGS) $(OPT) -I. -I$(KERNEL)/include -I$(FINSH) -MMD -MP
 LDFLAGS := -nostdlib -nostartfiles -static \
 	-Wl,--gc-sections -Wl,--build-id=none -Wl,--no-relax -T linker.ld
 
@@ -37,12 +38,13 @@ DEMO_RUN_MS ?= 3000
 STOP_NS ?= 4000000000
 PROGRESS_NS ?= 0
 
-# ---- 编译对象：内核 11 个 + libcpu common 4 个 + bsp 4 个
+# ---- 编译对象：内核 11 个 + libcpu common 4 个 + bsp 4 个 + finsh 3 个
 KSRC := clock cpu idle ipc irq kservice mem object scheduler thread timer
 KOBJ := $(KSRC:%=$(BUILD)/k_%.o)
 LIBOBJ := $(BUILD)/cpuport.o $(BUILD)/context.o
 BSPOBJ := $(BUILD)/board.o $(BUILD)/main.o $(BUILD)/entry.o
-OBJS := $(KOBJ) $(LIBOBJ) $(BSPOBJ)
+FINSHOBJ := $(BUILD)/finsh_shell.o $(BUILD)/finsh_cmd.o $(BUILD)/finsh_msh.o
+OBJS := $(KOBJ) $(LIBOBJ) $(BSPOBJ) $(FINSHOBJ)
 DEPS := $(OBJS:.o=.d)
 
 .PHONY: all run size clean FORCE
@@ -66,6 +68,15 @@ $(BUILD)/entry.o: entry_gcc.S | $(BUILD)
 	$(CC) $(ARCH_FLAGS) -c $< -o $@
 
 $(BUILD)/board.o: board.c board.h rtconfig.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/finsh_shell.o: $(FINSH)/shell.c rtconfig.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/finsh_cmd.o: $(FINSH)/cmd.c rtconfig.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # DEMO_RUN_MS 变化时强制重编 main.o（内容不变则不动时间戳）

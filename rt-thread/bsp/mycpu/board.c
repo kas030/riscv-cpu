@@ -11,12 +11,15 @@
 
 #include <rthw.h>
 #include <rtthread.h>
+#include <stddef.h>
 
 #include "board.h"
 
 #define CNT_ADDR        0x80200050ul   /* COUNTER：毫秒计数 */
 #define CNT_START_CMD   0x80000000ul
 #define SEG_ADDR        0x80200020ul   /* 数码管写数据回读 */
+#define UART_DATA_ADDR  0x80200060ul   /* UART 数据：写=发送，读=接收并清 valid */
+#define UART_STATUS_ADDR 0x80200064ul  /* UART 状态：bit0=TX_BUSY，bit1=RX_VALID */
 
 /* 最近 8 个控制台字符的环形缓冲 */
 static rt_uint8_t  console_ring[8];
@@ -29,6 +32,11 @@ void rt_hw_console_output(const char *str)
 {
     while (*str)
     {
+        /* 串口发送为主：轮询 TX_BUSY 后写数据寄存器 */
+        while (*(volatile rt_uint32_t *)UART_STATUS_ADDR & 1u)
+            ;
+        *(volatile rt_uint32_t *)UART_DATA_ADDR = (rt_uint32_t)*str;
+
         console_ring[console_ring_idx & 7] = (rt_uint8_t)*str;
         console_ring_idx++;
         str++;
@@ -40,6 +48,25 @@ void rt_hw_console_output(const char *str)
         v = (v << 8) | console_ring[(console_ring_idx - 4 + i) & 7];
     *(volatile rt_uint32_t *)SEG_ADDR = v;
 }
+
+/* finsh 输入（shell.c 无 RT_USING_DEVICE 时调用本函数）
+ * 注意：本工具链默认 -funsigned-char，无输入时返回 0xFF（-1 的字节值），
+ * shell.c 以 ch == 0xFF 识别空输入并让出 CPU（见 shell.c 注释） */
+char rt_hw_console_getchar(void)
+{
+    if (*(volatile rt_uint32_t *)UART_STATUS_ADDR & 2u)
+        return (char)(*(volatile rt_uint32_t *)UART_DATA_ADDR & 0xFFu);
+    return (char)-1;
+}
+
+/* 无 libc：finsh 用到的标准库函数以 rt_* 等价实现（freestanding 编译） */
+size_t strlen(const char *s) { return rt_strlen(s); }
+int strncmp(const char *a, const char *b, size_t n) { return rt_strncmp(a, b, n); }
+char *strcpy(char *d, const char *s) { char *r = d; while ((*d++ = *s++)) ; return r; }
+char *strcat(char *d, const char *s) { char *r = d; while (*d) d++; while ((*d++ = *s++)) ; return r; }
+char *strncpy(char *d, const char *s, size_t n) { char *r = d; while (n-- && (*d++ = *s)) s++; while (n-- > 0) *d++ = 0; return r; }
+void *memset(void *p, int c, size_t n) { unsigned char *q = p; while (n--) *q++ = (unsigned char)c; return p; }
+void *memcpy(void *d, const void *s, size_t n) { unsigned char *q = d; const unsigned char *p = s; while (n--) *q++ = *p++; return d; }
 
 static void tick_hook(void)
 {

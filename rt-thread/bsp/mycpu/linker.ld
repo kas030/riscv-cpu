@@ -30,6 +30,17 @@ SECTIONS
     {
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
+        /* finsh 命令表（FSymTab/VSymTab 为只读数据，随 .rodata 进 BRAM）
+         * 必须 ALIGN(4) 后再赋起始符号：KEEP 段会按输入段对齐输出，
+         * 不对齐会导致 msh 遍历命令表时错位，所有命令 not found */
+        . = ALIGN(4);
+        __fsymtab_start = .;
+        KEEP(*(FSymTab))
+        __fsymtab_end = .;
+        . = ALIGN(4);
+        __vsymtab_start = .;
+        KEEP(*(VSymTab))
+        __vsymtab_end = .;
     } > BRAM
 
     .data : ALIGN(4)
