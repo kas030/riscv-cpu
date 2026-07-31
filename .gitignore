@@ -32,6 +32,7 @@ __pycache__/
 cpu_core_files.md
 reports/
 docs/build/
+rt-thread/bsp/mycpu/build/
 
 # OS
 *.swp

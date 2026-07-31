@@ -1,0 +1,98 @@
+/*
+ * main.c —— RT-Thread Nano 3.1.5 mycpu 平台启动序列与演示程序
+ *
+ * 启动序列：_start -> main -> rtthread_startup。调度器启动后 boot 上下文不再
+ * 返回，因此演示线程必须在 rt_system_scheduler_start() 之前创建。
+ *
+ * 完成判据：fin 线程延时 DEMO_RUN_MS（默认 3000）毫秒后向 LED（0x80200040）
+ * 写入 0xC0DEC0DE，sim_cpu_only 的 testbench 据此判定 PASS。
+ */
+
+#include <rthw.h>
+#include <rtthread.h>
+
+#include "board.h"
+
+#define LED_ADDR 0x80200040ul
+
+#ifndef DEMO_RUN_MS
+#define DEMO_RUN_MS 3000
+#endif
+
+static rt_sem_t sem;
+static rt_uint32_t counter;
+
+static void thread1_entry(void *param)
+{
+    while (1)
+    {
+        rt_thread_mdelay(500);
+        rt_kprintf("thread1 tick=%d\n", rt_tick_get());
+        rt_sem_release(sem);
+    }
+}
+
+static void thread2_entry(void *param)
+{
+    while (1)
+    {
+        rt_thread_mdelay(1000);
+        rt_kprintf("thread2 tick=%d\n", rt_tick_get());
+        rt_sem_take(sem, RT_WAITING_FOREVER);
+        counter++;
+    }
+}
+
+static void finish_entry(void *param)
+{
+    rt_thread_mdelay(DEMO_RUN_MS);
+    rt_kprintf("demo done tick=%d counter=%d\n", rt_tick_get(), counter);
+    *(volatile rt_uint32_t *)LED_ADDR = 0xC0DEC0DEul;
+    while (1)
+    {
+    }
+}
+
+void rt_application_init(void)
+{
+    rt_thread_t t1, t2, fin;
+
+    sem = rt_sem_create("sem", 0, RT_IPC_FLAG_FIFO);
+    if (sem == RT_NULL)
+        return;
+
+    t1 = rt_thread_create("t1", thread1_entry, RT_NULL, 1024, 10, 20);
+    if (t1 != RT_NULL)
+        rt_thread_startup(t1);
+    t2 = rt_thread_create("t2", thread2_entry, RT_NULL, 1024, 11, 20);
+    if (t2 != RT_NULL)
+        rt_thread_startup(t2);
+    fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
+    if (fin != RT_NULL)
+        rt_thread_startup(fin);
+}
+
+void rtthread_startup(void);
+
+void main(void)
+{
+    rtthread_startup();
+    while (1)
+    {
+    }
+}
+
+void rtthread_startup(void)
+{
+    rt_hw_interrupt_disable();
+    rt_hw_board_init();
+    rt_show_version();
+    rt_system_timer_init();
+    rt_system_scheduler_init();
+    rt_application_init();
+    rt_thread_idle_init();
+    rt_system_scheduler_start();
+    while (1)
+    {
+    }
+}

@@ -15,6 +15,7 @@
 - `rtl/soc/student_top.sv`：实例化 CPU、双路 IROM 读口和外设桥。
 - `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 和 `student_top`。
 - `sim_cpu_only/`：不依赖 Vivado IP 的 CPU-only Verilator/Icarus 仿真环境。
+- `rt-thread/`：RT-Thread Nano 3.1.5 移植（vendor 内核 + `bsp/mycpu`），演示经 LED 完成值在 Verilator 仿真中验收。
 - `tb/`：Vivado CPU、板级和 UART testbench。
 - `vivado/tests/`：分层汇编测试、链接脚本和镜像生成工具。
 - `ip/`、`constraints/`：Vivado IP 配置和板级约束。
