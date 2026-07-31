@@ -41,7 +41,8 @@ module student_top#(
     input  [7:0]                                uart_rx_data  ,
     output                                      uart_tx_start ,
     output [7:0]                                uart_tx_data  ,
-    input                                       uart_passthrough
+    input                                       uart_passthrough,
+    output                                      uart_passthrough_req
 );
 
     // IROM
@@ -108,7 +109,8 @@ module student_top#(
         .uart_tx_busy       (uart_tx_busy),
         .uart_rx_data       (uart_rx_data),
         .uart_rx_ready      (uart_rx_valid),
-        .uart_passthrough   (uart_passthrough)
+        .uart_passthrough   (uart_passthrough),
+    .uart_passthrough_req(uart_passthrough_req)
     );
 
 endmodule

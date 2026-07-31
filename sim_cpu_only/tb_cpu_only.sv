@@ -44,6 +44,7 @@ module tb_cpu_only;
     /* ---- UART 透传通路（uart/twin_controller/uart_bridge 均为真实 RTL） ---- */
     logic        uart_line_rx;        // tb 注入（模拟 PC 发送）
     logic        twin_passthrough;    // twin 透传态
+    logic        twin_passthrough_req; // CPU 透传请求（bridge -> twin）
     logic        uart_line_tx;        // uart 输出（tb 捕获）
     logic [7:0]  uart_rx_data;
     logic        uart_rx_ready;
@@ -151,7 +152,8 @@ module tb_cpu_only;
         .cpu_uart_tx_start (cpu_uart_tx_start),
         .cpu_uart_rx_data  (cpu_uart_rx_data),
         .cpu_uart_rx_valid (cpu_uart_rx_valid),
-        .passthrough       (twin_passthrough)
+        .passthrough       (twin_passthrough),
+        .passthrough_req   (twin_passthrough_req)
     );
 
     uart_bridge bridge_inst (
@@ -168,7 +170,9 @@ module tb_cpu_only;
         .uart_tx_busy   (uart_tx_busy),
         .uart_rx_data   (cpu_uart_rx_data),
         .uart_rx_ready  (cpu_uart_rx_valid),
-        .passthrough    (twin_passthrough)
+        .passthrough    (twin_passthrough),
+        .ps_wen         (perip_wen && perip_addr == UART_STATUS_ADDR),
+        .passthrough_req(twin_passthrough_req)
     );
 
     initial begin
@@ -373,11 +377,15 @@ module tb_cpu_only;
     endfunction
 
     initial begin : uart_verify
-        /* 等待复位释放、finsh 启动并输出 banner（约 80 字节 * 1.04ms） */
+        /* CPU 启动时主动请求透传（board.c rt_hw_board_init 写 UART_STATUS）：
+         * 等待透传建立（twin 进 PASSTHROUGH）与 finsh banner 输出完成 */
         #(200_000_000);
-        $display("[UART-VERIFY] inject 0xC9 (enter passthrough)");
-        uart_tx_byte(8'hC9);
-        #(30_000_000);
+        if (twin_inst.current_state == 2) begin
+            $display("[UART-VERIFY] passthrough established by CPU (state=%0d)", twin_inst.current_state);
+        end else begin
+            $display("[UART-VERIFY] FAIL: passthrough not established (state=%0d)", twin_inst.current_state);
+            finish_sim("uart_assert_fail");
+        end
         $display("[UART-VERIFY] inject 'help\\r'");
         uart_tx_byte("h");
         uart_tx_byte("e");
@@ -386,12 +394,12 @@ module tb_cpu_only;
         uart_tx_byte(8'h0D);
         #(60_000_000);
         if (uart_queue_has_str("version")) begin
-            $display("[UART-VERIFY] passthrough shell verification passed");
+            $display("[UART-VERIFY] shell verification passed (qlen=%0d)", uart_cap_qlen);
         end else begin
             $display("[UART-VERIFY] FAIL: help output missing 'version' (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
         end
-        $display("[UART-VERIFY] inject 0xCA (exit)");
+        $display("[UART-VERIFY] inject 0xCA (exit passthrough)");
         uart_tx_byte(8'hCA);
         #(10_000_000);
         $display("[UART-VERIFY] inject 0x80 (readback)");

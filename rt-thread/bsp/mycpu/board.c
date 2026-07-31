@@ -95,4 +95,15 @@ void rt_hw_board_init(void)
     extern char __bss_end[];
     extern char __stack_top[];
     rt_system_heap_init(__bss_end, __stack_top);
+
+    /* 请求进入串口透传：写 UART_STATUS 触发（bridge 置透传请求脉冲），
+     * 轮询 bit2（透传已建立，twin 进入 PASSTHROUGH）确认。此后全部控制台
+     * 输出直接走 UART，串口终端（9600 8N1）连接即可操作 msh，无需发送
+     * 0xC9。竞赛裸机镜像不写本寄存器，twin 保持 IDLE，上位机协议零影响。 */
+    *(volatile rt_uint32_t *)UART_STATUS_ADDR = 1;
+    while (!(*(volatile rt_uint32_t *)UART_STATUS_ADDR & 4u))
+        ;
 }
+
+
+

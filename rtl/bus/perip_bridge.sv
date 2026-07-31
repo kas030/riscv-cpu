@@ -42,7 +42,8 @@ module perip_bridge(
     input  logic         uart_tx_busy       ,
     input  logic [7:0]   uart_rx_data       ,
     input  logic         uart_rx_ready      ,
-    input  logic         uart_passthrough   
+    input  logic         uart_passthrough   ,
+    output logic         uart_passthrough_req  // 透传请求脉冲（50MHz，接 twin_controller）
 );
     localparam BRAM_ADDR_TAG = 14'h2004;  // 0x8010_0000..0x8013_FFFF
     localparam SW0_ADDR  = 32'h8020_0000;  // sw[31:0]
@@ -54,7 +55,7 @@ module perip_bridge(
     localparam CNT_START_CMD = 32'h8000_0000;
     localparam CNT_STOP_CMD  = 32'hFFFF_FFFF;
     localparam UART_DATA_ADDR   = 32'h8020_0060;  // 写=发送，读=接收并清 valid
-    localparam UART_STATUS_ADDR = 32'h8020_0064;  // bit0=TX_BUSY，bit1=RX_VALID
+    localparam UART_STATUS_ADDR = 32'h8020_0064;  // bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写=请求透传
 
     logic [31:0] LED;
     logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
@@ -180,7 +181,9 @@ module perip_bridge(
         .uart_tx_busy    (uart_tx_busy),
         .uart_rx_data    (uart_rx_data),
         .uart_rx_ready   (uart_rx_ready),
-        .passthrough     (uart_passthrough)
+        .passthrough     (uart_passthrough),
+        .ps_wen          (perip_wen && perip_addr == UART_STATUS_ADDR),
+        .passthrough_req (uart_passthrough_req)
     );
 
 endmodule

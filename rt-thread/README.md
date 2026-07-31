@@ -53,13 +53,16 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 启用 `RT_USING_FINSH` + `FINSH_USING_MSH_ONLY`，finsh 线程（优先级 21）
 提供 msh 命令行。板级 UART 与 CPU 的透传由 `twin_controller` 管理：
 
-- **透传协议**（9600 8N1，板级串口视角）：
-  - 发送 `0xC9`：进入透传，CPU 独占串口（banner、提示符、命令交互）；
-  - 发送 `0xCA`：退出透传，串口恢复 twin 控制（开关/按键/回读）；
-  - 透传中 `0x80` 保留（twin 状态回读命令），其余字节原样转发给 CPU。
+- **即连即用**：RT-Thread 启动时（`rt_hw_board_init`）写 `0x80200064` 主动
+  请求透传并轮询 bit2 确认，twin 自动进入透传。串口终端（9600 8N1）连接后
+  直接看到完整启动 banner 与 `msh >` 提示符，无需任何握手字节。
+- **透传协议**（保留给上位机/调试）：发送 `0xC9` 进入透传，`0xCA` 退出；
+  透传中 `0x80` 保留（twin 状态回读命令），其余字节原样转发给 CPU。
+  竞赛裸机镜像不写请求寄存器，twin 复位后保持 IDLE，上位机注入协议零影响。
 - **寄存器**（`perip_bridge` 地址译码）：
   - `0x80200060`：数据，写=发送，读=接收并清除 RX_VALID；
-  - `0x80200064`：状态，bit0=TX_BUSY，bit1=RX_VALID。
+  - `0x80200064`：状态，bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH
+    （透传已建立）；写任意值=请求进入透传。
 - **丢字节防护**（`uart_bridge.sv`）：240 MHz 域 `bit0 = tx_busy_sync | tx_pend`，
   50 MHz 域按 UART 实际锁存（busy 上升沿）确认，透传期字节挂起等待、不丢弃；
   非透传期丢弃并立即确认，避免 CPU 轮询挂死。
@@ -88,8 +91,9 @@ make run DEMO_RUN_MS=500 STOP_NS=900000000   # 缩短演示与仿真时间
 （18 字节）完整。
 
 板卡验证（Vivado `tb/tb_top.sv` 或真实板卡）同样使用 9600 8N1：
-先发送 0xC9 进入透传，即可看到 RT-Thread 启动 banner 与 `msh >` 提示符，
-输入 `help` 查看命令；输入 0xCA 退出透传，串口恢复 twin 协议。
+MobaXterm/SecureCRT 等终端直接连接即可——RT-Thread 启动时自动进入透传，
+启动 banner 与 `msh >` 提示符直接可见，输入 `help` 查看命令列表。
+竞赛模式上位机不受影响：它不写 `0x80200064`，twin 保持 IDLE。
 
 ## 演示程序
 
@@ -103,12 +107,13 @@ make run DEMO_RUN_MS=500 STOP_NS=900000000   # 缩短演示与仿真时间
 验收记录（Verilator，`DEMO_RUN_MS=500`，STOP_NS=1.5e9，含串口自动验收）：
 
 ```
-[UART-VERIFY] passthrough shell verification passed
-[UART-VERIFY] readback verification passed (qlen=80)
+[UART-VERIFY] passthrough established by CPU (state=2)
+[UART-VERIFY] shell verification passed (qlen=184)
+[UART-VERIFY] readback verification passed (qlen=204)
 >>> [PASS] final state matches enabled checks
 stop_reason : led
 virtual_led : 0xc0dec0de
-cnt_ms      : 500
+cnt_ms      : 564
 ```
 
 ## 配置

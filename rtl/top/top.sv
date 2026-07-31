@@ -49,6 +49,7 @@ module top(
     wire [7:0] cpu_uart_rx_data;
     wire       cpu_uart_rx_valid;
     wire       cpu_uart_passthrough;
+    wire       cpu_uart_passthrough_req;
 
     pll pll_inst(
         .clk_in1_p(i_sys_clk_p),
@@ -89,7 +90,8 @@ module top(
         .cpu_uart_tx_start(cpu_uart_tx_start),
         .cpu_uart_rx_data(cpu_uart_rx_data),
         .cpu_uart_rx_valid(cpu_uart_rx_valid),
-        .passthrough(cpu_uart_passthrough)
+        .passthrough(cpu_uart_passthrough),
+        .passthrough_req(cpu_uart_passthrough_req)
     );
 
     student_top student_top_inst(
@@ -105,7 +107,8 @@ module top(
         .uart_rx_data(cpu_uart_rx_data),
         .uart_tx_start(cpu_uart_tx_start),
         .uart_tx_data(cpu_uart_tx_data),
-        .uart_passthrough(cpu_uart_passthrough)
+        .uart_passthrough(cpu_uart_passthrough),
+        .uart_passthrough_req(cpu_uart_passthrough_req)
     );
 
 endmodule

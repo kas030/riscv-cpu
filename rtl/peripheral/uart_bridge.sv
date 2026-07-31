@@ -4,7 +4,9 @@
  * 地址（perip_bridge 译码后子集，perip_addr[3:2]）：
  *   uart_addr=2'b00  UART_DATA  写=发送一字节（轮询 TX_BUSY 后再写）；
  *                               读=返回接收字节，并清除 RX_VALID（读清握手）。
- *   uart_addr=2'b01  UART_STATUS bit0=TX_BUSY，bit1=RX_VALID（均 2FF 同步）。
+ *   uart_addr=2'b01  UART_STATUS bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH
+ *                    （均 2FF 同步）；写=请求进入透传（RT-Thread 启动时主动
+ *                    请求，串口终端连接即用；竞赛镜像不写则保持 IDLE）。
  *
  * 跨域握手：
  *   TX（240→50）：CPU 写 DATA 置 tx_pend；50MHz 域 2FF 采样上升沿置 tx_req，
@@ -42,7 +44,9 @@ module uart_bridge(
     input  logic        uart_tx_busy,
     input  logic [7:0]  uart_rx_data,
     input  logic        uart_rx_ready,
-    input  logic        passthrough     // twin 透传态（同 50MHz 域）：进入时清挂起 TX
+    input  logic        passthrough,     // twin 透传态（同 50MHz 域）：进入时清挂起 TX
+    input  logic        ps_wen,          // 240MHz：写 UART_STATUS=请求进入透传
+    output logic        passthrough_req  // 50MHz：透传请求脉冲（1 拍，接 twin_controller）
 );
 
     /* ---------------- 50MHz 域复位（rst 2FF 同步） ---------------- */
@@ -114,6 +118,31 @@ module uart_bridge(
 
     assign uart_tx_data  = tx_data_50;
     assign uart_tx_start = tx_req & ~uart_tx_busy;
+
+    /* ---------------- 透传请求：240MHz 写 STATUS -> 50MHz 脉冲 ---------------- */
+    logic        ps_req_pend;            // 240MHz：写 STATUS 置位（电平，上升沿只出现一次）
+    logic [1:0]  ps_req_sync;            // 2FF -> 50MHz
+    logic [1:0]  passthrough_sync;       // twin 透传态 2FF -> 240MHz（STATUS bit2）
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            ps_req_pend      <= 1'b0;
+            passthrough_sync <= 2'b00;
+        end else begin
+            if (ps_wen)
+                ps_req_pend <= 1'b1;
+            passthrough_sync <= {passthrough_sync[0], passthrough};
+        end
+    end
+
+    always_ff @(posedge cnt_clk) begin
+        if (rst_50m)
+            ps_req_sync <= 2'b00;
+        else
+            ps_req_sync <= {ps_req_sync[0], ps_req_pend};
+    end
+
+    assign passthrough_req = ps_req_sync[0] & ~ps_req_sync[1];
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -209,7 +238,7 @@ module uart_bridge(
             2'b00:   uart_rdata = {24'd0, rx_data_sync};
             /* TX_BUSY 并入 tx_pend：pend 确认（ack）晚于 busy 同步到达，
              * 若只报 uart_tx_busy，CPU 会在 pend 未清时写下一字节导致丢字节 */
-            2'b01:   uart_rdata = {30'd0, rx_valid_sync, tx_busy_sync | tx_pend};
+            2'b01:   uart_rdata = {29'd0, passthrough_sync[1], rx_valid_sync, tx_busy_sync | tx_pend};
             default: uart_rdata = 32'd0;
         endcase
     end

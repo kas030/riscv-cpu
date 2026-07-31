@@ -43,7 +43,8 @@ module twin_controller(
     input  wire        cpu_uart_tx_start,
     output reg  [7:0]  cpu_uart_rx_data,
     output reg         cpu_uart_rx_valid,
-    output wire        passthrough      // 透传态（供 uart_bridge 清挂起 TX）
+    output wire        passthrough,      // 透传态（供 uart_bridge 清挂起 TX）
+    input  wire        passthrough_req   // CPU 请求透传（脉冲，来自 uart_bridge）
 );
 
     assign passthrough = (current_state == PASSTHROUGH);
@@ -75,7 +76,12 @@ module twin_controller(
 
         case(current_state)
             IDLE: begin
-                if(rx_ready) begin
+                if(passthrough_req) begin
+                    /* CPU 主动请求透传（RT-Thread 启动时写 UART_STATUS 触发）：
+                     * 复位后默认非透传，竞赛镜像不请求则上位机协议零影响 */
+                    next_state = PASSTHROUGH;
+                    tx_start_next = 0;
+                end else if(rx_ready) begin
                     if(rx_data == 8'h80) begin
                         next_state = SEND;
                         tx_start_next = 0;
