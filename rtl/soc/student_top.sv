@@ -33,7 +33,15 @@ module student_top#(
     input  [P_SW_CNT  - 1:0]                    virtual_sw    ,
 
     output [P_LED_CNT - 1:0]                    virtual_led   ,
-    output [P_SEG_CNT - 1:0]                    virtual_seg   
+    output [P_SEG_CNT - 1:0]                    virtual_seg   ,
+
+    /* CPU 串口透传（50MHz 域，接 twin_controller） */
+    input                                       uart_tx_busy  ,
+    input                                       uart_rx_valid ,
+    input  [7:0]                                uart_rx_data  ,
+    output                                      uart_tx_start ,
+    output [7:0]                                uart_tx_data  ,
+    input                                       uart_passthrough
 );
 
     // IROM
@@ -94,7 +102,13 @@ module student_top#(
         .virtual_sw_input	(virtual_sw),
         .virtual_key_input	(virtual_key),	
         .virtual_seg_output	(virtual_seg),
-        .virtual_led_output (virtual_led)
+        .virtual_led_output (virtual_led),
+        .uart_tx_data       (uart_tx_data),
+        .uart_tx_start      (uart_tx_start),
+        .uart_tx_busy       (uart_tx_busy),
+        .uart_rx_data       (uart_rx_data),
+        .uart_rx_ready      (uart_rx_valid),
+        .uart_passthrough   (uart_passthrough)
     );
 
 endmodule

@@ -13,6 +13,7 @@ SRC_HAZARD := $(ROOT)/rtl/hazard
 SRC_MEMORY := $(ROOT)/rtl/memory
 SRC_PIPE_REG := $(ROOT)/rtl/pipeline/register
 SRC_PIPE_STAGE := $(ROOT)/rtl/pipeline/stage
+SRC_PERIPH := $(ROOT)/rtl/peripheral
 IROM_COE := $(ROOT)/sim/coe/mext/irom-v2.coe
 BRAM_COE := $(ROOT)/sim/coe/mext/dram.coe
 EXPECTED_LED ?=
@@ -42,7 +43,7 @@ VFLAGS_BASE := --binary --timing $(VERILATOR_QUIET_FLAGS) -MAKEFLAGS -s -CFLAGS 
 VFLAGS_TRACE := $(if $(filter 1,$(TRACE)),--trace-fst --trace-structs -LDFLAGS -lz,)
 VFLAGS := $(VFLAGS_BASE) $(VFLAGS_TRACE)
 VERILATOR_OBJ_DIR := $(if $(filter 1,$(TRACE)),obj_dir_trace,obj_dir)/$(SIM_CONFIG_ID)
-INC_DIRS := -I$(SRC_COMMON) -I$(SRC_CONTROL) -I$(SRC_CORE) -I$(SRC_DATAPATH) -I$(SRC_HAZARD) -I$(SRC_MEMORY) -I$(SRC_PIPE_REG) -I$(SRC_PIPE_STAGE) -I$(SIM_CONFIG_DIR) -I$(BUILD)
+INC_DIRS := -I$(SRC_COMMON) -I$(SRC_CONTROL) -I$(SRC_CORE) -I$(SRC_DATAPATH) -I$(SRC_HAZARD) -I$(SRC_MEMORY) -I$(SRC_PIPE_REG) -I$(SRC_PIPE_STAGE) -I$(SRC_PERIPH) -I$(SIM_CONFIG_DIR) -I$(BUILD)
 
 CPU_SRCS := \
   $(SRC_COMMON)/mux_key_internal.v \
@@ -75,7 +76,10 @@ CPU_SRCS := \
   $(SRC_PIPE_STAGE)/mycpu_id_stage.sv \
   $(SRC_PIPE_STAGE)/mycpu_ex_stage.sv \
   $(SRC_PIPE_STAGE)/mycpu_mem_stage.sv \
-  $(SRC_PIPE_STAGE)/mycpu_wb_stage.sv
+  $(SRC_PIPE_STAGE)/mycpu_wb_stage.sv \
+  $(SRC_PERIPH)/uart_bridge.sv \
+  $(SRC_PERIPH)/uart.sv \
+  $(SRC_PERIPH)/twin_controller.sv
 
 .PHONY: all sim sim-iverilog sim-verilator clean check-tools check-verilator FORCE
 

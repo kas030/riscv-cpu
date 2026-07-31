@@ -34,7 +34,15 @@ module perip_bridge(
     input  logic [7:0]   virtual_key_input	,	
 
 	output logic [39:0]  virtual_seg_output	,
-    output logic [31:0]  virtual_led_output
+    output logic [31:0]  virtual_led_output,
+
+    /* UART 透传（50MHz 域，接 twin_controller 与 uart） */
+    output logic [7:0]   uart_tx_data       ,
+    output logic         uart_tx_start      ,
+    input  logic         uart_tx_busy       ,
+    input  logic [7:0]   uart_rx_data       ,
+    input  logic         uart_rx_ready      ,
+    input  logic         uart_passthrough   
 );
     localparam BRAM_ADDR_TAG = 14'h2004;  // 0x8010_0000..0x8013_FFFF
     localparam SW0_ADDR  = 32'h8020_0000;  // sw[31:0]
@@ -45,9 +53,12 @@ module perip_bridge(
     localparam CNT_ADDR  = 32'h8020_0050;  // counter
     localparam CNT_START_CMD = 32'h8000_0000;
     localparam CNT_STOP_CMD  = 32'hFFFF_FFFF;
+    localparam UART_DATA_ADDR   = 32'h8020_0060;  // 写=发送，读=接收并清 valid
+    localparam UART_STATUS_ADDR = 32'h8020_0064;  // bit0=TX_BUSY，bit1=RX_VALID
 
     logic [31:0] LED;
     logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
+    logic [31:0] uart_rdata;
     logic [39:0] seg_output;
     logic cnt_enable_cfg;
     logic bram_hit, bram_ren, bram_wen, bram_resp_valid;
@@ -74,6 +85,7 @@ module perip_bridge(
                         cnt_enable_cfg <= 1'b0;
                     end
                 end
+                default: ;
             endcase
         end
     end
@@ -86,6 +98,8 @@ module perip_bridge(
                 SW1_ADDR:  mmio_rdata = virtual_sw_input[63:32];
                 KEY_ADDR:  mmio_rdata = {24'd0, virtual_key_input};
                 SEG_ADDR:  mmio_rdata = seg_wdata;
+                UART_DATA_ADDR:   mmio_rdata = uart_rdata;  // uart_addr=00
+                UART_STATUS_ADDR: mmio_rdata = uart_rdata;  // uart_addr=01
                 default:   mmio_rdata = 32'hDEAD_BEEF;
             endcase
         end else begin
@@ -144,9 +158,29 @@ module perip_bridge(
                          {32{~bram_resp_valid && perip_addr == SW1_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == KEY_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == SEG_ADDR}} & mmio_rdata |
-                         {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata;
+                         {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata |
+                         {32{~bram_resp_valid && perip_addr == UART_DATA_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == UART_STATUS_ADDR}} & mmio_rdata;
     
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;
+
+    // uart 跨时钟域桥（240MHz 侧接 perip 总线子集，50MHz 侧接 twin/uart）
+    uart_bridge uart_bridge_inst (
+        .clk             (clk),
+        .cnt_clk         (cnt_clk),
+        .rst             (rst),
+        .uart_addr       (perip_addr[3:2]),
+        .uart_wdata      (perip_wdata[7:0]),
+        .uart_wen        (perip_wen && perip_addr == UART_DATA_ADDR),
+        .uart_ren        (~perip_wen && perip_addr == UART_DATA_ADDR),
+        .uart_rdata      (uart_rdata),
+        .uart_tx_data    (uart_tx_data),
+        .uart_tx_start   (uart_tx_start),
+        .uart_tx_busy    (uart_tx_busy),
+        .uart_rx_data    (uart_rx_data),
+        .uart_rx_ready   (uart_rx_ready),
+        .passthrough     (uart_passthrough)
+    );
 
 endmodule

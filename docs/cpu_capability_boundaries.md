@@ -209,8 +209,15 @@ L0 是内部性能结构，不提供软件可见的缓存控制或一致性指�
 | `0x80200020` | SEG | 是 | 是 | 数码管写数据回读 |
 | `0x80200040` | LED | 否 | 是 | 32 位 LED 输出 |
 | `0x80200050` | COUNTER | 是 | 是 | 计数值/控制命令 |
+| `0x80200060` | UART_DATA | 是 | 是 | 串口数据：写=发送，读=接收并清除 RX_VALID |
+| `0x80200064` | UART_STATUS | 是 | 否 | 串口状态：bit0=TX_BUSY，bit1=RX_VALID |
 
 COUNTER 写入 `0x80000000` 开始计数，写入 `0xFFFFFFFF` 停止计数。
+
+UART 为 9600 8N1，经 `twin_controller` 透传协议接入板级串口：
+发送 0xC9 进入透传（CPU 接管串口），发送 0xCA 退出透传；
+透传中 0x80 保留用于状态回读，其余字节在透传态由 CPU 读写，
+详见 `rt-thread/README.md` 与 `rtl/peripheral/uart_bridge.sv`。
 
 MMIO 外设不统一处理 byte-enable，且仅在精确地址命中时有定义。软件应使用上述地址上的对齐 `lw/sw`；不要假定 `lb/lh/sb/sh`、LED 回读、未列出地址或地址别名具有标准外设语义。
 

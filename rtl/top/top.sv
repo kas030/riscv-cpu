@@ -42,6 +42,14 @@ module top(
     wire [7:0] tx_data;
     wire tx_busy;
 
+    /* CPU 串口透传（twin_controller ↔ student_top）
+     * uart 的 tx_busy 同时供 twin 与 CPU 透传侧（同域，直连分叉） */
+    wire [7:0] cpu_uart_tx_data;
+    wire       cpu_uart_tx_start;
+    wire [7:0] cpu_uart_rx_data;
+    wire       cpu_uart_rx_valid;
+    wire       cpu_uart_passthrough;
+
     pll pll_inst(
         .clk_in1_p(i_sys_clk_p),
         .clk_in1_n(i_sys_clk_n),
@@ -76,7 +84,12 @@ module top(
         .sw(virtual_sw),
         .key(virtual_key),
         .seg(virtual_seg),
-        .led(virtual_led)
+        .led(virtual_led),
+        .cpu_uart_tx_data(cpu_uart_tx_data),
+        .cpu_uart_tx_start(cpu_uart_tx_start),
+        .cpu_uart_rx_data(cpu_uart_rx_data),
+        .cpu_uart_rx_valid(cpu_uart_rx_valid),
+        .passthrough(cpu_uart_passthrough)
     );
 
     student_top student_top_inst(
@@ -86,7 +99,13 @@ module top(
         .virtual_key(virtual_key),
         .virtual_sw(virtual_sw),
         .virtual_led(virtual_led),
-        .virtual_seg(virtual_seg)
+        .virtual_seg(virtual_seg),
+        .uart_tx_busy(tx_busy),
+        .uart_rx_valid(cpu_uart_rx_valid),
+        .uart_rx_data(cpu_uart_rx_data),
+        .uart_tx_start(cpu_uart_tx_start),
+        .uart_tx_data(cpu_uart_tx_data),
+        .uart_passthrough(cpu_uart_passthrough)
     );
 
 endmodule

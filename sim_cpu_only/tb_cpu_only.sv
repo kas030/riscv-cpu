@@ -10,6 +10,8 @@ module tb_cpu_only;
     localparam SEG_ADDR  = 32'h8020_0020;
     localparam LED_ADDR  = 32'h8020_0040;
     localparam CNT_ADDR  = 32'h8020_0050;
+    localparam UART_DATA_ADDR   = 32'h8020_0060;
+    localparam UART_STATUS_ADDR = 32'h8020_0064;
 
     logic clk = 1'b0;
     logic cnt_clk = 1'b0;
@@ -38,6 +40,28 @@ module tb_cpu_only;
     logic [31:0] bram [0:65535];
     logic [31:0] bram_rdata_q;
     logic        bram_resp_valid;
+
+    /* ---- UART 透传通路（uart/twin_controller/uart_bridge 均为真实 RTL） ---- */
+    logic        uart_line_rx;        // tb 注入（模拟 PC 发送）
+    logic        twin_passthrough;    // twin 透传态
+    logic        uart_line_tx;        // uart 输出（tb 捕获）
+    logic [7:0]  uart_rx_data;
+    logic        uart_rx_ready;
+    logic [7:0]  uart_tx_data;
+    logic        uart_tx_start;
+    logic        uart_tx_busy;
+    logic [63:0] twin_sw;
+    logic [7:0]  twin_key;
+    logic [7:0]  cpu_uart_tx_data;
+    logic        cpu_uart_tx_start;
+    logic [7:0]  cpu_uart_rx_data;
+    logic        cpu_uart_rx_valid;
+    logic [31:0] uart_rdata;
+    logic [31:0] twin_led = 32'd0;
+    logic [39:0] twin_seg = {8'd0, 32'h3700_0000};
+    logic [7:0]  uart_cap_queue [0:4095];
+    integer      uart_cap_qlen = 0;
+    integer      uart_cap_qhead = 0;
 
     longint unsigned cycles = 64'd0;
     longint unsigned cnt_writeback = 64'd0;
@@ -93,6 +117,58 @@ module tb_cpu_only;
         .perip_mask  (perip_mask),
         .perip_wdata (perip_wdata),
         .perip_rdata (perip_rdata)
+    );
+
+    /* UART 透传链路：tb(PC) <-> uart <-> twin_controller <-> uart_bridge <-> CPU */
+    uart #(
+        .CLK_FREQ  (50000000),
+        .BAUD_RATE (9600)
+    ) uart_inst (
+        .clk       (cnt_clk),
+        .rst_n     (~rst),
+        .rx        (uart_line_rx),
+        .rx_data   (uart_rx_data),
+        .rx_ready  (uart_rx_ready),
+        .tx        (uart_line_tx),
+        .tx_data   (uart_tx_data),
+        .tx_start  (uart_tx_start),
+        .tx_busy   (uart_tx_busy)
+    );
+
+    twin_controller twin_inst (
+        .clk               (cnt_clk),
+        .rst_n             (~rst),
+        .rx_ready          (uart_rx_ready),
+        .rx_data           (uart_rx_data),
+        .tx_start          (uart_tx_start),
+        .tx_data           (uart_tx_data),
+        .tx_busy           (uart_tx_busy),
+        .sw                (twin_sw),
+        .key               (twin_key),
+        .seg               (twin_seg),
+        .led               (twin_led),
+        .cpu_uart_tx_data  (cpu_uart_tx_data),
+        .cpu_uart_tx_start (cpu_uart_tx_start),
+        .cpu_uart_rx_data  (cpu_uart_rx_data),
+        .cpu_uart_rx_valid (cpu_uart_rx_valid),
+        .passthrough       (twin_passthrough)
+    );
+
+    uart_bridge bridge_inst (
+        .clk            (clk),
+        .cnt_clk        (cnt_clk),
+        .rst            (rst),
+        .uart_addr      (perip_addr[3:2]),
+        .uart_wdata     (perip_wdata[7:0]),
+        .uart_wen       (perip_wen && perip_addr == UART_DATA_ADDR),
+        .uart_ren       (~perip_wen && perip_addr == UART_DATA_ADDR),
+        .uart_rdata     (uart_rdata),
+        .uart_tx_data   (cpu_uart_tx_data),
+        .uart_tx_start  (cpu_uart_tx_start),
+        .uart_tx_busy   (uart_tx_busy),
+        .uart_rx_data   (cpu_uart_rx_data),
+        .uart_rx_ready  (cpu_uart_rx_valid),
+        .passthrough    (twin_passthrough)
     );
 
     initial begin
@@ -165,11 +241,13 @@ module tb_cpu_only;
             perip_rdata = bram_rdata_q;
         end else if (!perip_wen) begin
             case (perip_addr)
-                SW0_ADDR: perip_rdata = 32'd0;
-                SW1_ADDR: perip_rdata = 32'd0;
-                KEY_ADDR: perip_rdata = 32'd0;
+                SW0_ADDR: perip_rdata = twin_sw[31:0];
+                SW1_ADDR: perip_rdata = twin_sw[63:32];
+                KEY_ADDR: perip_rdata = {24'd0, twin_key};
                 SEG_ADDR: perip_rdata = seg_wdata;
                 CNT_ADDR: perip_rdata = cnt_ms;
+                UART_DATA_ADDR:   perip_rdata = uart_rdata;
+                UART_STATUS_ADDR: perip_rdata = uart_rdata;
                 default: perip_rdata = 32'd0;
             endcase
         end
@@ -239,6 +317,100 @@ module tb_cpu_only;
         end else begin
             cnt_1ms <= 16'd0;
         end
+    end
+
+    /* ---- UART 行为模型（模拟 PC 串口，9600 8N1） ---- */
+    localparam time UART_BIT_NS = 104160;   // 1/9600 s = 104.16us
+
+    task automatic uart_tx_byte(input [7:0] data);
+        integer bit_idx;
+        begin
+            uart_line_rx = 1'b0;             // start
+            #(UART_BIT_NS);
+            for (bit_idx = 0; bit_idx < 8; bit_idx = bit_idx + 1) begin
+                uart_line_rx = data[bit_idx]; // LSB first
+                #(UART_BIT_NS);
+            end
+            uart_line_rx = 1'b1;             // stop
+            #(UART_BIT_NS);
+        end
+    endtask
+
+    always begin : uart_tx_capture
+        logic [7:0] cap_byte;
+        integer bit_idx;
+        uart_line_rx = 1'b1;
+        forever begin
+            @(negedge uart_line_tx);         // start bit
+            #(UART_BIT_NS * 3 / 2);          // 采样点：位中心
+            for (bit_idx = 0; bit_idx < 8; bit_idx = bit_idx + 1) begin
+                cap_byte[bit_idx] = uart_line_tx;
+                #(UART_BIT_NS);
+            end
+            /* 不再等待 stop 位：连续发送周期为 10 位，若再等 1 位（共 10.5 位）
+             * 会错过下一字节的 start 沿，导致从数据位下降沿触发、采样错位 */
+            uart_cap_queue[uart_cap_qlen] = cap_byte;
+            uart_cap_qlen = uart_cap_qlen + 1;
+            $display("[UART-TX] t=%0t 0x%02X %c", $time, cap_byte, (cap_byte >= 8'h20 && cap_byte < 8'h7F) ? cap_byte : 8'h2E);
+        end
+    end
+
+    function automatic bit uart_queue_has_str(string s);
+        integer i, j;
+        bit found;
+        begin
+            found = 1'b0;
+            for (i = 0; i <= uart_cap_qlen - s.len() && !found; i = i + 1) begin
+                found = 1'b1;
+                for (j = 0; j < s.len(); j = j + 1) begin
+                    if (uart_cap_queue[i + j] != s[j]) begin
+                        found = 1'b0;
+                    end
+                end
+            end
+            uart_queue_has_str = found;
+        end
+    endfunction
+
+    initial begin : uart_verify
+        /* 等待复位释放、finsh 启动并输出 banner（约 80 字节 * 1.04ms） */
+        #(200_000_000);
+        $display("[UART-VERIFY] inject 0xC9 (enter passthrough)");
+        uart_tx_byte(8'hC9);
+        #(30_000_000);
+        $display("[UART-VERIFY] inject 'help\\r'");
+        uart_tx_byte("h");
+        uart_tx_byte("e");
+        uart_tx_byte("l");
+        uart_tx_byte("p");
+        uart_tx_byte(8'h0D);
+        #(60_000_000);
+        if (uart_queue_has_str("version")) begin
+            $display("[UART-VERIFY] passthrough shell verification passed");
+        end else begin
+            $display("[UART-VERIFY] FAIL: help output missing 'version' (qlen=%0d)", uart_cap_qlen);
+            finish_sim("uart_assert_fail");
+        end
+        $display("[UART-VERIFY] inject 0xCA (exit)");
+        uart_tx_byte(8'hCA);
+        #(10_000_000);
+        $display("[UART-VERIFY] inject 0x80 (readback)");
+        uart_tx_byte(8'h80);
+        #(30_000_000);
+        if (uart_cap_qlen >= 18) begin
+            $display("[UART-VERIFY] readback verification passed (qlen=%0d)", uart_cap_qlen);
+        end else begin
+            $display("[UART-VERIFY] FAIL: readback too short (qlen=%0d)", uart_cap_qlen);
+            finish_sim("uart_assert_fail");
+        end
+    end
+
+    /* twin 回读内容用确定值（避免 x 传播到 UART 线） */
+    always_ff @(posedge clk) begin
+        if (led_written)
+            twin_led <= virtual_led;
+        if (seg_written)
+            twin_seg <= {8'd0, seg_wdata};
     end
 
     function automatic [15:0] bcd4(input [31:0] value);
