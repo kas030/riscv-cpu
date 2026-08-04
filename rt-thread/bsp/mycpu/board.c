@@ -32,6 +32,15 @@ void rt_hw_console_output(const char *str)
 {
     while (*str)
     {
+        /* 终端需要 CRLF：仅发 '\n' 只换行不回行首，输出会阶梯状错位 */
+        if (*str == '\n')
+        {
+            while (*(volatile rt_uint32_t *)UART_STATUS_ADDR & 1u)
+                ;
+            *(volatile rt_uint32_t *)UART_DATA_ADDR = '\r';
+            console_ring[console_ring_idx & 7] = '\r';
+            console_ring_idx++;
+        }
         /* 串口发送为主：轮询 TX_BUSY 后写数据寄存器 */
         while (*(volatile rt_uint32_t *)UART_STATUS_ADDR & 1u)
             ;
