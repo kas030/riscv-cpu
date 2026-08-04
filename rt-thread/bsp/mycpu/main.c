@@ -23,54 +23,21 @@
 #define DEMO_RUN_MS 3000
 #endif
 
-static rt_sem_t sem;
-static rt_uint32_t counter;
-
-static void thread1_entry(void *param)
-{
-    while (1)
-    {
-        rt_thread_mdelay(500);
-        rt_kprintf("thread1 tick=%d\n", rt_tick_get());
-        rt_sem_release(sem);
-    }
-}
-
-static void thread2_entry(void *param)
-{
-    while (1)
-    {
-        rt_thread_mdelay(1000);
-        rt_kprintf("thread2 tick=%d\n", rt_tick_get());
-        rt_sem_take(sem, RT_WAITING_FOREVER);
-        counter++;
-    }
-}
-
 static void finish_entry(void *param)
 {
     rt_thread_mdelay(DEMO_RUN_MS);
-    rt_kprintf("demo done tick=%d counter=%d\n", rt_tick_get(), counter);
+    rt_kprintf("demo done tick=%d\n", rt_tick_get());
     *(volatile rt_uint32_t *)LED_ADDR = 0xC0DEC0DEul;
-    while (1)
-    {
-    }
+    /* 必须让出 CPU：本平台无中断，tick 由 idle 钩子轮询 COUNTER 产生；
+     * 若空转（while(1);）会饿死 idle，tick 停止，所有 mdelay 线程永久
+     * 睡眠，系统冻结（demo 完成后串口不再有任何输出） */
+    rt_thread_mdelay(RT_WAITING_FOREVER);
 }
 
 void rt_application_init(void)
 {
-    rt_thread_t t1, t2, fin;
+    rt_thread_t fin;
 
-    sem = rt_sem_create("sem", 0, RT_IPC_FLAG_FIFO);
-    if (sem == RT_NULL)
-        return;
-
-    t1 = rt_thread_create("t1", thread1_entry, RT_NULL, 1024, 10, 20);
-    if (t1 != RT_NULL)
-        rt_thread_startup(t1);
-    t2 = rt_thread_create("t2", thread2_entry, RT_NULL, 1024, 11, 20);
-    if (t2 != RT_NULL)
-        rt_thread_startup(t2);
     fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
     if (fin != RT_NULL)
         rt_thread_startup(fin);

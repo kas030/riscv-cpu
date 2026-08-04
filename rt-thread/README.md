@@ -97,12 +97,10 @@ MobaXterm/SecureCRT 等终端直接连接即可——RT-Thread 启动时自动�
 
 ## 演示程序
 
-三个线程 + 一个信号量：
-
-- `t1`（优先级 10）：每 500 ms 打印 tick 并释放信号量；
-- `t2`（优先级 11）：每 1000 ms 打印 tick 并获取信号量（计数 +1）；
-- `fin`（优先级 12）：延时 `DEMO_RUN_MS`（默认 3000）ms 后打印汇总并写
-  LED `0xC0DEC0DE`。
+完成线程 `fin`（优先级 12）：延时 `DEMO_RUN_MS`（默认 3000）ms 后打印
+`demo done` 并写 LED `0xC0DEC0DE`，随后永久让出 CPU（`rt_thread_mdelay`
+`RT_WAITING_FOREVER`）——本平台无中断、tick 由 idle 钩子轮询产生，空转
+会饿死 idle 导致系统冻结，必须让出。控制台保持安静，msh 终端可用。
 
 验收记录（Verilator，`DEMO_RUN_MS=500`，STOP_NS=1.5e9，含串口自动验收）：
 
