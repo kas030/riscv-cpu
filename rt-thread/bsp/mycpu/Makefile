@@ -37,6 +37,8 @@ DEMO_RUN_MS ?= 3000
 # ---- 仿真参数
 STOP_NS ?= 4000000000
 PROGRESS_NS ?= 0
+# 仿真验收开关：1 时向 UART 注入 coremark 命令并自动校验 (tb_cpu_only.sv)
+COREMARK_VERIFY ?= 0
 
 # ---- 编译对象：内核 11 个 + libcpu common 4 个 + bsp 4 个 + finsh 3 个
 KSRC := clock cpu idle ipc irq kservice mem object scheduler thread timer
@@ -44,7 +46,11 @@ KOBJ := $(KSRC:%=$(BUILD)/k_%.o)
 LIBOBJ := $(BUILD)/cpuport.o $(BUILD)/context.o
 BSPOBJ := $(BUILD)/board.o $(BUILD)/main.o $(BUILD)/entry.o
 FINSHOBJ := $(BUILD)/finsh_shell.o $(BUILD)/finsh_cmd.o $(BUILD)/finsh_msh.o
-OBJS := $(KOBJ) $(LIBOBJ) $(BSPOBJ) $(FINSHOBJ)
+# ---- 官方 EEMBC CoreMark 1.0：5 个核心源 + 平台移植 + msh 导出
+COREOBJ := $(BUILD)/cm_list.o $(BUILD)/cm_main.o $(BUILD)/cm_matrix.o \
+           $(BUILD)/cm_state.o $(BUILD)/cm_util.o $(BUILD)/cm_portme.o \
+           $(BUILD)/cm_cmd.o
+OBJS := $(KOBJ) $(LIBOBJ) $(BSPOBJ) $(FINSHOBJ) $(COREOBJ)
 DEPS := $(OBJS:.o=.d)
 
 .PHONY: all run size clean FORCE
@@ -79,6 +85,32 @@ $(BUILD)/finsh_cmd.o: $(FINSH)/cmd.c rtconfig.h | $(BUILD)
 $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# ---- 官方 CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
+#      把 core_main.c 的 main 重命名为 msh 命令入口，官方源不做任何修改）
+CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
+	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=1000 -DHAS_FLOAT=0
+
+$(BUILD)/cm_list.o: coremark/core_list_join.c coremark/coremark.h coremark/core_portme.h rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(BUILD)/cm_main.o: coremark/core_main.c coremark/coremark.h coremark/core_portme.h rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(BUILD)/cm_matrix.o: coremark/core_matrix.c coremark/coremark.h coremark/core_portme.h rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(BUILD)/cm_state.o: coremark/core_state.c coremark/coremark.h coremark/core_portme.h rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(BUILD)/cm_util.o: coremark/core_util.c coremark/coremark.h coremark/core_portme.h rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(BUILD)/cm_portme.o: coremark/core_portme.c coremark/coremark.h coremark/core_portme.h rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
+$(BUILD)/cm_cmd.o: coremark_cmd.c rtconfig.h | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $< -o $@
+
 # DEMO_RUN_MS 变化时强制重编 main.o（内容不变则不动时间戳）
 $(BUILD)/demo_run_ms.txt: FORCE | $(BUILD)
 	@mkdir -p $(BUILD) && printf '%s' '$(DEMO_RUN_MS)' > $@.tmp \
@@ -97,7 +129,7 @@ $(BUILD)/rtthread.bram.bin: $(BUILD)/rtthread.elf
 	$(OBJCOPY) -O binary --only-section=.rodata --only-section=.data $< $@
 
 $(BUILD)/rtthread.irom.coe: $(BUILD)/rtthread.irom.bin
-	python3 $(ROOT)/verification/tools/bin_to_coe.py --max-words 4096 $< $@
+	python3 $(ROOT)/verification/tools/bin_to_coe.py --max-words 16384 $< $@
 
 $(BUILD)/rtthread.bram.coe: $(BUILD)/rtthread.bram.bin
 	python3 $(ROOT)/verification/tools/bin_to_coe.py --max-words 65536 $< $@
@@ -107,7 +139,8 @@ run: $(BUILD)/rtthread.irom.coe $(BUILD)/rtthread.bram.coe
 		IROM_COE=$(abspath $(BUILD)/rtthread.irom.coe) \
 		BRAM_COE=$(abspath $(BUILD)/rtthread.bram.coe) \
 		PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF EXPECTED_LED=C0DEC0DE \
-		STOP_NS=$(STOP_NS) PROGRESS_NS=$(PROGRESS_NS) TRACE=0
+		STOP_NS=$(STOP_NS) PROGRESS_NS=$(PROGRESS_NS) TRACE=0 \
+		COREMARK_VERIFY=$(COREMARK_VERIFY)
 
 size: $(BUILD)/rtthread.elf
 	@$(SIZE) $<

@@ -48,8 +48,8 @@ module student_top#(
     // IROM
     logic [31:0] pc;
     logic [31:0] pc1;
-    logic [11:0] inst_addr;
-    logic [11:0] inst_addr1;
+    logic [13:0] inst_addr;
+    logic [13:0] inst_addr1;
     logic [31:0] instruction;
     logic [31:0] instruction1;
 
@@ -58,9 +58,9 @@ module student_top#(
     logic perip_wen;
     logic [1:0] perip_mask;
 
-    // 16KB = 2^12 * 32bit
-    assign inst_addr  = pc[13:2];
-    assign inst_addr1 = pc1[13:2];
+    // 64KB = 2^14 * 32bit
+    assign inst_addr  = pc[15:2];
+    assign inst_addr1 = pc1[15:2];
 
     mycpu Core_cpu (
         .cpu_rst            (w_clk_rst),

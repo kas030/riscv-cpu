@@ -36,7 +36,7 @@ module tb_cpu_only;
     logic [15:0] cnt_1ms = 16'd0;
     logic        cnt_started = 1'b0;
     time         cnt_start_time = 0;
-    logic [31:0] irom [0:4095];
+    logic [31:0] irom [0:16383];
     logic [31:0] bram [0:65535];
     logic [31:0] bram_rdata_q;
     logic        bram_resp_valid;
@@ -88,6 +88,12 @@ module tb_cpu_only;
     localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
     localparam [31:0]         FAIL_LED         = `SIM_FAIL_LED;
     localparam bit            TRACE_ENABLED    = `SIM_TRACE;
+`ifdef COREMARK_VERIFY
+    /* 只加速仿真验证串口；默认回归保持板级 9600 baud。 */
+    localparam integer SIM_UART_BAUD = 1000000;
+`else
+    localparam integer SIM_UART_BAUD = 9600;
+`endif
     localparam time           STOP_NS          = `SIM_STOP_NS;
     localparam time           PROGRESS_NS      = `SIM_PROGRESS_NS;
     localparam int unsigned   PROGRESS_FD      = 32'h8000_0002;
@@ -123,7 +129,7 @@ module tb_cpu_only;
     /* UART 透传链路：tb(PC) <-> uart <-> twin_controller <-> uart_bridge <-> CPU */
     uart #(
         .CLK_FREQ  (50000000),
-        .BAUD_RATE (9600)
+        .BAUD_RATE (SIM_UART_BAUD)
     ) uart_inst (
         .clk       (cnt_clk),
         .rst_n     (~rst),
@@ -181,7 +187,7 @@ module tb_cpu_only;
             $dumpvars(0, tb_cpu_only);
             $display(" trace             : %s", trace_file);
         end
-        for (init_idx = 0; init_idx < 4096; init_idx = init_idx + 1)
+        for (init_idx = 0; init_idx < 16384; init_idx = init_idx + 1)
             irom[init_idx] = 32'd0;
         for (init_idx = 0; init_idx < 65536; init_idx = init_idx + 1)
             bram[init_idx] = 32'd0;
@@ -193,8 +199,8 @@ module tb_cpu_only;
 
     always_ff @(posedge clk) begin
         // 与 blk_mem_gen IROM 的一拍同步读一致，高位 PC 仍按 student_top 忽略。
-        irom_data  <= irom[irom_addr[13:2]];
-        irom_data1 <= irom[irom_addr1[13:2]];
+        irom_data  <= irom[irom_addr[15:2]];
+        irom_data1 <= irom[irom_addr1[15:2]];
     end
 
     function automatic [31:0] select_load_word(input [31:0] word, input [1:0] mask, input [1:0] offset);
@@ -323,8 +329,8 @@ module tb_cpu_only;
         end
     end
 
-    /* ---- UART 行为模型（模拟 PC 串口，9600 8N1） ---- */
-    localparam time UART_BIT_NS = 104160;   // 1/9600 s = 104.16us
+    /* ---- UART 行为模型；COREMARK_VERIFY 使用高速仿真串口 ---- */
+    localparam time UART_BIT_NS = (SIM_UART_BAUD == 9600) ? 104160 : 1000;
 
     task automatic uart_tx_byte(input [7:0] data);
         integer bit_idx;
@@ -374,8 +380,6 @@ module tb_cpu_only;
             end
             uart_queue_has_str = found;
         end
-    endfunction
-
     initial begin : uart_verify
         /* CPU 启动时主动请求透传（board.c rt_hw_board_init 写 UART_STATUS）：
          * 等待透传建立（twin 进 PASSTHROUGH）与 finsh banner 输出完成 */
@@ -392,13 +396,59 @@ module tb_cpu_only;
         uart_tx_byte("l");
         uart_tx_byte("p");
         uart_tx_byte(8'h0D);
+`ifdef COREMARK_VERIFY
+        #(300_000_000);
+`else
         #(60_000_000);
+`endif
         if (uart_queue_has_str("version")) begin
             $display("[UART-VERIFY] shell verification passed (qlen=%0d)", uart_cap_qlen);
+            /* help 输出约 386 字节，9600 baud 下需约 0.4 s；先等 shell
+             * 完成输出并回到提示符，避免 RX 单字节桥在忙打印时丢整行。 */
+            #(400_000_000);
         end else begin
             $display("[UART-VERIFY] FAIL: help output missing 'version' (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
         end
+`ifdef COREMARK_VERIFY
+        /* 注入官方 CLI coremark 0 0 0x66 24：性能跑分种子 (0,0,0x66)、
+         * 24 次迭代；校验 list=0xd4b0、matrix=0xbe52、state=0x5e47。 */
+        $display("[UART-VERIFY] inject 'coremark 0 0 0x66 24\\r'");
+        uart_tx_byte("c");
+        uart_tx_byte("o");
+        uart_tx_byte("r");
+        uart_tx_byte("e");
+        uart_tx_byte("m");
+        uart_tx_byte("a");
+        uart_tx_byte("r");
+        uart_tx_byte("k");
+        uart_tx_byte(" ");
+        uart_tx_byte("0");
+        uart_tx_byte(" ");
+        uart_tx_byte("0");
+        uart_tx_byte(" ");
+        uart_tx_byte("0");
+        uart_tx_byte("x");
+        uart_tx_byte("6");
+        uart_tx_byte("6");
+        uart_tx_byte(" ");
+        uart_tx_byte("2");
+        uart_tx_byte("4");
+        uart_tx_byte(8'h0D);
+        #(10_000_000_000);
+        if (uart_queue_has_str("6k performance run parameters") &&
+            uart_queue_has_str("[0]crclist") &&
+            uart_queue_has_str("[0]crcmatrix") &&
+            uart_queue_has_str("[0]crcstate") &&
+            !uart_queue_has_str("ERROR! list crc") &&
+            !uart_queue_has_str("ERROR! matrix crc") &&
+            !uart_queue_has_str("ERROR! state crc")) begin
+            $display("[UART-VERIFY] coremark verification passed (qlen=%0d)", uart_cap_qlen);
+        end else begin
+            $display("[UART-VERIFY] FAIL: coremark output mismatch (qlen=%0d)", uart_cap_qlen);
+            finish_sim("uart_assert_fail");
+        end
+`endif
         $display("[UART-VERIFY] inject 0xCA (exit passthrough)");
         uart_tx_byte(8'hCA);
         #(10_000_000);

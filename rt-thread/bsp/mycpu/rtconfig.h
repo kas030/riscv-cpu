@@ -39,9 +39,9 @@
 #define FINSH_USING_MSH
 #define FINSH_USING_MSH_ONLY
 #define FINSH_USING_SYMTAB
-#define FINSH_THREAD_STACK_SIZE 2048
+#define FINSH_THREAD_STACK_SIZE 8192
 #define FINSH_CMD_SIZE           80
-/* 裁剪（IROM 仅 16 KiB）：不定义 FINSH_USING_MSH_LIST（list/ps 命令族）
+/* 裁剪（保持 finsh 体积可控）：不定义 FINSH_USING_MSH_LIST（list/ps 命令族）
  * 与 FINSH_USING_MSH_AUTO_COMPLETE（Tab 补全）、FINSH_USING_HISTORY */
 // </h>
 
