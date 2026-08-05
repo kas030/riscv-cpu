@@ -63,7 +63,7 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
   - `0x80200060`：数据，写=发送，读=接收并清除 RX_VALID；
   - `0x80200064`：状态，bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH
     （透传已建立）；写任意值=请求进入透传。
-- **丢字节防护**（`uart_bridge.sv`）：240 MHz 域 `bit0 = tx_busy_sync | tx_pend`，
+- **丢字节防护**（`uart_bridge.sv`）：200 MHz 域 `bit0 = tx_busy_sync | tx_pend`，
   50 MHz 域按 UART 实际锁存（busy 上升沿）确认，透传期字节挂起等待、不丢弃；
   非透传期丢弃并立即确认，避免 CPU 轮询挂死。
 - **shell 空输入必须让出 CPU**：无设备框架时 `finsh_getchar` 不阻塞，空输入

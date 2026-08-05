@@ -6,7 +6,7 @@
 # This removes the Vivado project PLL IP instance and recreates it with:
 #   clk_in1_p/n = 200 MHz differential input
 #   clk_out1    = 50 MHz peripheral clock
-#   clk_out2    = 240 MHz CPU clock
+#   clk_out2    = 200 MHz CPU clock
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
@@ -71,7 +71,7 @@ set_property -dict [list \
     CONFIG.PRIM_IN_FREQ {200.000} \
     CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {50.000} \
     CONFIG.CLKOUT2_USED {true} \
-    CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {240.000} \
+    CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {200.000} \
     CONFIG.NUM_OUT_CLKS {2} \
     CONFIG.USE_RESET {false} \
     CONFIG.USE_LOCKED {true} \

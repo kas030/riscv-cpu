@@ -166,7 +166,7 @@ module perip_bridge(
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;
 
-    // uart 跨时钟域桥（240MHz 侧接 perip 总线子集，50MHz 侧接 twin/uart）
+    // uart 跨时钟域桥（200MHz 侧接 perip 总线子集，50MHz 侧接 twin/uart）
     uart_bridge uart_bridge_inst (
         .clk             (clk),
         .cnt_clk         (cnt_clk),

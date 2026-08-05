@@ -130,7 +130,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs synth
    - 使用 `sim/coe/mext/dram.coe` 初始化。
 6. 执行 `generate_target all` 生成新的 output products。
 7. 设置 `GENERATE_SYNTH_CHECKPOINT=false`，让 BRAM 随顶层按实际
-   240 MHz 时钟全局综合。
+   200 MHz 时钟全局综合。
 8. 更新 `sources_1` 编译顺序并关闭工程。
 
 ### 与 `create_project.tcl` 的关系

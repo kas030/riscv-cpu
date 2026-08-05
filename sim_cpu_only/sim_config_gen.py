@@ -44,7 +44,7 @@ def main() -> int:
     pass_led = os.environ.get("PASS_LED", "078B7323").strip()
     fail_led = os.environ.get("FAIL_LED", "24181824").strip()
     trace = os.environ.get("TRACE", "0").strip()
-    cpu_freq_mhz = os.environ.get("CPU_FREQ_MHZ", "240.0").strip()
+    cpu_freq_mhz = os.environ.get("CPU_FREQ_MHZ", "200.0").strip()
     stop_ns = os.environ.get("STOP_NS", "400000000").strip()
     progress_ns = os.environ.get("PROGRESS_NS", "10000000").strip()
     trace_file = os.environ.get("TRACE_FILE", "build/wave.fst").strip()
