@@ -105,7 +105,7 @@ proc create_pll_ip {project_dir project_name} {
 
 proc create_irom_ip {project_dir project_name repo_root} {
     set irom_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip IROM]
-    set irom_coe [string map {\\ /} [file join $repo_root sim coe mext irom-v2.coe]]
+    set irom_coe [string map {\\ /} [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]]
     file delete -force $irom_ip_dir
     file mkdir $irom_ip_dir
 
@@ -149,7 +149,7 @@ proc create_irom_ip {project_dir project_name repo_root} {
 
 proc create_bram_ip {project_dir project_name repo_root} {
     set bram_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip BRAM]
-    set bram_coe [string map {\\ /} [file join $repo_root sim coe mext dram.coe]]
+    set bram_coe [string map {\\ /} [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]]
     file delete -force $bram_ip_dir
     file mkdir $bram_ip_dir
 

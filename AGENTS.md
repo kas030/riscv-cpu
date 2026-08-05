@@ -146,11 +146,11 @@ make sim-verilator \
 
 1. **PLL IP 与生成脚本**
    - `ip/pll/pll.xci`：用户参数 `CLKOUT2_REQUESTED_OUT_FREQ`，以及对应的 `C_CLKOUT2_*`、`C_OUTCLK_SUM_ROW2`、`C_CLKOUT1_ACTUAL_FREQ` 和端口 `FREQ_HZ` 等生成字段。
-   - `scripts/create_project.tcl`、`scripts/recreate_pll_ip.tcl`：`CONFIG.CLKOUT2_REQUESTED_OUT_FREQ` 必须与 PLL XCI 一致。
+   - `scripts/create_project.tcl`、`scripts/recreate_pll_ip.tcl`、`scripts/recreate_irom_ip.tcl`、`scripts/recreate_bram_ip.tcl`：PLL 频率、IROM/BRAM 端口时钟和初始化 COE 路径必须与 XCI 一致。
 2. **IROM/BRAM IP 时钟**
    - `ip/IROM/IROM.xci`：`Port_A_Clock`、`Port_B_Clock`。
    - `ip/BRAM/BRAM.xci`：`Port_A_Clock`、`Port_B_Clock` 和关联端口 `FREQ_HZ`。
-   - `scripts/create_project.tcl`：IROM/BRAM 的 `CONFIG.Port_A_Clock`、`CONFIG.Port_B_Clock`；同时保持 IROM 深度与当前 `student_top.sv` 地址位宽、链接脚本和 COE 生成上限一致。
+   - `scripts/create_project.tcl`、`scripts/recreate_irom_ip.tcl`、`scripts/recreate_bram_ip.tcl`：IROM/BRAM 的 `CONFIG.Coe_File`、`CONFIG.Port_A_Clock`、`CONFIG.Port_B_Clock`；同时保持 IROM 深度与当前 `student_top.sv` 地址位宽、链接脚本和 COE 生成上限一致。
 3. **时钟消费者与验证配置**
    - `rtl/top/top.sv`、`rtl/bus/perip_bridge.sv`、`rtl/peripheral/uart_bridge.sv`：时钟域注释和跨域说明。
    - `tb/tb_myCPU.sv`：CPU 时钟统计参数 `CPU_CLK_MHZ`。

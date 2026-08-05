@@ -14,7 +14,7 @@ set project_dir  [file join $repo_root vivado]
 set project_path [file join $project_dir ${project_name}.xpr]
 set irom_ip_dir  [file join $project_dir ${project_name}.srcs sources_1 ip IROM]
 set irom_xci     [file join $irom_ip_dir IROM IROM.xci]
-set irom_coe     [file normalize [file join $repo_root sim coe mext irom-v2.coe]]
+set irom_coe     [file normalize [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]]
 
 foreach tclstore_root {
     D:/AMDDesignTools/2025.2.1/Vivado/data/XilinxTclStore
@@ -82,7 +82,7 @@ set_property -dict [list \
     CONFIG.PRIM_type_to_Implement {BRAM} \
     CONFIG.Assume_Synchronous_Clk {true} \
     CONFIG.Write_Width_A {32} \
-    CONFIG.Write_Depth_A {4096} \
+    CONFIG.Write_Depth_A {16384} \
     CONFIG.Read_Width_A {32} \
     CONFIG.Read_Width_B {32} \
     CONFIG.Enable_A {Use_ENA_Pin} \
@@ -93,8 +93,8 @@ set_property -dict [list \
     CONFIG.Register_PortB_Output_of_Memory_Core {false} \
     CONFIG.Load_Init_File {true} \
     CONFIG.Coe_File $irom_coe \
-    CONFIG.Port_A_Clock {240} \
-    CONFIG.Port_B_Clock {240} \
+    CONFIG.Port_A_Clock {200} \
+    CONFIG.Port_B_Clock {200} \
     CONFIG.Fill_Remaining_Memory_Locations {true} \
     CONFIG.Remaining_Memory_Locations {0} \
     CONFIG.Use_RSTA_Pin {false} \
