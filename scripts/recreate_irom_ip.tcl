@@ -119,13 +119,16 @@ set memory_type [get_property CONFIG.Memory_Type $irom_ip]
 set depth       [get_property CONFIG.Write_Depth_A $irom_ip]
 set width_a     [get_property CONFIG.Read_Width_A $irom_ip]
 set width_b     [get_property CONFIG.Read_Width_B $irom_ip]
-if {$memory_type ne "Dual_Port_ROM" || $depth ne "4096" ||
-    $width_a ne "32" || $width_b ne "32"} {
+set addra_width [get_property CONFIG.C_ADDRA_WIDTH $irom_ip]
+set addrb_width [get_property CONFIG.C_ADDRB_WIDTH $irom_ip]
+if {$memory_type ne "Dual_Port_ROM" || $depth ne "16384" ||
+    $width_a ne "32" || $width_b ne "32" ||
+    $addra_width ne "14" || $addrb_width ne "14"} {
     puts "ERROR: generated IROM configuration verification failed"
-    puts "ERROR: Memory_Type=$memory_type Depth=$depth ReadWidthA=$width_a ReadWidthB=$width_b"
+    puts "ERROR: Memory_Type=$memory_type Depth=$depth ReadWidthA=$width_a ReadWidthB=$width_b AddraWidth=$addra_width AddrbWidth=$addrb_width"
     close_project
     exit 1
 }
 
 close_project
-puts "INFO: recreated IROM as a 4096x32 one-cycle dual-port blk_mem_gen ROM: $irom_xci"
+puts "INFO: recreated IROM as a 16384x32 one-cycle dual-port blk_mem_gen ROM: $irom_xci"

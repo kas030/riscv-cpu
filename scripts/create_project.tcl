@@ -286,6 +286,20 @@ if {[llength $xci_files] != 0} {
     export_ip_user_files -of_objects $xci_files -no_script -sync -force -quiet
 }
 
+set irom_ip [get_ips -quiet IROM]
+set irom_memory_type [get_property CONFIG.Memory_Type $irom_ip]
+set irom_depth       [get_property CONFIG.Write_Depth_A $irom_ip]
+set irom_width_a     [get_property CONFIG.Read_Width_A $irom_ip]
+set irom_width_b     [get_property CONFIG.Read_Width_B $irom_ip]
+set irom_addra_width [get_property CONFIG.C_ADDRA_WIDTH $irom_ip]
+set irom_addrb_width [get_property CONFIG.C_ADDRB_WIDTH $irom_ip]
+if {$irom_memory_type ne "Dual_Port_ROM" || $irom_depth ne "16384" ||
+    $irom_width_a ne "32" || $irom_width_b ne "32" ||
+    $irom_addra_width ne "14" || $irom_addrb_width ne "14"} {
+    error "IROM generation failed: Memory_Type=$irom_memory_type Depth=$irom_depth ReadWidthA=$irom_width_a ReadWidthB=$irom_width_b AddraWidth=$irom_addra_width AddrbWidth=$irom_addrb_width"
+}
+puts "INFO: verified IROM: 16384x32, addra/addrb are 14 bits"
+
 set coe_files [get_files -quiet *.coe]
 if {[llength $coe_files] != 0} {
     set_property USED_IN {synthesis implementation} $coe_files

@@ -863,7 +863,7 @@
         ],
         "C_ADDRA_WIDTH": [
           {
-            "value": "12",
+            "value": "14",
             "resolve_type": "generated",
             "format": "long",
             "usage": "all"
@@ -972,7 +972,7 @@
         ],
         "C_ADDRB_WIDTH": [
           {
-            "value": "12",
+            "value": "14",
             "resolve_type": "generated",
             "format": "long",
             "usage": "all"
@@ -1330,7 +1330,7 @@
         "addra": [
           {
             "direction": "in",
-            "size_left": "11",
+            "size_left": "13",
             "size_right": "0",
             "driver_value": "0"
           }
@@ -1357,7 +1357,7 @@
         "addrb": [
           {
             "direction": "in",
-            "size_left": "11",
+            "size_left": "13",
             "size_right": "0",
             "driver_value": "0"
           }

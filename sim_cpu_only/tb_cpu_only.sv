@@ -89,7 +89,7 @@ module tb_cpu_only;
     localparam [31:0]         FAIL_LED         = `SIM_FAIL_LED;
     localparam bit            TRACE_ENABLED    = `SIM_TRACE;
 `ifdef COREMARK_VERIFY
-    /* 只加速仿真验证串口；默认回归保持板级 9600 baud。 */
+    /* 输出加速到 1 MHz；输入任务仍按 shell 可消费的 1.1 ms 字节间隔发送。 */
     localparam integer SIM_UART_BAUD = 1000000;
 `else
     localparam integer SIM_UART_BAUD = 9600;
@@ -125,6 +125,30 @@ module tb_cpu_only;
         .perip_wdata (perip_wdata),
         .perip_rdata (perip_rdata)
     );
+`ifdef COREMARK_VERIFY
+    logic bad_pc_seen = 1'b0;
+    logic returned_from_coremark = 1'b0;
+    always @(posedge clk) begin
+        if (!rst && dut.WB_RegWrite && dut.WB_rd == 5'd1 &&
+            (dut.WB_pcadd4 == 32'h8000_3114 || dut.WB_pcadd4 == 32'h8000_3e38)) begin
+            $display("[COREMARK-DIAG] ra write t=%0t instr_pc=0x%08X data=0x%08X", $time, dut.WB_pcadd4 - 4, dut.WB_wdata);
+        end
+        if (!rst && dut.EX_pc == 32'h8000_3e14) begin
+            $display("[COREMARK-DIAG] branch t=%0t raw=%0b queued=%0b taken=%0b redirect=0x%08X IF=0x%08X", $time, dut.BranchMispredict_raw, dut.BranchMispredict, dut.BranchTaken_raw, dut.IF_npc_redirect_raw, irom_addr);
+        end
+        if (!rst && dut.EX_pc == 32'h8000_3e64) begin
+            returned_from_coremark = 1'b1;
+            $display("[COREMARK-DIAG] return t=%0t raw=%0b queued=%0b target=0x%08X IF=0x%08X", $time, dut.BranchMispredict_raw, dut.BranchMispredict, dut.u_ex_stage.jalr_csr_target, irom_addr);
+        end
+        if (!rst && returned_from_coremark && irom_addr == 32'h8000_3e14) begin
+            $display("[COREMARK-DIAG] reenter t=%0t IF_pc=0x%08X ID_pc=0x%08X EX_pc=0x%08X redirect=%0b q=%0b raw_target=0x%08X", $time, dut.IF_pc, dut.ID_pc, dut.EX_pc, dut.BranchMispredict, dut.redirect_valid_q, dut.IF_npc_redirect_raw);
+        end
+        if (!rst && !bad_pc_seen && (irom_addr[31:16] != 16'h8000)) begin
+            bad_pc_seen = 1'b1;
+            $display("[COREMARK-DIAG] bad PC t=%0t pc=0x%08X irom1=0x%08X EX_pc=0x%08X EX_NpcOp=%0d EX_A=0x%08X EX_imm=0x%08X JALR_target=0x%08X ra=0x%08X", $time, irom_addr, irom_addr1, dut.EX_pc, dut.EX_NpcOp, dut.u_ex_stage.EX_forward_A_out, dut.EX_imm, dut.u_ex_stage.jalr_csr_target, dut.rf_inst.xreg[1]);
+        end
+    end
+`endif
 
     /* UART 透传链路：tb(PC) <-> uart <-> twin_controller <-> uart_bridge <-> CPU */
     uart #(
@@ -343,6 +367,10 @@ module tb_cpu_only;
             end
             uart_line_rx = 1'b1;             // stop
             #(UART_BIT_NS);
+`ifdef COREMARK_VERIFY
+            /* finsh 空闲读会休眠 1 ms，RX bridge 只存一个字节；不能突发注入。 */
+            #(1_100_000);
+`endif
         end
     endtask
 
@@ -380,10 +408,15 @@ module tb_cpu_only;
             end
             uart_queue_has_str = found;
         end
+    endfunction
     initial begin : uart_verify
         /* CPU 启动时主动请求透传（board.c rt_hw_board_init 写 UART_STATUS）：
-         * 等待透传建立（twin 进 PASSTHROUGH）与 finsh banner 输出完成 */
+         * 等待透传建立（twin 进 PASSTHROUGH）与 finsh banner 输出完成。 */
+`ifdef COREMARK_VERIFY
+        #(15_000_000);
+`else
         #(200_000_000);
+`endif
         if (twin_inst.current_state == 2) begin
             $display("[UART-VERIFY] passthrough established by CPU (state=%0d)", twin_inst.current_state);
         end else begin
@@ -397,7 +430,7 @@ module tb_cpu_only;
         uart_tx_byte("p");
         uart_tx_byte(8'h0D);
 `ifdef COREMARK_VERIFY
-        #(300_000_000);
+        #(6_000_000);
 `else
         #(60_000_000);
 `endif
@@ -405,14 +438,18 @@ module tb_cpu_only;
             $display("[UART-VERIFY] shell verification passed (qlen=%0d)", uart_cap_qlen);
             /* help 输出约 386 字节，9600 baud 下需约 0.4 s；先等 shell
              * 完成输出并回到提示符，避免 RX 单字节桥在忙打印时丢整行。 */
+`ifdef COREMARK_VERIFY
+            #(40_000_000);
+`else
             #(400_000_000);
+`endif
         end else begin
             $display("[UART-VERIFY] FAIL: help output missing 'version' (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
         end
 `ifdef COREMARK_VERIFY
-        /* 注入官方 CLI coremark 0 0 0x66 24：性能跑分种子 (0,0,0x66)、
-         * 24 次迭代；校验 list=0xd4b0、matrix=0xbe52、state=0x5e47。 */
+        /* TOTAL_DATA_SIZE=2000 由三个算法均分为 666 bytes：官方 2K 档。
+         * 种子 (0,0,0x66) 的 CRC 为 list=e714、matrix=1fd7、state=8e3a。 */
         $display("[UART-VERIFY] inject 'coremark 0 0 0x66 24\\r'");
         uart_tx_byte("c");
         uart_tx_byte("o");
@@ -435,11 +472,11 @@ module tb_cpu_only;
         uart_tx_byte("2");
         uart_tx_byte("4");
         uart_tx_byte(8'h0D);
-        #(10_000_000_000);
-        if (uart_queue_has_str("6k performance run parameters") &&
-            uart_queue_has_str("[0]crclist") &&
-            uart_queue_has_str("[0]crcmatrix") &&
-            uart_queue_has_str("[0]crcstate") &&
+        #(150_000_000);
+        if (uart_queue_has_str("2K performance run parameters") &&
+            uart_queue_has_str("[0]crclist       : 0xe714") &&
+            uart_queue_has_str("[0]crcmatrix     : 0x1fd7") &&
+            uart_queue_has_str("[0]crcstate      : 0x8e3a") &&
             !uart_queue_has_str("ERROR! list crc") &&
             !uart_queue_has_str("ERROR! matrix crc") &&
             !uart_queue_has_str("ERROR! state crc")) begin

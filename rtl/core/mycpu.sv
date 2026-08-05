@@ -57,7 +57,7 @@ module mycpu (
 `endif
     logic        BranchMispredict, BranchMispredict_raw;
     logic [31:0] IF_npc_redirect_raw;
-    logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
+    logic        redirect_valid_q, redirect_refetch_q, redirect_taken_q, redirect_bp_update_q;
     logic        redirect_bp_is_jal_q;
     logic [31:0] redirect_target_q, redirect_bp_pc_q, redirect_bp_target_q;
     logic        BP_update_en, BP_update_taken;
@@ -545,14 +545,14 @@ module mycpu (
     // redirect/flush 打拍提交：
     //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
     //   切断 ALU/branch compare -> Flush_ID_EX 的运行期长路径。
+    //   IROM 为同步读，首个 redirect 拍只发出目标地址；第二拍继续冲刷并重取
+    //   目标字，避免旧路径返回数据在 redirect 撤销后写进 IF/ID。
     //
-    // redirect 优先级（从高到低）：
-    //   1) redirect_valid_q 有效且前段不暂停 → 消费完毕，清 0
-    //   2) BranchMispredict_raw 新来了分支误预测 → 直接设置 valid
     // 预测器更新与误预测结果解耦：branch/jal 在 EX 完成就训练。
     always_ff @(posedge clk) begin
         if (rst) begin
             redirect_valid_q     <= 1'b0;
+            redirect_refetch_q   <= 1'b0;
             redirect_target_q    <= '0;
             redirect_taken_q     <= 1'b0;
             redirect_bp_update_q <= 1'b0;
@@ -579,14 +579,20 @@ module mycpu (
                 redirect_taken_q  <= BranchTaken_raw;
             end
 
-            // [优先级 1] 当前重定向正在被 IF 消费
+            // 同步 IROM 在首个 redirect 拍才采样目标地址。第二拍保持 redirect
+            // 并冲刷 IF/ID，使返回的目标字与 IF_pc 对齐后再允许进入流水线。
             if (redirect_valid_q) begin
-                if (!Stall_Front) begin           // 前段已处理完，可以清 valid
-                    redirect_valid_q <= 1'b0;
+                if (!Stall_Front) begin
+                    if (redirect_refetch_q) begin
+                        redirect_valid_q   <= 1'b0;
+                        redirect_refetch_q <= 1'b0;
+                    end else begin
+                        redirect_refetch_q <= 1'b1;
+                    end
                 end
-            // [优先级 2] EX 刚检测到分支误预测，立即发起重定向
             end else if (BranchMispredict_raw) begin
-                redirect_valid_q  <= 1'b1;
+                redirect_valid_q   <= 1'b1;
+                redirect_refetch_q <= 1'b0;
             end
         end
     end
