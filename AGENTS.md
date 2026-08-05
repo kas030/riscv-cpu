@@ -140,6 +140,27 @@ make sim-verilator \
 - 改双发射判定：保持 IF 提示表训练、ID 第二槽有效性、包内依赖、单访存、单 RV32M 和顺序提交约束一致。
 - 改顶层或时钟复位：保持 `top.sv`、`student_top.sv`、约束、testbench 和 Vivado IP 的时钟、复位极性及 IROM/BRAM 延迟一致。
 
+### CPU 频率调整（PLL、IROM、BRAM）
+
+修改板级 CPU 时钟频率时，必须在同一变更中同步核对以下项目；外设时钟（当前为 50 MHz）若不变，不要误改：
+
+1. **PLL IP 与生成脚本**
+   - `ip/pll/pll.xci`：用户参数 `CLKOUT2_REQUESTED_OUT_FREQ`，以及对应的 `C_CLKOUT2_*`、`C_OUTCLK_SUM_ROW2`、`C_CLKOUT1_ACTUAL_FREQ` 和端口 `FREQ_HZ` 等生成字段。
+   - `scripts/create_project.tcl`、`scripts/recreate_pll_ip.tcl`：`CONFIG.CLKOUT2_REQUESTED_OUT_FREQ` 必须与 PLL XCI 一致。
+2. **IROM/BRAM IP 时钟**
+   - `ip/IROM/IROM.xci`：`Port_A_Clock`、`Port_B_Clock`。
+   - `ip/BRAM/BRAM.xci`：`Port_A_Clock`、`Port_B_Clock` 和关联端口 `FREQ_HZ`。
+   - `scripts/create_project.tcl`：IROM/BRAM 的 `CONFIG.Port_A_Clock`、`CONFIG.Port_B_Clock`；同时保持 IROM 深度与当前 `student_top.sv` 地址位宽、链接脚本和 COE 生成上限一致。
+3. **时钟消费者与验证配置**
+   - `rtl/top/top.sv`、`rtl/bus/perip_bridge.sv`、`rtl/peripheral/uart_bridge.sv`：时钟域注释和跨域说明。
+   - `tb/tb_myCPU.sv`：CPU 时钟统计参数 `CPU_CLK_MHZ`。
+   - `sim_cpu_only/Makefile`、`sim_cpu_only/config.mk`、`sim_cpu_only/sim_config_gen.py`、`verification/tools/run_competition.py`：CPU-only 频率与周期/MIPS 换算默认值。
+   - 当前设计频率变更后，更新 `docs/cpu_capability_boundaries.md`、`docs/tests/cpu_test_plan.md` 和 `rt-thread/README.md` 中的现行频率说明；历史测试报告中的实测值不得伪造改写。
+4. **检查与生成**
+   - 用搜索确认上述源文件不残留旧 CPU 频率字段；对三个 `.xci` 执行 JSON 解析检查。
+   - Vivado IP 变更后重新生成 output products，并以综合/实现时序报告确认目标频率；禁止直接编辑 `.runs`、`.cache`、`.gen` 或 `.sim` 生成物。
+   - 频率只改变时，IROM/BRAM 初始化 COE 内容通常无需改写；只有镜像内容变化时才重新生成对应 COE。
+
 ## Git 约定
 
 - 工作区可能包含用户尚未提交的修改；不要覆盖、回退或顺带整理无关文件。
