@@ -36,9 +36,18 @@ def main() -> int:
     disasm = subprocess.check_output([args.objdump, "-d", "-M", "no-aliases", str(args.elf)], text=True)
     seen = set()
     for line in disasm.splitlines():
-        match = re.match(r"\s*[0-9a-f]+:\s+[0-9a-f]+\s+([a-z][a-z0-9_.]*)", line)
+        match = re.match(
+            r"\s*[0-9a-f]+:\s+([0-9a-f]+)\s+([a-z][a-z0-9_.]*)", line
+        )
         if match:
-            seen.add(match.group(1))
+            encoding, opcode = match.groups()
+            # GNU ld may insert zero-filled padding between .text.init and
+            # naturally aligned .text.  Newer objdump versions render each
+            # 0000 halfword as c.unimp even though the input uses norvc and
+            # execution jumps over the padding; it is not a test instruction.
+            if opcode == "c.unimp" and int(encoding, 16) == 0:
+                continue
+            seen.add(opcode)
     unsupported = sorted(seen - ALLOWED_OPCODES)
     if unsupported:
         raise SystemExit(f"unsupported instructions in {args.elf}: {', '.join(unsupported)}")

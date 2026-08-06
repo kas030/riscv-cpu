@@ -44,15 +44,17 @@ module mycpu_if_stage #(
     logic                   IF_slot_m_conflict;
     localparam DUAL_HINT_INDEX_WIDTH = 8;
     localparam DUAL_HINT_ENTRIES = 1 << DUAL_HINT_INDEX_WIDTH;
-    logic [5:0] dual_hint_tag [0:DUAL_HINT_ENTRIES-1];
+    // IROM 扩展为 64 KiB 后，索引之外还需覆盖 pc[15:8]；若仍只比较
+    // pc[13:8]，相差 16 KiB 的代码会别名并复用错误的双发射判定。
+    logic [7:0] dual_hint_tag [0:DUAL_HINT_ENTRIES-1];
     logic       dual_hint_valid [0:DUAL_HINT_ENTRIES-1];
     logic       dual_hint_value [0:DUAL_HINT_ENTRIES-1];
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_index;
-    logic [5:0] dual_hint_pc_tag;
+    logic [7:0] dual_hint_pc_tag;
     logic       dual_hint_hit;
     logic       dual_hint_pending_valid;
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_pending_index;
-    logic [5:0] dual_hint_pending_tag;
+    logic [7:0] dual_hint_pending_tag;
     logic       dual_hint_pending_value;
     typedef enum logic [1:0] {
         CRC_FUSE_IDLE,
@@ -175,7 +177,7 @@ module mycpu_if_stage #(
     // 双发射提示表把第二路IROM和复杂合法性译码移出PC反馈环。
     // IROM只读，tag命中后的历史结果始终有效；冷启动/冲突仅保守单发射。
     assign dual_hint_index  = IF_pc[DUAL_HINT_INDEX_WIDTH+1:2];
-    assign dual_hint_pc_tag = IF_pc[13:8];
+    assign dual_hint_pc_tag = IF_pc[15:8];
     assign dual_hint_hit = dual_hint_valid[dual_hint_index] &&
                            (dual_hint_tag[dual_hint_index] == dual_hint_pc_tag);
     assign IF_issue_dual = !IF_pred_taken && dual_hint_hit &&
@@ -269,7 +271,8 @@ module branch_predictor #(
     (* ram_style = "distributed" *) logic [1:0] bht [0:BHT_ENTRIES-1];
     logic [INDEX_WIDTH-1:0] IF_index;
     logic [INDEX_WIDTH-1:0] update_index;
-    logic [5:0] btb_tag [0:BHT_ENTRIES-1];
+    // BHT/BTB 索引使用 pc[7:2]，tag 必须覆盖 64 KiB IROM 剩余字地址位。
+    logic [7:0] btb_tag [0:BHT_ENTRIES-1];
     logic [DATAWIDTH-1:0] btb_target [0:BHT_ENTRIES-1];
     logic btb_valid [0:BHT_ENTRIES-1];
     logic btb_is_jal [0:BHT_ENTRIES-1];
@@ -278,7 +281,7 @@ module branch_predictor #(
     assign IF_index     = IF_pc[INDEX_WIDTH+1:2];
     assign update_index = update_pc[INDEX_WIDTH+1:2];
     assign btb_hit = btb_valid[IF_index] &&
-                     (btb_tag[IF_index] == IF_pc[13:8]);
+                     (btb_tag[IF_index] == IF_pc[15:8]);
     assign IF_pred_taken = btb_hit &&
                            (btb_is_jal[IF_index] || bht[IF_index][1]);
     assign IF_pred_target = btb_target[IF_index];
@@ -291,7 +294,7 @@ module branch_predictor #(
             end
         end else if (update_en) begin
             btb_valid[update_index]  <= 1'b1;
-            btb_tag[update_index]    <= update_pc[13:8];
+            btb_tag[update_index]    <= update_pc[15:8];
             btb_target[update_index] <= update_target;
             btb_is_jal[update_index] <= update_is_jal;
             // valid=0 时 BHT 内容不会参与预测；首次训练在这里补出

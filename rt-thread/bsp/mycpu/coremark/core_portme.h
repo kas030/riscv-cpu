@@ -61,8 +61,12 @@ Original Author: Shay Gal-on
         Initialize these strings per platform
 */
 #define COMPILER_VERSION "GCC"__VERSION__
+#define CM_STRINGIFY_INNER(value) #value
+#define CM_STRINGIFY(value)       CM_STRINGIFY_INNER(value)
 #define COMPILER_FLAGS \
-    "-Os -march=rv32im_zicsr -Dmain=coremark -DPERFORMANCE_RUN=1 -DTOTAL_DATA_SIZE=2000 -DITERATIONS=1000 -DHAS_FLOAT=0"
+    "-Os -march=rv32im_zicsr -Dmain=coremark -DPERFORMANCE_RUN=1 " \
+    "-DTOTAL_DATA_SIZE=2000 -DITERATIONS=" CM_STRINGIFY(ITERATIONS) \
+    " -DHAS_FLOAT=0"
 #define MEM_LOCATION "Static"
 
 /* Data Types :
@@ -118,11 +122,14 @@ typedef ee_u32 CORE_TICKS;
 */
 #define MAIN_HAS_NORETURN 0
 
-/* 基准默认参数：官方标准性能跑分（TOTAL_DATA_SIZE=2000 时下方自动选
- * PERFORMANCE_RUN；显式 -DPERFORMANCE_RUN=1 亦可）。缺省 1000 次迭代
- * 在 50 MHz 下约 10 s，满足官方 ≥10 s 有效报告规则。 */
-#define ITERATIONS     1000
+/* 基准默认参数：官方标准性能跑分。200 MHz 下 5000 次约 11--12 秒，
+ * 满足官方至少 10 秒规则；仍可用命令行第 4 个参数覆盖迭代数。 */
+#ifndef ITERATIONS
+#define ITERATIONS 5000
+#endif
+#ifndef TOTAL_DATA_SIZE
 #define TOTAL_DATA_SIZE 2000
+#endif
 
 /* Variable : default_num_contexts
         Not used for this simple port, must contain the value 1.

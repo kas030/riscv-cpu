@@ -173,9 +173,9 @@ CPU 最多每拍顺序发射两条指令，第一槽先于第二槽提交。当�
 ### 6.1 取指空间
 
 - CPU 复位入口：`0x80000000`。
-- SoC 使用 `pc[13:2]` 访问 4096×32 bit IROM，可用镜像容量为 16 KiB。
+- SoC 使用 `pc[15:2]` 访问 16384×32 bit IROM，可用镜像容量为 64 KiB。
 - 链接脚本把镜像链接到偏移 `0x00000000`，CPU 运行时从 `0x80000000` 取对应内容。
-- IROM 高位地址被忽略，超出 16 KiB 会发生地址别名，不会触发取指访问故障。
+- IROM 高位地址被忽略，超出 64 KiB 会发生地址别名，不会触发取指访问故障。
 - 对外有 `pc` 和 `pc+4` 两路只读取指口，用于双槽取指。
 
 ### 6.2 数据 BRAM
@@ -232,7 +232,7 @@ CPU 对外只有一组数据访问端口：`perip_addr`、`perip_wen`、`perip_m
 
 - 32 位小端 RV32IM 基础执行语义；
 - 本文列出的 5 个 CSR、6 条 Zicsr 指令、M 模式 `ecall/mret`；
-- 16 KiB IROM 镜像、256 KiB BRAM 和固定 MMIO 地址；
+- 64 KiB IROM 镜像、256 KiB BRAM 和固定 MMIO 地址；
 - CPU 自身写 BRAM 后再读取同一地址时的 L0 失效处理；
 - 双槽实现维持顺序可见的寄存器和存储副作用。
 
@@ -244,7 +244,7 @@ CPU 对外只有一组数据访问端口：`perip_addr`、`perip_wen`、`perip_m
 - `fence`/`fence.i` 的排序或指令同步效果；
 - 未实现 CSR 的异常或保留位语义；
 - 固定双发射率、固定 CPI、固定 load-use 气泡数或固定 RV32M 总周期数；
-- IROM 超过 16 KiB、MMIO 子字访问、未映射地址返回值；
+- IROM 超过 64 KiB、MMIO 子字访问、未映射地址返回值；
 - Linux、标准 SBI 或需要完整 RISC-V privileged architecture 的运行环境。
 
 ## 8. 实现依据

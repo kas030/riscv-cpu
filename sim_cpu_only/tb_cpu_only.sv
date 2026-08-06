@@ -108,6 +108,7 @@ module tb_cpu_only;
     logic [31:0] progress_last_seg = 32'd0;
     string stop_reason;
     integer init_idx;
+    bit coremark_smoke_pass = 1'b0;
 
     always #(CPU_HALF_PERIOD_NS) clk = ~clk;
     always #10 cnt_clk = ~cnt_clk;
@@ -126,26 +127,11 @@ module tb_cpu_only;
         .perip_rdata (perip_rdata)
     );
 `ifdef COREMARK_VERIFY
-    logic bad_pc_seen = 1'b0;
-    logic returned_from_coremark = 1'b0;
+    /* CoreMark 覆盖完整 64 KiB IROM；任何跳出代码区的 PC 都是硬失败。 */
     always @(posedge clk) begin
-        if (!rst && dut.WB_RegWrite && dut.WB_rd == 5'd1 &&
-            (dut.WB_pcadd4 == 32'h8000_3114 || dut.WB_pcadd4 == 32'h8000_3e38)) begin
-            $display("[COREMARK-DIAG] ra write t=%0t instr_pc=0x%08X data=0x%08X", $time, dut.WB_pcadd4 - 4, dut.WB_wdata);
-        end
-        if (!rst && dut.EX_pc == 32'h8000_3e14) begin
-            $display("[COREMARK-DIAG] branch t=%0t raw=%0b queued=%0b taken=%0b redirect=0x%08X IF=0x%08X", $time, dut.BranchMispredict_raw, dut.BranchMispredict, dut.BranchTaken_raw, dut.IF_npc_redirect_raw, irom_addr);
-        end
-        if (!rst && dut.EX_pc == 32'h8000_3e64) begin
-            returned_from_coremark = 1'b1;
-            $display("[COREMARK-DIAG] return t=%0t raw=%0b queued=%0b target=0x%08X IF=0x%08X", $time, dut.BranchMispredict_raw, dut.BranchMispredict, dut.u_ex_stage.jalr_csr_target, irom_addr);
-        end
-        if (!rst && returned_from_coremark && irom_addr == 32'h8000_3e14) begin
-            $display("[COREMARK-DIAG] reenter t=%0t IF_pc=0x%08X ID_pc=0x%08X EX_pc=0x%08X redirect=%0b q=%0b raw_target=0x%08X", $time, dut.IF_pc, dut.ID_pc, dut.EX_pc, dut.BranchMispredict, dut.redirect_valid_q, dut.IF_npc_redirect_raw);
-        end
-        if (!rst && !bad_pc_seen && (irom_addr[31:16] != 16'h8000)) begin
-            bad_pc_seen = 1'b1;
-            $display("[COREMARK-DIAG] bad PC t=%0t pc=0x%08X irom1=0x%08X EX_pc=0x%08X EX_NpcOp=%0d EX_A=0x%08X EX_imm=0x%08X JALR_target=0x%08X ra=0x%08X", $time, irom_addr, irom_addr1, dut.EX_pc, dut.EX_NpcOp, dut.u_ex_stage.EX_forward_A_out, dut.EX_imm, dut.u_ex_stage.jalr_csr_target, dut.rf_inst.xreg[1]);
+        if (!rst && !sim_done && (irom_addr[31:16] != 16'h8000)) begin
+            $display("[UART-VERIFY] FAIL: PC left IROM: 0x%08X", irom_addr);
+            finish_sim("coremark_bad_pc");
         end
     end
 `endif
@@ -389,7 +375,9 @@ module tb_cpu_only;
              * 会错过下一字节的 start 沿，导致从数据位下降沿触发、采样错位 */
             uart_cap_queue[uart_cap_qlen] = cap_byte;
             uart_cap_qlen = uart_cap_qlen + 1;
+`ifndef COREMARK_VERIFY
             $display("[UART-TX] t=%0t 0x%02X %c", $time, cap_byte, (cap_byte >= 8'h20 && cap_byte < 8'h7F) ? cap_byte : 8'h2E);
+`endif
         end
     end
 
@@ -409,7 +397,25 @@ module tb_cpu_only;
             uart_queue_has_str = found;
         end
     endfunction
+
+    function automatic bit uart_queue_has_str_from(string s, integer start_idx);
+        integer i, j;
+        bit found;
+        begin
+            found = 1'b0;
+            for (i = start_idx; i <= uart_cap_qlen - s.len() && !found; i = i + 1) begin
+                found = 1'b1;
+                for (j = 0; j < s.len(); j = j + 1) begin
+                    if (uart_cap_queue[i + j] != s[j])
+                        found = 1'b0;
+                end
+            end
+            uart_queue_has_str_from = found;
+        end
+    endfunction
+
     initial begin : uart_verify
+        integer coremark_output_start;
         /* CPU 启动时主动请求透传（board.c rt_hw_board_init 写 UART_STATUS）：
          * 等待透传建立（twin 进 PASSTHROUGH）与 finsh banner 输出完成。 */
 `ifdef COREMARK_VERIFY
@@ -449,7 +455,9 @@ module tb_cpu_only;
         end
 `ifdef COREMARK_VERIFY
         /* TOTAL_DATA_SIZE=2000 由三个算法均分为 666 bytes：官方 2K 档。
-         * 种子 (0,0,0x66) 的 CRC 为 list=e714、matrix=1fd7、state=8e3a。 */
+         * 24 次仅用于 RTL smoke test，必然触发官方“至少 10 秒”提示；
+         * 正式跑分使用裸 coremark 的 5000 次默认值。 */
+        coremark_output_start = uart_cap_qlen;
         $display("[UART-VERIFY] inject 'coremark 0 0 0x66 24\\r'");
         uart_tx_byte("c");
         uart_tx_byte("o");
@@ -472,15 +480,18 @@ module tb_cpu_only;
         uart_tx_byte("2");
         uart_tx_byte("4");
         uart_tx_byte(8'h0D);
-        #(150_000_000);
-        if (uart_queue_has_str("2K performance run parameters") &&
-            uart_queue_has_str("[0]crclist       : 0xe714") &&
-            uart_queue_has_str("[0]crcmatrix     : 0x1fd7") &&
-            uart_queue_has_str("[0]crcstate      : 0x8e3a") &&
-            !uart_queue_has_str("ERROR! list crc") &&
-            !uart_queue_has_str("ERROR! matrix crc") &&
-            !uart_queue_has_str("ERROR! state crc")) begin
-            $display("[UART-VERIFY] coremark verification passed (qlen=%0d)", uart_cap_qlen);
+        #(180_000_000);
+        if (uart_queue_has_str_from("2K performance run parameters", coremark_output_start) &&
+            uart_queue_has_str_from("[0]crclist       : 0xe714", coremark_output_start) &&
+            uart_queue_has_str_from("[0]crcmatrix     : 0x1fd7", coremark_output_start) &&
+            uart_queue_has_str_from("[0]crcstate      : 0x8e3a", coremark_output_start) &&
+            uart_queue_has_str_from("ERROR! Must execute for at least 10 secs", coremark_output_start) &&
+            uart_queue_has_str_from("msh >", coremark_output_start) &&
+            !uart_queue_has_str_from("ERROR! list crc", coremark_output_start) &&
+            !uart_queue_has_str_from("ERROR! matrix crc", coremark_output_start) &&
+            !uart_queue_has_str_from("ERROR! state crc", coremark_output_start)) begin
+            coremark_smoke_pass = 1'b1;
+            $display("[UART-VERIFY] CoreMark CRC smoke passed and returned to msh (qlen=%0d)", uart_cap_qlen);
         end else begin
             $display("[UART-VERIFY] FAIL: coremark output mismatch (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
@@ -494,6 +505,9 @@ module tb_cpu_only;
         #(30_000_000);
         if (uart_cap_qlen >= 18) begin
             $display("[UART-VERIFY] readback verification passed (qlen=%0d)", uart_cap_qlen);
+`ifdef COREMARK_VERIFY
+            finish_sim("coremark_smoke");
+`endif
         end else begin
             $display("[UART-VERIFY] FAIL: readback too short (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
@@ -631,21 +645,29 @@ module tb_cpu_only;
     endtask
 
     task automatic finish_sim(input string reason);
-        bit led_ok;
+        bit result_ok;
         begin
             if (!sim_done) begin
                 sim_done = 1'b1;
                 stop_reason = reason;
-                led_ok = (virtual_led != FAIL_LED) &&
-                         ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
-                          (!HAS_EXPECTED_LED && virtual_led == PASS_LED));
+`ifdef COREMARK_VERIFY
+                result_ok = coremark_smoke_pass && (reason == "coremark_smoke");
+`else
+                result_ok = (virtual_led != FAIL_LED) &&
+                            ((HAS_EXPECTED_LED && virtual_led == EXPECTED_LED) ||
+                             (!HAS_EXPECTED_LED && virtual_led == PASS_LED));
+`endif
                 clear_progress_line();
-                if (led_ok)
+                if (result_ok)
                     $display(">>> [PASS] final state matches enabled checks");
                 else
                     $display(">>> [FAIL] final state mismatch");
+`ifdef COREMARK_VERIFY
+                $display(" coremark_smoke    : %s", coremark_smoke_pass ? "pass" : "fail");
+`else
                 if (HAS_EXPECTED_LED)
-                    $display(" expected_led      : 0x%08X (%s)", EXPECTED_LED, led_ok ? "match" : "mismatch");
+                    $display(" expected_led      : 0x%08X (%s)", EXPECTED_LED, result_ok ? "match" : "mismatch");
+`endif
                 $display(" pass_led          : 0x%08X", PASS_LED);
                 $display(" fail_led          : 0x%08X", FAIL_LED);
                 $display(" stop_reason       : %s", stop_reason);

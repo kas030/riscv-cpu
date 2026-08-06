@@ -17,7 +17,7 @@ CPU-only 仿真中通过 LED 写入 `0xC0DEC0DE` 判定完成。
 
 CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）：
 
-- 取指仅走 IROM `0x80000000`–`0x80003FFF`（16 KiB），代码必须装入此范围。
+- 取指仅走 IROM `0x80000000`–`0x8000FFFF`（64 KiB），代码必须装入此范围。
 - BRAM `0x80100000`–`0x8013FFFF`（256 KiB），`.coe` 预装载且可读写，
   `.rodata/.data/.bss` 直接放 BRAM，启动无需搬运。
 - CPU 无中断通路；`libcpu/risc-v/common` 的上下文切换使用
@@ -46,7 +46,7 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
   会导致就绪表为空、调度器取到垃圾指针。
 - **链接布局**（`linker.ld`）：`.text` → IROM；`.rodata/.data/.bss` → BRAM；
   `__stack_top` = BRAM 顶；堆覆盖 `[__bss_end, __stack_top)`。脚本内 ASSERT
-  IROM 使用量 ≤ 16 KiB。
+  IROM 使用量 ≤ 64 KiB。
 
 ## 串口命令行（finsh/msh）
 
@@ -71,17 +71,47 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
   若此处忙等，会饿死 idle 线程——mycpu 的 tick 由 idle hook 轮询 COUNTER
   产生，系统时间将停止，演示线程永不醒来。
 
+## 官方 CoreMark 1.0
+
+`bsp/mycpu/coremark/` 中的五个核心算法源文件、`coremark.h` 和 MD5 清单来自
+EEMBC 官方 CoreMark 仓库，核心源保持原样；`core_portme.c/h` 仅实现本平台允许
+定制的计时、数据类型和输出接口。计时直接读取 COUNTER 毫秒计数，避免 CoreMark
+忙跑期间 idle hook 不执行而导致 RT-Thread tick 停止。
+
+CoreMark 通过 finsh 命令运行：
+
+```text
+msh >coremark
+```
+
+裸命令使用标准性能种子 `0,0,0x66`、总数据量 2000 字节和 5000 次迭代；
+200 MHz 配置下预计约 11--12 秒，满足官方结果至少运行 10 秒的规则。输出应包含
+`Correct operation validated`、三项 CRC `e714 / 1fd7 / 8e3a` 和 CoreMark 分数。
+官方验证种子可另行运行：
+
+```text
+msh >coremark 0x3415 0x3415 0x66 5000
+```
+
+此时三项 CRC 应为 `e3c1 / 0747 / 8d84`。命令行第 4 个参数可覆盖迭代数，
+但少于 10 秒的结果只适合调试，不能作为正式成绩。
+
 ## 构建与运行
 
-工具链 `riscv32-unknown-elf-gcc`（GCC 16.1.0，带 newlib）位于
-`$HOME/.local/riscv-tc/bin`，Makefile 自动前置该目录到 PATH。
+Makefile 默认使用 `riscv32-unknown-elf-` 前缀，也可通过 `CROSS` 或
+`CC`/`OBJCOPY`/`SIZE` 覆盖为其他支持 RV32IM+Zicsr 的 GCC 工具链。本仓库当前
+跟踪的固件 COE 使用 Vivado 2025.2.1 自带 GCC 13.4.0 生成。
 
 ```sh
 cd bsp/mycpu
 make              # 编译内核与 BSP，生成 irom/bram 的 .coe
 make run          # 全量仿真：3 秒演示，LED 写 0xC0DEC0DE 判定 PASS
 make run DEMO_RUN_MS=500 STOP_NS=900000000   # 缩短演示与仿真时间
+make coremark-smoke # 24 次短测，检查官方性能种子 CRC 与返回 msh
 ```
+
+`coremark-smoke` 故意小于 10 秒，因此会检查官方的最短时间警告；它只证明 RTL
+执行、CRC 和 shell 返回路径正确，不是可上报的 CoreMark 成绩。
 
 `make run` 调用 `sim_cpu_only/run_verilator.sh`，传
 `IROM_COE`/`BRAM_COE`/`PASS_LED=C0DEC0DE`/`FAIL_LED=DEADBEEF`/
