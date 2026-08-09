@@ -32,6 +32,9 @@ OPT := -Os -ffunction-sections -fdata-sections -ffreestanding
 CFLAGS := $(ARCH_FLAGS) $(OPT) -I. -I$(KERNEL)/include -I$(FINSH) -MMD -MP
 LDFLAGS := -nostdlib -nostartfiles -static \
 	-Wl,--gc-sections -Wl,--build-id=none -Wl,--no-relax -T linker.ld
+# -nostdlib 会关闭 GCC 默认运行库；软浮点计时需要显式链接匹配当前
+# RV32IM/ilp32 multilib 的 libgcc，仅引入实际用到的辅助函数。
+LIBGCC := $(shell $(CC) $(ARCH_FLAGS) -print-libgcc-file-name)
 
 # ---- 演示运行时长（毫秒），改值会触发 main.o 重编（见 demo_run_ms.txt 规则）
 DEMO_RUN_MS ?= 3000
@@ -93,7 +96,7 @@ $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 # ---- 官方 CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
 #      把 core_main.c 的 main 重命名为 msh 命令入口，官方源不做任何修改）
 CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
-	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) -DHAS_FLOAT=0
+	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) -DHAS_FLOAT=1
 
 # COREMARK_ITERATIONS/flags 变化时强制重编全部 CoreMark 对象。
 $(BUILD)/coremark_config.txt: FORCE | $(BUILD)
@@ -130,7 +133,7 @@ $(BUILD)/main.o: main.c board.h rtconfig.h $(BUILD)/demo_run_ms.txt | $(BUILD)
 	$(CC) $(CFLAGS) -DDEMO_RUN_MS=$(DEMO_RUN_MS) -c $< -o $@
 
 $(BUILD)/rtthread.elf: $(OBJS) linker.ld
-	$(CC) $(LDFLAGS) -o $@ $(OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
 $(BUILD)/rtthread.irom.bin: $(BUILD)/rtthread.elf
 	$(OBJCOPY) -O binary --only-section=.text $< $@

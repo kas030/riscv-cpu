@@ -78,8 +78,8 @@ get_time(void)
 }
 /* Function : time_in_secs
         Convert the value returned by get_time to seconds.
-        Integer division (secs_ret 为 u32，HAS_FLOAT=0)。
-*/
+        secs_ret 为 double；RV32IM 无 FPU，运算由 GCC/libgcc 软件实现。
+ */
 secs_ret
 time_in_secs(CORE_TICKS ticks)
 {
@@ -158,8 +158,117 @@ cm_putu(char *buf, size_t *used, size_t cap, ee_u32 value,
         cm_putc(buf, used, cap, digits[i]);
 }
 
-/* CoreMark 在 HAS_FLOAT=0 下实际使用的格式子集；避免 RT-Thread
- * rt_vsnprintf 对长串的二次解析，且不依赖 libc。 */
+/* CoreMark 的 %f 均使用默认精度。计时与得分仍由 libgcc 软浮点计算，
+ * 这里只直接解析 IEEE-754 double 位模式并用整数生成 6 位小数。
+ * 这样不依赖 libc printf，也避开目标 CPU 上不可靠的 double 到 u32 转换。 */
+static void
+cm_putf(char *buf, size_t *used, size_t cap, double value)
+{
+    union
+    {
+        double value;
+        struct
+        {
+            ee_u32 low;
+            ee_u32 high;
+        } word;
+    } raw;
+    const ee_u32 scale = 1000000u;
+    ee_u32 exponent_bits;
+    ee_u32 whole = 0;
+    ee_u32 fraction = 0;
+    uint64_t mantissa;
+    uint64_t remainder;
+    uint64_t denominator;
+    int exponent;
+    int shift;
+    int i;
+
+    raw.value = value;
+    exponent_bits = (raw.word.high >> 20) & 0x7ffu;
+
+    if ((raw.word.high & 0x80000000u) != 0)
+        cm_putc(buf, used, cap, '-');
+
+    if (exponent_bits == 0x7ffu)
+    {
+        if (((raw.word.high & 0xfffffu) | raw.word.low) != 0)
+            cm_puts(buf, used, cap, "nan");
+        else
+            cm_puts(buf, used, cap, "inf");
+        return;
+    }
+
+    if (exponent_bits != 0)
+    {
+        exponent = (int)exponent_bits - 1023;
+        mantissa = ((uint64_t)(raw.word.high & 0xfffffu) << 32)
+                   | (uint64_t)raw.word.low | (UINT64_C(1) << 52);
+
+        if (exponent >= 32)
+        {
+            cm_puts(buf, used, cap, "overflow");
+            return;
+        }
+
+        shift = 52 - exponent;
+        if (exponent >= 0)
+        {
+            whole = (ee_u32)(mantissa >> shift);
+            remainder = mantissa & ((UINT64_C(1) << shift) - 1u);
+        }
+        else
+        {
+            remainder = mantissa;
+            /* 将很大的二进制分母等比例缩到 2^60；保留的精度远高于
+             * 最终 6 位十进制小数所需精度。 */
+            if (shift > 60)
+            {
+                int drop = shift - 60;
+                remainder = drop >= 64 ? 0 : remainder >> drop;
+                shift = 60;
+            }
+        }
+
+        denominator = UINT64_C(1) << shift;
+        for (i = 0; i < 6; ++i)
+        {
+            uint64_t scaled = remainder * 10u;
+            ee_u32 digit = (ee_u32)(scaled >> shift);
+            remainder = scaled & (denominator - 1u);
+            fraction = fraction * 10u + digit;
+        }
+        if (remainder >= (denominator >> 1))
+            ++fraction;
+    }
+
+    if (fraction >= scale)
+    {
+        ++whole;
+        fraction -= scale;
+    }
+
+    cm_putu(buf, used, cap, whole, 10u, 0, ' ');
+    cm_putc(buf, used, cap, '.');
+    cm_putu(buf, used, cap, fraction, 10u, 6, '0');
+}
+
+/* double 单独按非可变参数传递，避免 RV32 可变参数寄存器对齐路径把两个
+ * 32 位字错误解释。调用者负责输出前后缀，便于保持官方结果行的格式。 */
+int
+ee_print_float(double value)
+{
+    char buf[32];
+    size_t used = 0;
+
+    cm_putf(buf, &used, sizeof(buf), value);
+    buf[used] = '\0';
+    rt_hw_console_output(buf);
+    return (int)used;
+}
+
+/* CoreMark 实际使用的非浮点格式子集；浮点值由 ee_print_float 通过
+ * 非可变参数接口输出，避免 RV32 varargs 对 double 的字序解释问题。 */
 int
 ee_printf(const char *fmt, ...)
 {
