@@ -19,7 +19,7 @@ Original Author: Shay Gal-on
         This file contains configuration constants required to execute on
    different platforms
    平台适配（mycpu：RV32IM + Zicsr，无中断，RT-Thread Nano）：
-        HAS_FLOAT=0：无浮点单元，全整数运算
+        HAS_FLOAT=1：CPU 无 FPU，由 GCC/libgcc 提供软件浮点，仅用于计时换算和成绩输出
         SEED_METHOD=SEED_ARG：种子/迭代数走 msh 命令行（官方 CLI 语义）
         MEM_METHOD=MEM_STATIC：core_main.c 内置静态缓冲，无需 malloc
         计时取 COUNTER（0x80200050）毫秒计数，EE_TICKS_PER_SEC=1000
@@ -33,7 +33,7 @@ Original Author: Shay Gal-on
 /* Configuration : HAS_FLOAT
         Define to 1 if the platform supports floating point.
 */
-#define HAS_FLOAT 0
+#define HAS_FLOAT 1
 /* Configuration : HAS_TIME_H
         Define to 1 if platform has the time.h header file,
         and implementation of functions thereof.
@@ -66,7 +66,7 @@ Original Author: Shay Gal-on
 #define COMPILER_FLAGS \
     "-Os -march=rv32im_zicsr -Dmain=coremark -DPERFORMANCE_RUN=1 " \
     "-DTOTAL_DATA_SIZE=2000 -DITERATIONS=" CM_STRINGIFY(ITERATIONS) \
-    " -DHAS_FLOAT=0"
+    " -DHAS_FLOAT=1"
 #define MEM_LOCATION "Static"
 
 /* Data Types :
@@ -157,5 +157,6 @@ void portable_fini(core_portable *p);
 #endif
 
 int ee_printf(const char *fmt, ...);
+int ee_print_float(double value);
 
 #endif /* CORE_PORTME_H */
