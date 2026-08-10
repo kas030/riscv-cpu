@@ -79,6 +79,7 @@ CPU_SRCS := \
   $(SRC_PIPE_STAGE)/mycpu_mem_stage.sv \
   $(SRC_PIPE_STAGE)/mycpu_wb_stage.sv \
   $(SRC_PERIPH)/uart_bridge.sv \
+  $(SRC_PERIPH)/fpu_mmio.sv \
   $(SRC_PERIPH)/uart.sv \
   $(SRC_PERIPH)/twin_controller.sv
 

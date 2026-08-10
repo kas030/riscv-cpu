@@ -15,10 +15,11 @@ limitations under the License.
 
 Original Author: Shay Gal-on
 */
-/* 平台适配（mycpu：RV32IM + Zicsr，无中断，RT-Thread Nano）
+/* 平台适配（mycpu：RV32IM + Zicsr + MMIO 单精度 FPU，无中断，RT-Thread Nano）
    - 计时：硬件 COUNTER（0x80200050）毫秒计数（board.c 已在 rt_hw_board_init
      启动；不用 rt_tick_get——无中断平台 tick 由 idle 钩子轮询推进，忙跑时冻结）
-   - 输出：ee_printf 经 rt_vsnprintf 直接转发到平台控制台（UART/SEG）
+   - 浮点：硬件 FPU 完成 u32->binary32 与 binary32 除法，整数代码负责格式化
+   - 输出：ee_printf/ee_print_float 直接转发到平台控制台（UART/SEG）
    - 种子/迭代数：SEED_ARG 模式，来自 msh 命令行（get_seed_args）
    - 数据：MEM_STATIC，core_main.c 内置 static_memblk，无需 portable_malloc
 */
@@ -29,6 +30,54 @@ Original Author: Shay Gal-on
 #include <rthw.h>
 
 #define CM_CNT_ADDR 0x80200050ul   /* COUNTER：毫秒计数 */
+#define CM_FPU_A_ADDR      0x80200070ul
+#define CM_FPU_B_ADDR      0x80200074ul
+#define CM_FPU_CMD_ADDR    0x80200078ul
+#define CM_FPU_STATUS_ADDR 0x8020007cul
+#define CM_FPU_RESULT_ADDR 0x80200080ul
+
+#define CM_FPU_CMD_U32_TO_F32 1u
+#define CM_FPU_CMD_DIV_F32    2u
+
+typedef union
+{
+    float  value;
+    ee_u32 word;
+} cm_f32;
+
+static volatile ee_u32 *
+cm_mmio(ee_u32 addr)
+{
+    return (volatile ee_u32 *)(ee_ptr_int)addr;
+}
+
+static cm_f32
+cm_fpu_read_result(void)
+{
+    cm_f32 result;
+    while ((*cm_mmio(CM_FPU_STATUS_ADDR) & 1u) != 0)
+    {
+    }
+    result.word = *cm_mmio(CM_FPU_RESULT_ADDR);
+    return result;
+}
+
+static cm_f32
+cm_fpu_u32_to_f32(ee_u32 value)
+{
+    *cm_mmio(CM_FPU_A_ADDR) = value;
+    *cm_mmio(CM_FPU_CMD_ADDR) = CM_FPU_CMD_U32_TO_F32;
+    return cm_fpu_read_result();
+}
+
+static cm_f32
+cm_fpu_div_f32(cm_f32 numerator, cm_f32 denominator)
+{
+    *cm_mmio(CM_FPU_A_ADDR) = numerator.word;
+    *cm_mmio(CM_FPU_B_ADDR) = denominator.word;
+    *cm_mmio(CM_FPU_CMD_ADDR) = CM_FPU_CMD_DIV_F32;
+    return cm_fpu_read_result();
+}
 
 CORETIMETYPE
 barebones_clock(void)
@@ -77,14 +126,23 @@ get_time(void)
     return elapsed;
 }
 /* Function : time_in_secs
-        Convert the value returned by get_time to seconds.
-        Integer division (secs_ret 为 u32，HAS_FLOAT=0)。
+        Convert the value returned by get_time to seconds using the MMIO FPU.
 */
 secs_ret
 time_in_secs(CORE_TICKS ticks)
 {
-    secs_ret retval = ((secs_ret)ticks) / (secs_ret)EE_TICKS_PER_SEC;
-    return retval;
+    cm_f32 numerator = cm_fpu_u32_to_f32(ticks);
+    cm_f32 denominator = cm_fpu_u32_to_f32(EE_TICKS_PER_SEC);
+    return cm_fpu_div_f32(numerator, denominator).value;
+}
+
+float
+coremark_iterations_per_sec(ee_u32 iterations, CORE_TICKS ticks)
+{
+    cm_f32 numerator = cm_fpu_u32_to_f32(iterations);
+    cm_f32 denominator;
+    denominator.value = time_in_secs(ticks);
+    return cm_fpu_div_f32(numerator, denominator).value;
 }
 
 ee_u32 default_num_contexts = 1;
@@ -158,8 +216,111 @@ cm_putu(char *buf, size_t *used, size_t cap, ee_u32 value,
         cm_putc(buf, used, cap, digits[i]);
 }
 
-/* CoreMark 在 HAS_FLOAT=0 下实际使用的格式子集；避免 RT-Thread
- * rt_vsnprintf 对长串的二次解析，且不依赖 libc。 */
+/* FPU 已给出 binary32 结果；这里仅解析 IEEE-754 位模式并用整数生成
+ * CoreMark 默认的六位小数，不执行任何软件浮点运算。 */
+static void
+cm_putf(char *buf, size_t *used, size_t cap, float value)
+{
+    cm_f32 raw;
+    const ee_u32 scale = 1000000u;
+    ee_u32 exponent_bits;
+    ee_u32 whole = 0;
+    ee_u32 fraction = 0;
+    ee_u32 mantissa;
+    ee_u32 remainder = 0;
+    ee_u32 denominator = 1;
+    int exponent;
+    int shift;
+    int i;
+
+    raw.value = value;
+    exponent_bits = (raw.word >> 23) & 0xffu;
+
+    if ((raw.word & 0x80000000u) != 0)
+        cm_putc(buf, used, cap, '-');
+
+    if (exponent_bits == 0xffu)
+    {
+        if ((raw.word & 0x7fffffu) != 0)
+            cm_puts(buf, used, cap, "nan");
+        else
+            cm_puts(buf, used, cap, "inf");
+        return;
+    }
+
+    if (exponent_bits != 0)
+    {
+        exponent = (int)exponent_bits - 127;
+        mantissa = (raw.word & 0x7fffffu) | 0x800000u;
+
+        if (exponent >= 31)
+        {
+            cm_puts(buf, used, cap, "overflow");
+            return;
+        }
+
+        if (exponent >= 23)
+        {
+            whole = mantissa << (exponent - 23);
+        }
+        else if (exponent >= 0)
+        {
+            shift = 23 - exponent;
+            whole = (ee_u32)(mantissa >> shift);
+            denominator = 1u << shift;
+            remainder = mantissa & (denominator - 1u);
+        }
+        else
+        {
+            shift = 23 - exponent;
+            remainder = mantissa;
+            if (shift > 28)
+            {
+                int drop = shift - 28;
+                remainder = drop >= 24 ? 0 : remainder >> drop;
+                shift = 28;
+            }
+            denominator = 1u << shift;
+        }
+
+        if (remainder != 0)
+        {
+            for (i = 0; i < 6; ++i)
+            {
+                ee_u32 scaled = remainder * 10u;
+                ee_u32 digit = scaled >> shift;
+                remainder = scaled & (denominator - 1u);
+                fraction = fraction * 10u + digit;
+            }
+            if (remainder >= ((denominator + 1u) >> 1))
+                ++fraction;
+        }
+    }
+
+    if (fraction >= scale)
+    {
+        ++whole;
+        fraction -= scale;
+    }
+
+    cm_putu(buf, used, cap, whole, 10u, 0, ' ');
+    cm_putc(buf, used, cap, '.');
+    cm_putu(buf, used, cap, fraction, 10u, 6, '0');
+}
+
+int
+ee_print_float(float value)
+{
+    char buf[32];
+    size_t used = 0;
+
+    cm_putf(buf, &used, sizeof(buf), value);
+    buf[used] = '\0';
+    rt_hw_console_output(buf);
+    return (int)used;
+}
+
+/* CoreMark 的非浮点格式子集；浮点值走 ee_print_float 的非可变参数接口。 */
 int
 ee_printf(const char *fmt, ...)
 {

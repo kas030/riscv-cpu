@@ -12,6 +12,8 @@ module tb_cpu_only;
     localparam CNT_ADDR  = 32'h8020_0050;
     localparam UART_DATA_ADDR   = 32'h8020_0060;
     localparam UART_STATUS_ADDR = 32'h8020_0064;
+    localparam FPU_BASE_ADDR    = 32'h8020_0070;
+    localparam FPU_END_ADDR     = 32'h8020_0080;
 
     logic clk = 1'b0;
     logic cnt_clk = 1'b0;
@@ -58,6 +60,7 @@ module tb_cpu_only;
     logic [7:0]  cpu_uart_rx_data;
     logic        cpu_uart_rx_valid;
     logic [31:0] uart_rdata;
+    logic [31:0] fpu_rdata;
     logic [31:0] twin_led = 32'd0;
     logic [39:0] twin_seg = {8'd0, 32'h3700_0000};
     logic [7:0]  uart_cap_queue [0:4095];
@@ -191,6 +194,16 @@ module tb_cpu_only;
         .passthrough_req(twin_passthrough_req)
     );
 
+    fpu_mmio fpu_mmio_inst (
+        .clk   (clk),
+        .rst   (rst),
+        .addr  (perip_addr),
+        .wdata (perip_wdata),
+        .wen   (perip_wen && perip_addr >= FPU_BASE_ADDR
+                          && perip_addr <= FPU_END_ADDR),
+        .rdata (fpu_rdata)
+    );
+
     initial begin
         if (TRACE_ENABLED) begin
             $dumpfile(trace_file);
@@ -259,6 +272,9 @@ module tb_cpu_only;
         perip_rdata = 32'd0;
         if (bram_resp_valid) begin
             perip_rdata = bram_rdata_q;
+        end else if (!perip_wen && perip_addr >= FPU_BASE_ADDR
+                                  && perip_addr <= FPU_END_ADDR) begin
+            perip_rdata = fpu_rdata;
         end else if (!perip_wen) begin
             case (perip_addr)
                 SW0_ADDR: perip_rdata = twin_sw[31:0];
@@ -485,6 +501,8 @@ module tb_cpu_only;
             uart_queue_has_str_from("[0]crclist       : 0xe714", coremark_output_start) &&
             uart_queue_has_str_from("[0]crcmatrix     : 0x1fd7", coremark_output_start) &&
             uart_queue_has_str_from("[0]crcstate      : 0x8e3a", coremark_output_start) &&
+            uart_queue_has_str_from("Total time (secs): 0.", coremark_output_start) &&
+            uart_queue_has_str_from("Iterations/Sec   : ", coremark_output_start) &&
             uart_queue_has_str_from("ERROR! Must execute for at least 10 secs", coremark_output_start) &&
             uart_queue_has_str_from("msh >", coremark_output_start) &&
             !uart_queue_has_str_from("ERROR! list crc", coremark_output_start) &&

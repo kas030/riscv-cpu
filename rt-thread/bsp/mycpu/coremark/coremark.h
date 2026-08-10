@@ -48,11 +48,15 @@ Original Author: Shay Gal-on
 void *iterate(void *pres);
 
 /* Typedef: secs_ret
-        For machines that have floating point support, get number of seconds as
-   a double. Otherwise an unsigned int.
+        This port uses the smallest hardware timing path: IEEE-754 binary32.
+        Other floating-point ports retain the upstream double type.
 */
 #if HAS_FLOAT
+#if defined(HARDWARE_FPU_SINGLE)
+typedef float secs_ret;
+#else
 typedef double secs_ret;
+#endif
 #else
 typedef ee_u32 secs_ret;
 #endif

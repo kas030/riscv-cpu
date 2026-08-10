@@ -56,17 +56,24 @@ module perip_bridge(
     localparam CNT_STOP_CMD  = 32'hFFFF_FFFF;
     localparam UART_DATA_ADDR   = 32'h8020_0060;  // 写=发送，读=接收并清 valid
     localparam UART_STATUS_ADDR = 32'h8020_0064;  // bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写=请求透传
+    // CoreMark 报告换算用单精度 MMIO FPU：A/B/CMD/STATUS/RESULT
+    localparam FPU_BASE_ADDR    = 32'h8020_0070;
+    localparam FPU_END_ADDR     = 32'h8020_0080;
 
     logic [31:0] LED;
     logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
     logic [31:0] uart_rdata;
+    logic [31:0] fpu_rdata;
     logic [39:0] seg_output;
     logic cnt_enable_cfg;
     logic bram_hit, bram_ren, bram_wen, bram_resp_valid;
+    logic fpu_hit;
 
     assign bram_hit = (perip_addr[31:18] == BRAM_ADDR_TAG);
     assign bram_ren = ~perip_wen & bram_hit;
     assign bram_wen = perip_wen & bram_hit;
+    assign fpu_hit = (perip_addr >= FPU_BASE_ADDR)
+                  && (perip_addr <= FPU_END_ADDR);
 
     // we don't care perip_mask in LED, SEG, SW & KEY, only care in BRAM
     // write process
@@ -161,7 +168,8 @@ module perip_bridge(
                          {32{~bram_resp_valid && perip_addr == SEG_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata |
                          {32{~bram_resp_valid && perip_addr == UART_DATA_ADDR}} & mmio_rdata |
-                         {32{~bram_resp_valid && perip_addr == UART_STATUS_ADDR}} & mmio_rdata;
+                         {32{~bram_resp_valid && perip_addr == UART_STATUS_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && fpu_hit}} & fpu_rdata;
     
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;
@@ -184,6 +192,15 @@ module perip_bridge(
         .passthrough     (uart_passthrough),
         .ps_wen          (perip_wen && perip_addr == UART_STATUS_ADDR),
         .passthrough_req (uart_passthrough_req)
+    );
+
+    fpu_mmio fpu_mmio_inst (
+        .clk   (clk),
+        .rst   (rst),
+        .addr  (perip_addr),
+        .wdata (perip_wdata),
+        .wen   (perip_wen && fpu_hit),
+        .rdata (fpu_rdata)
     );
 
 endmodule

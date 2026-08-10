@@ -73,10 +73,12 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 
 ## 官方 CoreMark 1.0
 
-`bsp/mycpu/coremark/` 中的五个核心算法源文件、`coremark.h` 和 MD5 清单来自
-EEMBC 官方 CoreMark 仓库，核心源保持原样；`core_portme.c/h` 仅实现本平台允许
-定制的计时、数据类型和输出接口。计时直接读取 COUNTER 毫秒计数，避免 CoreMark
-忙跑期间 idle hook 不执行而导致 RT-Thread tick 停止。
+`bsp/mycpu/coremark/` 中的五个核心算法源文件和 MD5 清单来自 EEMBC
+官方 CoreMark 仓库，基准算法保持原样。本平台的计时直接读取 COUNTER
+毫秒计数，避免 CoreMark 忙跑期间 idle hook 不执行而导致 RT-Thread tick
+停止。停止计时后，`0x80200070`--`0x80200080` 的最小化 MMIO 单精度 FPU
+仅负责 `ticks / 1000` 和 `iterations / seconds` 换算；不向 CoreMark 主循环
+加入浮点指令，也不要求 CPU 实现 RV32F 指令集。
 
 CoreMark 通过 finsh 命令运行：
 
