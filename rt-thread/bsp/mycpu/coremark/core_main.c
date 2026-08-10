@@ -364,11 +364,34 @@ for (i = 0; i < MULTITHREAD; i++)
                   default_num_contexts * results[0].iterations
                       / time_in_secs(total_time));
 #else
+#if FIXED_POINT_TIME
+    {
+        ee_u32 total_iterations =
+            (ee_u32)default_num_contexts * results[0].iterations;
+        ee_u32 fractional_millis =
+            ((ee_u32)(total_time % EE_TICKS_PER_SEC) * 1000u)
+            / EE_TICKS_PER_SEC;
+
+        ee_printf("Total time (secs): %lu.%03lu\n",
+                  (long unsigned)(total_time / EE_TICKS_PER_SEC),
+                  (long unsigned)fractional_millis);
+        if (total_time > 0)
+        {
+            /* 标准运行的 5000 次迭代在 32 位缩放范围内。 */
+            ee_u32 score_tenths =
+                (total_iterations * EE_TICKS_PER_SEC * 10u) / total_time;
+            ee_printf("Iterations/Sec   : %lu.%01lu\n",
+                      (long unsigned)(score_tenths / 10u),
+                      (long unsigned)(score_tenths % 10u));
+        }
+    }
+#else
     ee_printf("Total time (secs): %d\n", time_in_secs(total_time));
     if (time_in_secs(total_time) > 0)
         ee_printf("Iterations/Sec   : %d\n",
                   default_num_contexts * results[0].iterations
                       / time_in_secs(total_time));
+#endif
 #endif
     if (time_in_secs(total_time) < 10)
     {

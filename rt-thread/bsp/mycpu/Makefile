@@ -93,7 +93,8 @@ $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 # ---- 官方 CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
 #      把 core_main.c 的 main 重命名为 msh 命令入口，官方源不做任何修改）
 CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
-	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) -DHAS_FLOAT=0
+	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) -DHAS_FLOAT=0 \
+	-DFIXED_POINT_TIME=1
 
 # COREMARK_ITERATIONS/flags 变化时强制重编全部 CoreMark 对象。
 $(BUILD)/coremark_config.txt: FORCE | $(BUILD)

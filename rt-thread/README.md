@@ -76,7 +76,9 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 `bsp/mycpu/coremark/` 中的五个核心算法源文件、`coremark.h` 和 MD5 清单来自
 EEMBC 官方 CoreMark 仓库，核心源保持原样；`core_portme.c/h` 仅实现本平台允许
 定制的计时、数据类型和输出接口。计时直接读取 COUNTER 毫秒计数，避免 CoreMark
-忙跑期间 idle hook 不执行而导致 RT-Thread tick 停止。
+忙跑期间 idle hook 不执行而导致 RT-Thread tick 停止。运行时间按整数定点方式输出
+到毫秒（例如 `13.355` 秒），`Iterations/Sec` 输出 1 位小数；该换算不使用 FPU，
+也不链接软件浮点运算。
 
 CoreMark 通过 finsh 命令运行：
 

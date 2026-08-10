@@ -20,6 +20,7 @@ Original Author: Shay Gal-on
    different platforms
    平台适配（mycpu：RV32IM + Zicsr，无中断，RT-Thread Nano）：
         HAS_FLOAT=0：无浮点单元，全整数运算
+        FIXED_POINT_TIME=1：用整数拆分秒和毫秒，不引入软浮点
         SEED_METHOD=SEED_ARG：种子/迭代数走 msh 命令行（官方 CLI 语义）
         MEM_METHOD=MEM_STATIC：core_main.c 内置静态缓冲，无需 malloc
         计时取 COUNTER（0x80200050）毫秒计数，EE_TICKS_PER_SEC=1000
@@ -34,6 +35,9 @@ Original Author: Shay Gal-on
         Define to 1 if the platform supports floating point.
 */
 #define HAS_FLOAT 0
+#ifndef FIXED_POINT_TIME
+#define FIXED_POINT_TIME 1
+#endif
 /* Configuration : HAS_TIME_H
         Define to 1 if platform has the time.h header file,
         and implementation of functions thereof.
@@ -66,7 +70,7 @@ Original Author: Shay Gal-on
 #define COMPILER_FLAGS \
     "-Os -march=rv32im_zicsr -Dmain=coremark -DPERFORMANCE_RUN=1 " \
     "-DTOTAL_DATA_SIZE=2000 -DITERATIONS=" CM_STRINGIFY(ITERATIONS) \
-    " -DHAS_FLOAT=0"
+    " -DHAS_FLOAT=0 -DFIXED_POINT_TIME=" CM_STRINGIFY(FIXED_POINT_TIME)
 #define MEM_LOCATION "Static"
 
 /* Data Types :

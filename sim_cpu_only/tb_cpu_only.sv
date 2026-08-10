@@ -482,6 +482,7 @@ module tb_cpu_only;
         uart_tx_byte(8'h0D);
         #(180_000_000);
         if (uart_queue_has_str_from("2K performance run parameters", coremark_output_start) &&
+            uart_queue_has_str_from("Total time (secs): 0.", coremark_output_start) &&
             uart_queue_has_str_from("[0]crclist       : 0xe714", coremark_output_start) &&
             uart_queue_has_str_from("[0]crcmatrix     : 0x1fd7", coremark_output_start) &&
             uart_queue_has_str_from("[0]crcstate      : 0x8e3a", coremark_output_start) &&
