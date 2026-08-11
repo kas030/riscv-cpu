@@ -48,11 +48,11 @@ COREMARK_VERIFY ?= 0
 # “正式成绩至少运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
 COREMARK_ITERATIONS ?= 5000
 
-# ---- 编译对象：内核 11 个 + libcpu common 4 个 + bsp 4 个 + finsh 3 个
+# ---- 编译对象：内核、libcpu、BSP、finsh 与 CoreMark
 KSRC := clock cpu idle ipc irq kservice mem object scheduler thread timer
 KOBJ := $(KSRC:%=$(BUILD)/k_%.o)
 LIBOBJ := $(BUILD)/cpuport.o $(BUILD)/context.o
-BSPOBJ := $(BUILD)/board.o $(BUILD)/main.o $(BUILD)/entry.o
+BSPOBJ := $(BUILD)/board.o $(BUILD)/bme280.o $(BUILD)/main.o $(BUILD)/entry.o
 FINSHOBJ := $(BUILD)/finsh_shell.o $(BUILD)/finsh_cmd.o $(BUILD)/finsh_msh.o
 # ---- 官方 EEMBC CoreMark 1.0：5 个核心源 + 平台移植 + msh 导出
 COREOBJ := $(BUILD)/cm_list.o $(BUILD)/cm_main.o $(BUILD)/cm_matrix.o \
@@ -82,6 +82,9 @@ $(BUILD)/entry.o: entry_gcc.S | $(BUILD)
 	$(CC) $(ARCH_FLAGS) -c $< -o $@
 
 $(BUILD)/board.o: board.c board.h rtconfig.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/bme280.o: bme280.c bme280.h rtconfig.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/finsh_shell.o: $(FINSH)/shell.c rtconfig.h | $(BUILD)
@@ -129,7 +132,7 @@ $(BUILD)/demo_run_ms.txt: FORCE | $(BUILD)
 	@mkdir -p $(BUILD) && printf '%s' '$(DEMO_RUN_MS)' > $@.tmp \
 		&& (cmp -s $@ $@.tmp || mv $@.tmp $@) && rm -f $@.tmp
 
-$(BUILD)/main.o: main.c board.h rtconfig.h $(BUILD)/demo_run_ms.txt | $(BUILD)
+$(BUILD)/main.o: main.c board.h bme280.h rtconfig.h $(BUILD)/demo_run_ms.txt | $(BUILD)
 	$(CC) $(CFLAGS) -DDEMO_RUN_MS=$(DEMO_RUN_MS) -c $< -o $@
 
 $(BUILD)/rtthread.elf: $(OBJS) linker.ld

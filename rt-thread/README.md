@@ -44,9 +44,36 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
   `rt_thread_startup` 三个演示线程）→ `rt_thread_idle_init` → `rt_system_scheduler_start`。
   注意：Nano 3.1.5 的 idle 线程由 BSP 显式初始化，漏调 `rt_thread_idle_init`
   会导致就绪表为空、调度器取到垃圾指针。
+- **BME280**：`bme` 线程通过 FPGA 内的 100 kHz I²C 主机探测 `0x76/0x77`，
+  读取芯片校准参数，并每秒以 forced mode 测量一次温度、气压和湿度。补偿后的
+  定点结果直接打印到 UART，不使用浮点格式化。
 - **链接布局**（`linker.ld`）：`.text` → IROM；`.rodata/.data/.bss` → BRAM；
   `__stack_top` = BRAM 顶；堆覆盖 `[__bss_end, __stack_top)`。脚本内 ASSERT
   IROM 使用量 ≤ 64 KiB。
+
+## BME280 接线与输出
+
+断电接线，J7 采用如下连接：
+
+| BME280 | FPGA 板 | 说明 |
+| --- | --- | --- |
+| VCC | J7 pin 20 | `+3.3V` |
+| GND | J7 pin 19 | GND；J7 pin 11–19 任取一个也可以 |
+| SCL | J7 pin 1 | Debug_1，FPGA `B19` |
+| SDA | J7 pin 2 | Debug_2，FPGA `G18` |
+| CSB | `+3.3V` | I²C 模式必须为高；可与 VCC 短接，或接 J8/J9/J10 pin 20 |
+| SDO | GND 或 `+3.3V` | GND=`0x76`，3.3V=`0x77`；驱动会自动探测两者，不能悬空 |
+
+SCL/SDA 必须上拉到 3.3V；当前模块已有 10 kΩ 上拉，不需要再并接。串口终端配置
+为 9600、8 数据位、无校验、1 停止位。识别成功后可看到类似输出：
+
+```text
+bme280: detected at 0x76
+bme280: T=24.31 C, P=100812 Pa, H=45.67 %
+```
+
+若持续显示 `not found`，依次检查供电、共地、SCL/SDA 是否接反、CSB 是否为高、
+SDO 是否固定到 GND/3.3V，并确认重新生成了固件 COE 和 FPGA bitstream。
 
 ## 串口命令行（finsh/msh）
 

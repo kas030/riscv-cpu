@@ -3,6 +3,13 @@ set_property IOSTANDARD LVCMOS33 [get_ports i_uart_rx]
 set_property PACKAGE_PIN D17 [get_ports o_uart_tx]
 set_property IOSTANDARD LVCMOS33 [get_ports o_uart_tx]
 
+# J7 DebugIO：pin 1=Debug_1/B19=SCL，pin 2=Debug_2/G18=SDA。
+# 两根线均为开漏输出，BME280 模块上的 10k 电阻上拉到 3.3V。
+set_property PACKAGE_PIN B19 [get_ports bme_scl]
+set_property IOSTANDARD LVCMOS33 [get_ports bme_scl]
+set_property PACKAGE_PIN G18 [get_ports bme_sda]
+set_property IOSTANDARD LVCMOS33 [get_ports bme_sda]
+
 set_property PACKAGE_PIN AD12 [get_ports { i_sys_clk_p }]
 set_property IOSTANDARD DIFF_HSTL_II_18 [get_ports { i_sys_clk_p }]
 set_property PACKAGE_PIN AD11 [get_ports { i_sys_clk_n }]

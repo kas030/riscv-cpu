@@ -5,6 +5,14 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
+if {[info exists ::env(CODEX_REPO_ROOT)] &&
+    [file exists [file join $::env(CODEX_REPO_ROOT) AGENTS.md]]} {
+    set repo_root [string map {\\ /} $::env(CODEX_REPO_ROOT)]
+    set script_dir [file join $repo_root scripts]
+} elseif {[file exists [file join [pwd] AGENTS.md]]} {
+    set repo_root [file normalize [pwd]]
+    set script_dir [file join $repo_root scripts]
+}
 set project_path [file join $repo_root vivado digital_twin.xpr]
 
 foreach tclstore_root {

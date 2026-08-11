@@ -35,6 +35,9 @@ module student_top#(
     output [P_LED_CNT - 1:0]                    virtual_led   ,
     output [P_SEG_CNT - 1:0]                    virtual_seg   ,
 
+    inout  wire                                bme_scl       ,
+    inout  wire                                bme_sda       ,
+
     /* CPU 串口透传（50MHz 域，接 twin_controller） */
     input                                       uart_tx_busy  ,
     input                                       uart_rx_valid ,
@@ -110,7 +113,9 @@ module student_top#(
         .uart_rx_data       (uart_rx_data),
         .uart_rx_ready      (uart_rx_valid),
         .uart_passthrough   (uart_passthrough),
-    .uart_passthrough_req(uart_passthrough_req)
+        .uart_passthrough_req(uart_passthrough_req),
+        .bme_scl            (bme_scl),
+        .bme_sda            (bme_sda)
     );
 
 endmodule

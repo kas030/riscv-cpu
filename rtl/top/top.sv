@@ -25,6 +25,8 @@ module top(
     input  wire i_sys_clk_n         ,
     input  wire i_uart_rx           ,
     output wire o_uart_tx           ,
+    inout  wire bme_scl             ,
+    inout  wire bme_sda             ,
 
     output wire [31:0] virtual_led  ,
     output wire [39:0] virtual_seg
@@ -102,6 +104,8 @@ module top(
         .virtual_sw(virtual_sw),
         .virtual_led(virtual_led),
         .virtual_seg(virtual_seg),
+        .bme_scl(bme_scl),
+        .bme_sda(bme_sda),
         .uart_tx_busy(tx_busy),
         .uart_rx_valid(cpu_uart_rx_valid),
         .uart_rx_data(cpu_uart_rx_data),

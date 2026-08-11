@@ -10,7 +10,14 @@
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
 
-if {![file exists [file join $repo_root AGENTS.md]]} {
+if {[info exists ::env(CODEX_REPO_ROOT)] &&
+    [file exists [file join $::env(CODEX_REPO_ROOT) AGENTS.md]]} {
+    set repo_root [string map {\\ /} $::env(CODEX_REPO_ROOT)]
+    set script_dir [file join $repo_root scripts]
+} elseif {[file exists [file join [pwd] AGENTS.md]]} {
+    set repo_root [file normalize [pwd]]
+    set script_dir [file join $repo_root scripts]
+} elseif {![file exists [file join $repo_root AGENTS.md]]} {
     set fallback_root "C:/Users/ASUS/Desktop/riscv-cpu-main/riscv-cpu-main"
     if {[file exists [file join $fallback_root AGENTS.md]]} {
         set repo_root $fallback_root
@@ -92,6 +99,13 @@ if {![file exists $project_path]} {
     open_project $project_path
 } elseif {[llength [current_project -quiet]] == 0} {
     open_project $project_path
+}
+
+# 旧工程文件不会自动发现新加入仓库的 RTL；在构建前补入 I2C 主机源文件。
+set i2c_source [string map {\\ /} [file join $repo_root rtl peripheral i2c_register_master.sv]]
+if {[llength [get_files -quiet -all $i2c_source]] == 0} {
+    puts "INFO: adding new source: $i2c_source"
+    add_files -norecurse -fileset sources_1 $i2c_source
 }
 
 update_compile_order -fileset sources_1

@@ -211,6 +211,10 @@ L0 是内部性能结构，不提供软件可见的缓存控制或一致性指�
 | `0x80200050` | COUNTER | 是 | 是 | 计数值/控制命令 |
 | `0x80200060` | UART_DATA | 是 | 是 | 串口数据：写=发送，读=接收并清除 RX_VALID |
 | `0x80200064` | UART_STATUS | 是 | 是 | 串口状态：bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写任意值=请求进入透传 |
+| `0x80200068` | I2C_DEV | 是 | 是 | 低 7 位为 I²C 从机地址，复位值 `0x76` |
+| `0x8020006C` | I2C_REG | 是 | 是 | 低 8 位为从机寄存器地址 |
+| `0x80200070` | I2C_DATA | 是 | 是 | 写事务的发送字节；读取时返回最近一次接收字节 |
+| `0x80200074` | I2C_CTRL/STATUS | 是 | 是 | 写 bit0=START、bit1=READ；读 bit0=BUSY、bit1=DONE、bit2=NACK |
 
 COUNTER 写入 `0x80000000` 开始计数，写入 `0xFFFFFFFF` 停止计数。
 
@@ -219,6 +223,10 @@ RT-Thread 启动时主动写 UART_STATUS 请求透传（串口终端即连即用
 也可发送 0xC9 进入透传、0xCA 退出；透传中 0x80 保留用于状态回读，
 其余字节在透传态由 CPU 读写。竞赛裸机镜像不请求则 twin 保持 IDLE。
 详见 `rt-thread/README.md` 与 `rtl/peripheral/uart_bridge.sv`。
+
+I²C 主机工作在 100 kHz，仅实现传感器常用的单字节寄存器事务。写事务为
+`START + address(W) + register + data + STOP`；读事务包含重复 START，接收一个
+字节后由主机发送 NACK 和 STOP。SCL/SDA 是开漏引脚，必须由板外电阻上拉。
 
 MMIO 外设不统一处理 byte-enable，且仅在精确地址命中时有定义。软件应使用上述地址上的对齐 `lw/sw`；不要假定 `lb/lh/sb/sh`、LED 回读、未列出地址或地址别名具有标准外设语义。
 

@@ -10,6 +10,7 @@ vivado -mode batch -source scripts/create_project.tcl
 vivado -mode batch -source scripts/recreate_irom_ip.tcl
 vivado -mode batch -source scripts/recreate_bram_ip.tcl
 vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU
+vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_i2c_register_master all
 vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 ```
 
@@ -41,7 +42,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 
 - `run_sim.tcl`
   - 运行 XSim 行为仿真。
-  - 支持 `tb_myCPU`、`tb_top`、`tb_uart`，默认是 `tb_myCPU`。
+  - 支持 `tb_myCPU`、`tb_top`、`tb_uart`、`tb_i2c_register_master`，默认是 `tb_myCPU`。
 
 - `run_build.tcl`
   - 运行综合、实现或生成 bitstream。

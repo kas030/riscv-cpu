@@ -12,6 +12,7 @@
 #include <rtthread.h>
 
 #include "board.h"
+#include "bme280.h"
 
 #ifdef RT_USING_FINSH
 #include <shell.h>
@@ -25,6 +26,7 @@
 
 static void finish_entry(void *param)
 {
+    (void)param;
     rt_thread_mdelay(DEMO_RUN_MS);
     rt_kprintf("demo done tick=%d\n", rt_tick_get());
     *(volatile rt_uint32_t *)LED_ADDR = 0xC0DEC0DEul;
@@ -34,13 +36,57 @@ static void finish_entry(void *param)
     rt_thread_mdelay(RT_WAITING_FOREVER);
 }
 
+static void bme280_entry(void *param)
+{
+    struct bme280_sample sample;
+    rt_int32_t temperature_abs;
+    int result;
+
+    (void)param;
+    while ((result = bme280_init()) != 0)
+    {
+        rt_kprintf("bme280: not found (err=%d), check 3V3/GND/SCL/SDA/CSB/SDO\n",
+                   result);
+        rt_thread_mdelay(2000);
+    }
+
+    rt_kprintf("bme280: detected at 0x%x\n", bme280_get_address());
+    while (1)
+    {
+        result = bme280_read(&sample);
+        if (result == 0)
+        {
+            temperature_abs = sample.temperature_centi_c;
+            if (temperature_abs < 0)
+                temperature_abs = -temperature_abs;
+            rt_kprintf("bme280: T=%s%d.%02d C, P=%u Pa, H=%u.%02u %%\n",
+                       sample.temperature_centi_c < 0 ? "-" : "",
+                       temperature_abs / 100,
+                       temperature_abs % 100,
+                       sample.pressure_pa,
+                       sample.humidity_centi_pct / 100,
+                       sample.humidity_centi_pct % 100);
+        }
+        else
+        {
+            rt_kprintf("bme280: read failed (err=%d)\n", result);
+        }
+        rt_thread_mdelay(1000);
+    }
+}
+
 void rt_application_init(void)
 {
     rt_thread_t fin;
+    rt_thread_t bme;
 
     fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
     if (fin != RT_NULL)
         rt_thread_startup(fin);
+
+    bme = rt_thread_create("bme", bme280_entry, RT_NULL, 2048, 15, 20);
+    if (bme != RT_NULL)
+        rt_thread_startup(bme);
 
 #ifdef RT_USING_FINSH
     /* 串口命令行：finsh 线程（优先级 21）
