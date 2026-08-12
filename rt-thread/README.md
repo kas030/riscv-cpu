@@ -44,9 +44,9 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
   `rt_thread_startup` 三个演示线程）→ `rt_thread_idle_init` → `rt_system_scheduler_start`。
   注意：Nano 3.1.5 的 idle 线程由 BSP 显式初始化，漏调 `rt_thread_idle_init`
   会导致就绪表为空、调度器取到垃圾指针。
-- **BME280**：`bme` 线程默认阻塞，不访问 I²C。输入 `bme start` 后通过 FPGA
-  内的 100 kHz I²C 主机探测 `0x76/0x77`，读取校准参数，并每秒以 forced mode
-  测量一次温度、气压和湿度。补偿后的定点结果直接打印到 UART，不使用浮点格式化。
+- **BME280**：`bme` 线程上电后自动启动，通过 FPGA 内的 100 kHz I²C 主机
+  探测 `0x76/0x77`，读取校准参数，并每 2 秒以 forced mode
+  测量一次温度、气压和湿度。结果在八位数码管上轮播，同时保留 UART 调试输出。
 - **链接布局**（`linker.ld`）：`.text` → IROM；`.rodata/.data/.bss` → BRAM；
   `__stack_top` = BRAM 顶；堆覆盖 `[__bss_end, __stack_top)`。脚本内 ASSERT
   IROM 使用量 ≤ 64 KiB。
@@ -64,17 +64,26 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 | CSB | `+3.3V` | I²C 模式必须为高；可与 VCC 短接，或接 J8/J9/J10 pin 20 |
 | SDO | GND 或 `+3.3V` | GND=`0x76`，3.3V=`0x77`；驱动会自动探测两者，不能悬空 |
 
-SCL/SDA 必须上拉到 3.3V；当前模块已有 10 kΩ 上拉，不需要再并接。串口终端配置
-为 9600、8 数据位、无校验、1 停止位。传感器周期输出默认关闭，命令如下：
+SCL/SDA 必须上拉到 3.3V；当前模块已有 10 kΩ 上拉，不需要再并接。传感器轮播
+上电后自动启动，无需串口命令。串口终端配置为 9600、8 数据位、无校验、1 停止位，
+仍可使用以下命令控制：
 
 ```text
 msh >bme status    # 查看运行状态、初始化状态和最近一次错误码
-msh >bme start     # 开始采样，此后每秒输出一次
-msh >bme stop      # 停止采样；等待中的线程会立即被唤醒
-msh >bme once      # 周期输出停止时，只读取并显示一次
+msh >bme start     # 停止后重新开始，每 2 秒切换温度、湿度、气压页
+msh >bme stop      # 停止轮播，并恢复原有串口调试数码管显示
+msh >bme once      # 周期输出停止时，只读取一次并停留在温度页
 ```
 
-输入 `bme start` 并识别成功后可看到类似输出：
+八位数码管使用七段字符的近似写法，按以下三页循环：
+
+```text
+tEn 24.3C    # 温度，M 用七段管可表达的小写 n 近似
+HUn 45.6H    # 相对湿度，末尾 H 表示 humidity
+PrE 1008     # 气压，数值单位为 hPa
+```
+
+上电识别成功后，UART 仍可看到类似调试输出：
 
 ```text
 bme280: detected at 0x76
@@ -86,6 +95,10 @@ SDO 是否固定到 GND/3.3V，并确认重新生成了固件 COE 和 FPGA bitst
 运行 CoreMark 前执行 `bme stop`；停止状态下 BME280 线程不访问 I²C，也不会周期
 唤醒或打印，因此不会干扰 benchmark。若刚执行过 `bme stop`，已经开始的单次
 I²C 事务会完成，之后停止。
+
+数码管扩展寄存器由 BME280 显示使用：`0x80200078` 保存右侧四位原始段码，
+`0x8020007C` 保存左侧四位原始段码；每字节 bit7 为小数点，bit6:0 为七段段码。
+写普通 `SEG` 寄存器 `0x80200020` 会退出原始段码模式，保持旧软件兼容。
 
 ## 串口命令行（finsh/msh）
 

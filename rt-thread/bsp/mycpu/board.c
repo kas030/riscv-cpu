@@ -18,15 +18,51 @@
 #define CNT_ADDR        0x80200050ul   /* COUNTER：毫秒计数 */
 #define CNT_START_CMD   0x80000000ul
 #define SEG_ADDR        0x80200020ul   /* 数码管写数据回读 */
+#define SEG_RAW_LO_ADDR 0x80200078ul   /* 右侧 4 位原始段码 */
+#define SEG_RAW_HI_ADDR 0x8020007cul   /* 左侧 4 位原始段码；写入后启用 */
 #define UART_DATA_ADDR  0x80200060ul   /* UART 数据：写=发送，读=接收并清 valid */
 #define UART_STATUS_ADDR 0x80200064ul  /* UART 状态：bit0=TX_BUSY，bit1=RX_VALID */
 
 /* 最近 8 个控制台字符的环形缓冲 */
 static rt_uint8_t  console_ring[8];
 static rt_uint8_t  console_ring_idx;
+static rt_uint8_t  seg_raw_owned;
 
 /* 最近一次读到的毫秒计数，用于 tick 追赶 */
 static volatile rt_uint32_t last_ms = 0;
+
+static rt_uint32_t console_seg_value(void)
+{
+    rt_uint32_t value = 0;
+    int index;
+
+    for (index = 0; index < 4; index++)
+        value = (value << 8) | console_ring[(console_ring_idx - 4 + index) & 7];
+    return value;
+}
+
+void rt_hw_seg_show_raw(const rt_uint8_t glyphs[8])
+{
+    rt_uint32_t raw_lo = 0;
+    rt_uint32_t raw_hi = 0;
+    int index;
+
+    /* glyphs 按人眼从左到右排列；硬件 byte0 对应最右侧数码管。 */
+    for (index = 0; index < 4; index++)
+        raw_lo |= (rt_uint32_t)glyphs[7 - index] << (index * 8);
+    for (index = 0; index < 4; index++)
+        raw_hi |= (rt_uint32_t)glyphs[3 - index] << (index * 8);
+
+    seg_raw_owned = 1;
+    *(volatile rt_uint32_t *)SEG_RAW_LO_ADDR = raw_lo;
+    *(volatile rt_uint32_t *)SEG_RAW_HI_ADDR = raw_hi;
+}
+
+void rt_hw_seg_release(void)
+{
+    seg_raw_owned = 0;
+    *(volatile rt_uint32_t *)SEG_ADDR = console_seg_value();
+}
 
 void rt_hw_console_output(const char *str)
 {
@@ -51,11 +87,8 @@ void rt_hw_console_output(const char *str)
         str++;
     }
 
-    /* 把最后 4 个字符拼成 8 位十六进制显示（最早的在最高字节） */
-    rt_uint32_t v = 0;
-    for (int i = 0; i < 4; i++)
-        v = (v << 8) | console_ring[(console_ring_idx - 4 + i) & 7];
-    *(volatile rt_uint32_t *)SEG_ADDR = v;
+    if (!seg_raw_owned)
+        *(volatile rt_uint32_t *)SEG_ADDR = console_seg_value();
 }
 
 /* finsh 输入（shell.c 无 RT_USING_DEVICE 时调用本函数）
@@ -113,6 +146,5 @@ void rt_hw_board_init(void)
     while (!(*(volatile rt_uint32_t *)UART_STATUS_ADDR & 4u))
         ;
 }
-
 
 

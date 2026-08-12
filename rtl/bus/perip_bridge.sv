@@ -64,11 +64,16 @@ module perip_bridge(
     localparam I2C_REG_ADDR     = 32'h8020_006C;  // 低 8 位：从机寄存器地址
     localparam I2C_DATA_ADDR    = 32'h8020_0070;  // 写数据/最近一次读数据
     localparam I2C_CTRL_ADDR    = 32'h8020_0074;  // 写 bit0=START bit1=READ；读 bit0=BUSY bit1=DONE bit2=NACK
+    localparam SEG_RAW_LO_ADDR  = 32'h8020_0078;  // 右侧 4 位，每字节 bit7=小数点、bit6:0=段码
+    localparam SEG_RAW_HI_ADDR  = 32'h8020_007C;  // 左侧 4 位；写入后切换到原始段码模式
 
     logic [31:0] LED;
-    logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
+    logic [31:0] seg_wdata, seg_raw_lo, seg_raw_hi;
+    logic [31:0] cnt_rdata, mmio_rdata, bram_rdata;
     logic [31:0] uart_rdata;
     logic [39:0] seg_output;
+    logic [3:0] seg_dp;
+    logic seg_raw_mode;
     logic cnt_enable_cfg;
     logic bram_hit, bram_ren, bram_wen, bram_resp_valid;
     logic [6:0] i2c_device_addr;
@@ -85,6 +90,9 @@ module perip_bridge(
         if (rst) begin
             LED            <= 32'd0;
             seg_wdata      <= 32'd0;
+            seg_raw_lo     <= 32'd0;
+            seg_raw_hi     <= 32'd0;
+            seg_raw_mode   <= 1'b0;
             cnt_enable_cfg <= 1'b0;
             i2c_device_addr   <= 7'h76;
             i2c_register_addr <= 8'd0;
@@ -92,7 +100,15 @@ module perip_bridge(
         end else if (perip_wen) begin
             case (perip_addr)
                 LED_ADDR:   LED <= perip_wdata;
-                SEG_ADDR:   seg_wdata <= perip_wdata;
+                SEG_ADDR: begin
+                    seg_wdata    <= perip_wdata;
+                    seg_raw_mode <= 1'b0;
+                end
+                SEG_RAW_LO_ADDR: seg_raw_lo <= perip_wdata;
+                SEG_RAW_HI_ADDR: begin
+                    seg_raw_hi   <= perip_wdata;
+                    seg_raw_mode <= 1'b1;
+                end
                 I2C_DEV_ADDR:  i2c_device_addr   <= perip_wdata[6:0];
                 I2C_REG_ADDR:  i2c_register_addr <= perip_wdata[7:0];
                 I2C_DATA_ADDR: i2c_write_data    <= perip_wdata[7:0];
@@ -122,6 +138,8 @@ module perip_bridge(
                 I2C_REG_ADDR:     mmio_rdata = {24'd0, i2c_register_addr};
                 I2C_DATA_ADDR:    mmio_rdata = {24'd0, i2c_read_data};
                 I2C_CTRL_ADDR:    mmio_rdata = {29'd0, i2c_ack_error, i2c_done, i2c_busy};
+                SEG_RAW_LO_ADDR:  mmio_rdata = seg_raw_lo;
+                SEG_RAW_HI_ADDR:  mmio_rdata = seg_raw_hi;
                 default:   mmio_rdata = 32'hDEAD_BEEF;
             endcase
         end else begin
@@ -134,17 +152,24 @@ module perip_bridge(
         .clk    (clk),
         .rst    (rst),
         .s      (seg_wdata),
+        .raw_lo (seg_raw_lo),
+        .raw_hi (seg_raw_hi),
+        .raw_mode(seg_raw_mode),
         .seg1   (seg_output[6:0]),
         .seg2   (seg_output[16:10]),
         .seg3   (seg_output[26:20]),
         .seg4   (seg_output[36:30]),
+        .dp1    (seg_dp[0]),
+        .dp2    (seg_dp[1]),
+        .dp3    (seg_dp[2]),
+        .dp4    (seg_dp[3]),
         .ans    ({seg_output[39:38], seg_output[29:28], seg_output[19:18], seg_output[9:8]})
     ); 
    
-    assign seg_output[7]  = 0;
-    assign seg_output[17] = 0;
-    assign seg_output[27] = 0;
-    assign seg_output[37] = 0;
+    assign seg_output[7]  = seg_dp[0];
+    assign seg_output[17] = seg_dp[1];
+    assign seg_output[27] = seg_dp[2];
+    assign seg_output[37] = seg_dp[3];
     
 
     // bram rw
@@ -186,7 +211,9 @@ module perip_bridge(
                          {32{~bram_resp_valid && perip_addr == I2C_DEV_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == I2C_REG_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == I2C_DATA_ADDR}} & mmio_rdata |
-                         {32{~bram_resp_valid && perip_addr == I2C_CTRL_ADDR}} & mmio_rdata;
+                         {32{~bram_resp_valid && perip_addr == I2C_CTRL_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == SEG_RAW_LO_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == SEG_RAW_HI_ADDR}} & mmio_rdata;
     
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;

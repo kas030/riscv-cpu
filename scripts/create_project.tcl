@@ -270,6 +270,7 @@ set sim_files [list \
     [file join $repo_root tb tb_top.sv] \
     [file join $repo_root tb tb_uart.sv] \
     [file join $repo_root tb tb_i2c_register_master.sv] \
+    [file join $repo_root tb tb_display_seg.sv] \
 ]
 set wcfg_files [glob_existing_files [list [file join $repo_root sim wcfg *.wcfg]]]
 add_existing_files sim_1 [concat $sim_files $wcfg_files]
