@@ -8,7 +8,7 @@ CPU-only 仿真中通过 LED 写入 `0xC0DEC0DE` 判定完成。
 
 - `kernel/`：RT-Thread Nano v3.1.5 内核源码（`src/`、`include/`、`libcpu/risc-v/common/`），
   来自 `RT-Thread/rtthread-nano` tag `v3.1.5`，未做修改；许可见 `kernel/LICENSE`（Apache-2.0）。
-- `bsp/mycpu/`：板级移植（`rtconfig.h`、`board.c/h`、`main.c`、`entry_gcc.S`、`linker.ld`、`Makefile`）。
+- `bsp/mycpu/`：板级移植（`rtconfig.h`、`board.c/h`、`bme280.c/h`、`main.c`、`entry_gcc.S`、`linker.ld`、`Makefile`）。
 - `components/finsh/`：finsh/msh 组件（`shell.c`、`cmd.c`、`msh.c`、`finsh_config.h`）。
   仅 `shell.c` 有一处针对无设备框架的修改：空输入（0xFF）分支让出 CPU
   （`rt_thread_mdelay(1)`），其余与上游一致。
@@ -38,6 +38,9 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 - **串口输入**：`rt_hw_console_getchar` 轮询 `0x80200064` bit1 RX_VALID，
   读 `0x80200060` 取字节并清除 valid。本工具链默认 `-funsigned-char`，
   无输入返回 0xFF（-1 的字节值）。
+- **BME280**：`bme` 线程默认阻塞，不访问 I²C。输入 `bme start` 后通过 FPGA
+  内的 100 kHz I²C 主机探测 `0x76/0x77`，读取校准参数，并每秒以 forced mode
+  测量一次温度、气压和湿度。补偿后的定点结果直接打印到 UART，不使用浮点格式化。
 - **启动序列**（`main.c`）：`_start -> main -> rtthread_startup`：
   `rt_hw_board_init`（启动 COUNTER、注册 tick 钩子、`rt_system_heap_init`）
   → `rt_show_version` → timer/scheduler init → `rt_application_init`（创建并
@@ -47,6 +50,42 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 - **链接布局**（`linker.ld`）：`.text` → IROM；`.rodata/.data/.bss` → BRAM；
   `__stack_top` = BRAM 顶；堆覆盖 `[__bss_end, __stack_top)`。脚本内 ASSERT
   IROM 使用量 ≤ 64 KiB。
+
+## BME280 接线与输出
+
+请断电接线：
+
+| BME280 | FPGA 板 | 说明 |
+| --- | --- | --- |
+| VCC | J7 pin 20 | `+3.3V` |
+| GND | J7 pin 19 | GND；J7 pin 11–19 任取一个也可以 |
+| SCL | J7 pin 1 | Debug_1，FPGA `G17` |
+| SDA | J7 pin 2 | Debug_2，FPGA `G18` |
+| CSB | `+3.3V` | I²C 模式必须为高；可与 VCC 短接，或接 J8/J9/J10 pin 20 |
+| SDO | GND 或 `+3.3V` | GND=`0x76`，3.3V=`0x77`；驱动会自动探测两者，不能悬空 |
+
+SCL/SDA 必须上拉到 3.3V；当前模块已有 10 kΩ 上拉，不需要再并接。串口终端配置
+为 9600、8 数据位、无校验、1 停止位。传感器周期输出默认关闭，命令规则为：
+
+```text
+msh >bme status    # 查看运行状态、初始化状态和最近一次错误码
+msh >bme start     # 开始采样，此后每秒输出一次
+msh >bme stop      # 停止采样；等待中的线程会立即被唤醒
+msh >bme once      # 周期输出停止时，只读取并显示一次
+```
+
+识别成功后可看到类似输出：
+
+```text
+bme280: detected at 0x76
+bme280: T=24.31 C, P=100812 Pa, H=45.67 %
+```
+
+FPU 继续使用 `0x80200070`--`0x80200080`；为避免地址冲突，BME280 I²C
+寄存器安排在 `0x80200084`--`0x80200090`。运行 CoreMark 前执行 `bme stop`；
+停止状态下 BME280 线程不访问 I²C，也不会周期唤醒或打印，因此不会干扰 benchmark。
+若持续显示 `not found`，依次检查供电、共地、SCL/SDA 是否接反、CSB 是否为高、
+SDO 是否固定到 GND/3.3V，并确认已重新生成固件 COE 和 FPGA bitstream。
 
 ## 串口命令行（finsh/msh）
 

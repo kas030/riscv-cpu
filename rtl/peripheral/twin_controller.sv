@@ -47,8 +47,6 @@ module twin_controller(
     input  wire        passthrough_req   // CPU 请求透传（脉冲，来自 uart_bridge）
 );
 
-    assign passthrough = (current_state == PASSTHROUGH);
-
     typedef enum reg [1:0] {
         IDLE         = 2'd0,
         SEND         = 2'd1,
@@ -59,8 +57,11 @@ module twin_controller(
     reg [7:0] status_buffer[0:17];
     reg [7:0] tx_data_next;
     reg tx_start_next;
+    reg pt_first;
 
     state_t current_state, next_state;
+
+    assign passthrough = (current_state == PASSTHROUGH);
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -145,7 +146,6 @@ module twin_controller(
     /* 透传进入首拍抑制转发：bridge 在透传上升沿才清挂起 tx_req，
      * 同拍转发会让 uart 锁存透传前 CPU 的旧字节。pt_first 为进入后
      * 首拍标志（1 拍延迟），首拍输出 0，次拍起正常转发 */
-    reg pt_first;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             pt_first <= 1'b0;
@@ -233,4 +233,3 @@ module twin_controller(
     end
 
 endmodule
-

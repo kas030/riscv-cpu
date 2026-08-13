@@ -157,6 +157,7 @@ module uart_bridge(
     logic        rx_valid_q;
     logic [7:0]  rx_data_q;
     logic [1:0]  rd_sync;         // rx_rd_req 2FF
+    logic        rx_rd_req;
 
     always_ff @(posedge cnt_clk) begin
         if (rst_50m) begin
@@ -177,7 +178,6 @@ module uart_bridge(
     end
 
     /* ---------------- RX：200MHz 域读清握手 ---------------- */
-    logic        rx_rd_req;
     logic [1:0]  rd_ack_sync;     // 50MHz 域确认，2FF 回
 
     always_ff @(posedge clk) begin

@@ -13,10 +13,10 @@
 - `rtl/memory/`：LSU、BRAM 驱动、load mask/扩展和 `load_l0_cache.sv`。
 - `rtl/bus/perip_bridge.sv`：BRAM/MMIO 地址译码及板级访存时序的权威来源。
 - `rtl/soc/student_top.sv`：实例化 CPU、双路 IROM 读口和外设桥。
-- `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 和 `student_top`。
+- `rtl/top/top.sv`：板级顶层，包含 PLL、UART、BME280 I²C 引脚、twin controller 和 `student_top`。
 - `sim_cpu_only/`：不依赖 Vivado IP 的 CPU-only Verilator/Icarus 仿真环境。
 - `rt-thread/`：RT-Thread Nano 3.1.5 移植（vendor 内核 + `bsp/mycpu`），演示经 LED 完成值在 Verilator 仿真中验收。
-- `tb/`：Vivado CPU、板级和 UART testbench。
+- `tb/`：Vivado CPU、板级、UART 和 I²C testbench。
 - `vivado/tests/`：分层汇编测试、链接脚本和镜像生成工具。
 - `ip/`、`constraints/`：Vivado IP 配置和板级约束。
 
@@ -64,6 +64,13 @@
 - SEG：`0x8020_0020`
 - LED：`0x8020_0040`
 - COUNTER：`0x8020_0050`
+- UART_DATA：`0x8020_0060`
+- UART_STATUS：`0x8020_0064`
+- FPU_A/B/CMD/STATUS/RESULT：`0x8020_0070`—`0x8020_0080`
+- I2C_DEV：`0x8020_0084`
+- I2C_REG：`0x8020_0088`
+- I2C_DATA：`0x8020_008C`
+- I2C_CTRL/STATUS：`0x8020_0090`
 
 COUNTER 写入 `0x8000_0000` 开始计数，写入 `0xFFFF_FFFF` 停止计数。链接脚本、汇编注释或旧测试若与 RTL 不一致，先按 `perip_bridge.sv` 核对实际行为。
 
@@ -128,6 +135,7 @@ make sim-verilator \
 - `tb/tb_myCPU.sv`：CPU 功能和性能仿真，等待 LED 写入 `32'hC0DEC0DE` 或 `32'hDEADBEEF` 后结束并打印统计。
 - `tb/tb_top.sv`：板级 UART/twin-controller 集成行为。
 - `tb/tb_uart.sv`：UART 独立行为。
+- `tb/tb_i2c_register_master.sv`：I²C 寄存器读写、重复 START 和 NACK 行为。
 - 综合和实现结果以当前 Vivado run 的 utilization、timing summary 和 route status 报告为准。不要把 `.runs` 内生成报告或 bitstream 直接当作 RTL 源文件编辑。
 
 ## 修改时的一致性检查

@@ -211,6 +211,15 @@ L0 是内部性能结构，不提供软件可见的缓存控制或一致性指�
 | `0x80200050` | COUNTER | 是 | 是 | 计数值/控制命令 |
 | `0x80200060` | UART_DATA | 是 | 是 | 串口数据：写=发送，读=接收并清除 RX_VALID |
 | `0x80200064` | UART_STATUS | 是 | 是 | 串口状态：bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写任意值=请求进入透传 |
+| `0x80200070` | FPU_A | 是 | 是 | CoreMark 报告换算用单精度 FPU 操作数 A |
+| `0x80200074` | FPU_B | 是 | 是 | CoreMark 报告换算用单精度 FPU 操作数 B |
+| `0x80200078` | FPU_CMD | 否 | 是 | FPU 命令：1=u32 转 binary32，2=binary32 除法 |
+| `0x8020007C` | FPU_STATUS | 是 | 否 | bit0=BUSY，bit1=DONE |
+| `0x80200080` | FPU_RESULT | 是 | 否 | FPU 单精度结果 |
+| `0x80200084` | I2C_DEV | 是 | 是 | BME280 7 位从机地址，复位值 `0x76` |
+| `0x80200088` | I2C_REG | 是 | 是 | BME280 寄存器地址 |
+| `0x8020008C` | I2C_DATA | 是 | 是 | I²C 写数据/最近一次读数据 |
+| `0x80200090` | I2C_CTRL/STATUS | 是 | 是 | 写 bit0=START、bit1=READ；读 bit0=BUSY、bit1=DONE、bit2=NACK |
 
 COUNTER 写入 `0x80000000` 开始计数，写入 `0xFFFFFFFF` 停止计数。
 

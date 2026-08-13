@@ -3,6 +3,7 @@
 # Usage:
 #   vivado -mode batch -source scripts/run_sim.tcl
 #   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_top
+#   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_i2c_register_master all
 #   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU all
 #   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU 500ms
 
@@ -187,12 +188,14 @@ set sim_runtime [lindex $argv 1]
 if {$sim_runtime eq ""} {
     if {[info exists ::env(VIVADO_SIM_RUNTIME)] && $::env(VIVADO_SIM_RUNTIME) ne ""} {
         set sim_runtime $::env(VIVADO_SIM_RUNTIME)
+    } elseif {$sim_top eq "tb_i2c_register_master"} {
+        set sim_runtime all
     } else {
         set sim_runtime 10ms
     }
 }
 
-set valid_tops {tb_myCPU tb_top tb_uart}
+set valid_tops {tb_myCPU tb_top tb_uart tb_i2c_register_master}
 if {[lsearch -exact $valid_tops $sim_top] < 0} {
     puts "ERROR: invalid simulation top '$sim_top'. Expected one of: $valid_tops"
     exit 1
@@ -204,6 +207,16 @@ if {![file exists $project_path]} {
     open_project $project_path
 } elseif {[llength [get_projects -quiet]] == 0} {
     open_project $project_path
+}
+
+# 兼容尚未重建的旧工程：补入本分支新增加的 I2C RTL 和独立 testbench。
+set i2c_source [string map {\\ /} [file join $repo_root rtl peripheral i2c_register_master.sv]]
+if {[file exists $i2c_source] && [llength [get_files -quiet -all $i2c_source]] == 0} {
+    add_files -norecurse -fileset sources_1 $i2c_source
+}
+set i2c_tb [string map {\\ /} [file join $repo_root tb tb_i2c_register_master.sv]]
+if {[file exists $i2c_tb] && [llength [get_files -quiet -all $i2c_tb]] == 0} {
+    add_files -norecurse -fileset sim_1 $i2c_tb
 }
 
 set_property top $sim_top [get_filesets sim_1]

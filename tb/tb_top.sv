@@ -24,6 +24,8 @@ module tb_top;
 
     reg serial_rx;          
     wire serial_tx;         
+    tri1 bme_scl;
+    tri1 bme_sda;
     
     reg [7:0] rx_data[0:17];
     integer j;
@@ -33,6 +35,8 @@ module tb_top;
         .i_sys_clk_n(~clk),
         .i_uart_rx(serial_rx),
         .o_uart_tx(serial_tx),
+        .bme_scl(bme_scl),
+        .bme_sda(bme_sda),
         .virtual_led(),  
         .virtual_seg()
     );
@@ -128,4 +132,3 @@ module tb_top;
         $finish;
     end
 endmodule
-
