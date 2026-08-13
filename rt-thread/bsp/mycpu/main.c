@@ -88,7 +88,10 @@ static int bme280_print_sample(void)
         return 0;
     }
 
-    bme_initialized = 0;
+    /* 测量超时或复位后的无效占位值属于可恢复错误，保留初始化状态，
+     * 下一周期直接重新触发 forced mode；I2C 事务错误才重新初始化。 */
+    if (result == -2 || result == -3 || result == -4)
+        bme_initialized = 0;
     rt_kprintf("bme280: read failed (err=%d)\n", result);
     return result;
 }

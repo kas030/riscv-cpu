@@ -28,6 +28,10 @@
 #define BME280_CHIP_ID        0x60u
 #define BME280_SOFT_RESET     0xb6u
 #define BME280_TIMEOUT_LOOPS  2000000u
+#define BME280_STATUS_IM_UPDATE 0x01u
+#define BME280_STATUS_MEASURING 0x08u
+#define BME280_STATUS_TIMEOUT_MS 100u
+#define BME280_SAMPLE_RETRIES    2u
 
 struct bme280_calibration
 {
@@ -92,6 +96,25 @@ static int bme280_read_reg(rt_uint8_t reg, rt_uint8_t *value)
     I2C_REG_ADDR_REG = reg;
     I2C_CTRL_REG = I2C_CTRL_START | I2C_CTRL_READ;
     return i2c_wait_done(value);
+}
+
+/* BME280 的转换时间会随过采样配置和器件状态变化，不能依赖固定延时。
+ * 返回 0 表示目标状态位已清零，-1 表示 I2C 访问失败，-2 表示超时。 */
+static int wait_status_clear(rt_uint8_t mask, rt_uint32_t timeout_ms)
+{
+    rt_uint32_t elapsed;
+    rt_uint8_t status;
+
+    for (elapsed = 0; elapsed < timeout_ms; elapsed++)
+    {
+        if (bme280_read_reg(BME280_REG_STATUS, &status) != 0)
+            return -1;
+        if ((status & mask) == 0)
+            return 0;
+        rt_thread_mdelay(1);
+    }
+
+    return -2;
 }
 
 static int read_u16_le(rt_uint8_t reg, rt_uint16_t *value)
@@ -245,7 +268,7 @@ int bme280_init(void)
 {
     static const rt_uint8_t candidate_addresses[] = {0x76u, 0x77u};
     rt_uint8_t chip_id = 0;
-    rt_uint8_t status = 0;
+    int result;
     rt_size_t i;
 
     initialized = 0;
@@ -264,15 +287,10 @@ int bme280_init(void)
     rt_thread_mdelay(5);
 
     /* 等待 NVM 校准参数复制完成（status.im_update 清零）。 */
-    for (i = 0; i < 20; i++)
-    {
-        if (bme280_read_reg(BME280_REG_STATUS, &status) != 0)
-            return -3;
-        if ((status & 0x01u) == 0)
-            break;
-        rt_thread_mdelay(1);
-    }
-    if (status & 0x01u)
+    result = wait_status_clear(BME280_STATUS_IM_UPDATE, BME280_STATUS_TIMEOUT_MS);
+    if (result == -1)
+        return -3;
+    if (result == -2)
         return -4;
 
     if (read_calibration() != 0)
@@ -291,35 +309,49 @@ int bme280_init(void)
 int bme280_read(struct bme280_sample *sample)
 {
     rt_uint8_t raw[8];
-    rt_uint8_t status;
     rt_int32_t adc_p;
     rt_int32_t adc_t;
     rt_int32_t adc_h;
+    rt_size_t attempt;
     rt_size_t i;
+    int result;
 
     if (!initialized || sample == RT_NULL)
         return -1;
 
-    /* forced mode：测量完成后芯片回到 sleep，逐字节读取期间数据保持不变。 */
-    if (bme280_write_reg(BME280_REG_CTRL_MEAS, 0x25u) != 0)
-        return -2;
-    rt_thread_mdelay(10);
-
-    if (bme280_read_reg(BME280_REG_STATUS, &status) != 0 ||
-        (status & 0x08u))
-        return -3;
-
-    for (i = 0; i < sizeof(raw); i++)
+    for (attempt = 0; attempt < BME280_SAMPLE_RETRIES; attempt++)
     {
-        if (bme280_read_reg((rt_uint8_t)(BME280_REG_PRESS_MSB + i), &raw[i]) != 0)
-            return -4;
-    }
+        /* forced mode：测量完成后芯片回到 sleep，数据寄存器保持本次结果。
+         * 先留出启动时间，再轮询 measuring，避免固定 10 ms 在临界时刻误读。 */
+        if (bme280_write_reg(BME280_REG_CTRL_MEAS, 0x25u) != 0)
+            return -2;
+        rt_thread_mdelay(2);
 
-    adc_p = ((rt_int32_t)raw[0] << 12) |
-            ((rt_int32_t)raw[1] << 4) | (raw[2] >> 4);
-    adc_t = ((rt_int32_t)raw[3] << 12) |
-            ((rt_int32_t)raw[4] << 4) | (raw[5] >> 4);
-    adc_h = ((rt_int32_t)raw[6] << 8) | raw[7];
+        result = wait_status_clear(BME280_STATUS_MEASURING,
+                                   BME280_STATUS_TIMEOUT_MS);
+        if (result == -1)
+            return -3;
+        if (result == -2)
+            return -6;
+
+        for (i = 0; i < sizeof(raw); i++)
+        {
+            if (bme280_read_reg((rt_uint8_t)(BME280_REG_PRESS_MSB + i),
+                                &raw[i]) != 0)
+                return -4;
+        }
+
+        adc_p = ((rt_int32_t)raw[0] << 12) |
+                ((rt_int32_t)raw[1] << 4) | (raw[2] >> 4);
+        adc_t = ((rt_int32_t)raw[3] << 12) |
+                ((rt_int32_t)raw[4] << 4) | (raw[5] >> 4);
+        adc_h = ((rt_int32_t)raw[6] << 8) | raw[7];
+        if (adc_p != 0x80000 && adc_t != 0x80000 && adc_h != 0x8000)
+            break;
+
+        /* 复位后的第一次转换偶尔仍可能返回无效占位值，再触发一次测量。 */
+        rt_thread_mdelay(2);
+    }
     if (adc_p == 0x80000 || adc_t == 0x80000 || adc_h == 0x8000)
         return -5;
 
