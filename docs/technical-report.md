@@ -7,13 +7,15 @@ cover: assets/cover.pdf
 
 ## 项目背景
 
-本项目参加全国大学生集成电路创新创业大赛“竞业达”企业命题。赛题要求在 FPGA 数字孪生平台上实现一款 RISC-V 处理器，正确执行 RV32I 指令和指定测试程序，并通过 LED、数码管和计时器显示结果。
+本项目面向 FPGA 上的 32 位小端 RISC-V 处理器系统，软件运行环境为 RT-Thread Nano。系统通过 finsh/msh 提供命令行，并在操作系统中运行官方 EEMBC CoreMark；CPU 也支持裸机程序和既有 SoC 接口。
 
-处理器采用 32 位小端 RISC-V 架构，运行裸机程序。当前 RTL 实现了 RV32I、RV32M、项目测试所需的 Zicsr 指令和机器模式异常返回；另有一条只服务于特定软件循环的 CRC 融合路径。设计围绕双槽顺序流水、同步存储器时序、数据相关处理和固定 FPGA 接口展开。
+当前 RTL 实现了 RV32I、RV32M、项目测试所需的 Zicsr 指令和机器模式异常返回；另有一条只服务于特定软件循环的 CRC 融合路径。设计围绕双槽顺序流水、同步存储器时序、数据相关处理、操作系统运行时和固定 FPGA 接口展开。
+
+主办方 COE 镜像和 `irom-v2` 属于兼容性资料，用于说明既有地址映射和裸机接口；本文的运行时和性能描述以 RT-Thread/CoreMark 为主。
 
 ## 作品核心内容快速预览
 
-本作品在固定 CPU 顶层接口和 SoC 地址映射下，实现了一款面向 FPGA 的 32 位 RISC-V 处理器。核心采用双槽顺序发射与顺序提交，实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`；前端使用带 tag 的双发射提示表和 BHT/BTB，后端使用多级前递、load-use 冒险控制、RV32M 多周期执行和 BRAM 专用 L0 load cache。当前可追溯的功能和性能数据仍是历史快照，RT-Thread/CoreMark 与板级验证状态另行说明。
+本作品在固定 CPU 顶层接口和 SoC 地址映射下，实现了一款面向 FPGA 的 32 位 RISC-V 处理器。核心采用双槽顺序发射与顺序提交，实际流水边界为 `IF/ID -> ID/EX -> EX/MEM1 -> MEM1/MEM2 -> MEM2/WB`；前端使用带 tag 的双发射提示表和 BHT/BTB，后端使用多级前递、load-use 冒险控制、RV32M 多周期执行和 BRAM 专用 L0 load cache。系统软件由 RT-Thread Nano、finsh/msh 和官方 CoreMark 组成，旧竞赛镜像列入兼容性资料。
 
 - **指令与异常支持：**  
   核心内容：37 条 RV32I 基础指令、RV32M 全部 8 条指令，以及项目所需的 Zicsr、`ecall` 和 `mret`。  
@@ -32,21 +34,23 @@ cover: assets/cover.pdf
   正文索引：测试体系（第 \pageref{sec-test-system} 页）、功能验证（第 \pageref{sec-functional-verification} 页）、功能测试汇总（第 \pageref{sec-functional-summary} 页）。
 - **运行时与性能基准：**  
   核心内容：RT-Thread Nano 3.1.5、finsh/msh、UART 自动透传和官方 EEMBC CoreMark 1.0；MMIO FPU 只负责 CoreMark 停止计时后的换算，不属于 RV32F。  
-  正文索引：RT-Thread 运行时（第 \pageref{sec-rtthread-runtime} 页）、官方 CoreMark（第 \pageref{sec-coremark} 页）。
-- **性能与板级状态：**  
-  核心内容：`perf_micro`、竞赛 `irom-v2` 和 CoreMark 的现有数据均带日期、基线和结果状态；当前没有新的竞赛结果或 Vivado/板级验证证据。  
-  正文索引：性能评估（第 \pageref{sec-performance-evaluation} 页）、竞赛 `irom-v2` 综合程序性能（第 \pageref{sec-irom-v2-performance} 页）、官方 CoreMark 性能记录（第 \pageref{sec-coremark-performance} 页）、FPGA 板级验证状态（第 \pageref{sec-fpga-validation} 页）。
+  正文索引：RT-Thread 运行时（第 \pageref{sec-rtthread-runtime} 页）、官方 CoreMark（第 \pageref{sec-coremark} 页）、官方 CoreMark 性能记录（第 \pageref{sec-coremark-performance} 页）。
+- **验证范围：**  
+  核心内容：RT-Thread 启动、UART 控制台、finsh/msh 和 CoreMark 是主要验收对象；CPU 基础回归与旧竞赛镜像作为辅助证据单列。  
+  正文索引：测试体系（第 \pageref{sec-test-system} 页）、功能测试汇总（第 \pageref{sec-functional-summary} 页）、旧竞赛镜像兼容性记录（第 \pageref{sec-irom-v2-performance} 页）。
 
 ## 设计目标
 
 设计目标如下：
 
-1. 实现比赛要求的 37 条 RV32I 基础整数指令；
+1. 保留比赛要求的 37 条 RV32I 基础整数指令，作为操作系统和裸机程序的整数基础；
 2. 支持 RV32M 全部 8 条乘除法指令，并处理除零和有符号除法溢出；
-3. 支持最小 Zicsr/M-mode trap 子集，满足裸机异常入口和返回需求；
+3. 支持最小 Zicsr/M-mode trap 子集，满足 RT-Thread 启动、异常入口和返回需求；
 4. 在顺序提交的前提下，每拍最多发射和提交两条指令；
-5. 用前递、冒险检测、分支预测和小容量缓存减少流水线停顿；
-6. 保持 CPU 顶层接口和 SoC 地址映射不变，让 CPU-only 仿真与板级工程使用相同的接口时序。
+5. 用前递、冒险检测、分支预测和小容量缓存减少操作系统和基准程序的流水线停顿；
+6. 保持 CPU 顶层接口和 SoC 地址映射不变，使 CPU-only 仿真和板级工程使用相同的接口时序；
+7. 完成 RT-Thread Nano 3.1.5 移植，提供 tick、上下文切换、UART 控制台和 finsh/msh；
+8. 在 RT-Thread 环境中运行官方 CoreMark，并明确区分功能结果、性能结果和历史兼容性数据。
 
 ## 设计平台
 
@@ -567,12 +571,11 @@ CPU-only 的 `CPU_FREQ_MHZ` 是 testbench 用于产生时钟和换算 MIPS 的�
 
 ## 测试体系 {#sec-test-system}
 
-可信测试入口是 `verification/`，包含六组本项目定向测试、固定的 `riscv-tests` 白名单和竞赛 `irom-v2` CPU-only 端到端测试。`vivado/tests/` 仅保留为历史开发工具；其旧构建参数、地址和数据初始化问题使其不计入当前通过率。
+测试体系包括两类内容：`verification/` 的定向测试检查 CPU 基础功能，`rt-thread/` 的 CPU-only 入口检查操作系统启动、UART 控制台和 CoreMark。`irom-v2` 作为旧 SoC 接口和裸机兼容性资料单列。
 
-- 本项目定向测试：`rv32i`、`rv32m`、`zicsr_trap`、`pipeline`、`memory` 和 `perf_micro`。前五项主要验证功能，`perf_micro` 只用于观察双发射、停顿和 L0 统计。
-- 当前证据状态：`verification/build/local-results.json` 的文件时间为 2026-07-31，`verification/build/riscv-tests/results.json` 的文件时间为 2026-07-24；两者早于当前 RTL 基线 `b519bfb4d21de13a7286ab305b552fd786666c65`，且生成物未纳入版本控制，因此只能作为历史快照，不能宣称绑定当前 RTL。
-- 开源交叉验证：历史快照记录固定 `riscv-tests` commit `34e6b6d1e7936b526075432fb730d89148623484` 的 37 个 `rv32ui-p` 和 8 个 `rv32um-p` 用例通过；当前 RTL 尚未在本环境重新构建验证。
-- RT-Thread/CoreMark 的源代码和构建入口位于 `rt-thread/`；现有仿真日志单独按日期和 RTL 基线记录，不并入上述 6 组回归通过率。
+- CPU 基础测试包括 `rv32i`、`rv32m`、`zicsr_trap`、`pipeline`、`memory` 和 `perf_micro`；其中前五项主要验证功能，`perf_micro` 观察双发射、停顿和 L0 统计。
+- 现有 CPU 基础测试证据来自 `verification/build/local-results.json`（2026-07-31）和 `verification/build/riscv-tests/results.json`（2026-07-24），早于 RTL 基线 `b519bfb4d21de13a7286ab305b552fd786666c65`，因此按历史快照记录。
+- RT-Thread/CoreMark 的源码、构建入口和运行日志位于 `rt-thread/` 与 `sim_cpu_only/`，运行结果单独记录。
 
 开源白名单只覆盖 RV32I/RV32M，不等同于完整 RISC-V 架构认证。ACT4 和 Embench-IoT 虽锁定上游版本，但尚未完成适配、容量审计和启用，不产生本文通过率或性能数据。
 
@@ -613,6 +616,8 @@ CoreMark 主循环不执行浮点指令。`stop_time()` 之后，软件通过 `f
 
 L0 命中率定义为 L0 命中次数与 BRAM load 请求次数之比；不存在 BRAM load 请求时不计算命中率。
 
+CoreMark 记录运行时间、迭代次数、迭代率、三项校验值和输出检查状态；只有校验值和输出协议均正确时，运行时间和迭代率才可作为成绩。CPU 周期、CPI、MIPS 和 L0 命中率用于分析 RT-Thread/CoreMark 的运行行为。
+
 # 功能验证 {#sec-functional-verification}
 
 ## RV32I 基础整数指令
@@ -644,8 +649,7 @@ Table: RV32I 指令覆盖范围
 ## 功能测试汇总 {#sec-functional-summary}
 
 \begin{longtable}{@{}p{2.8cm}p{2.5cm}p{1.2cm}l@{}}
-\caption{本项目与竞赛功能验证结果汇总}\\
-\toprule
+\caption{CPU 基础功能与历史兼容性验证结果汇总}\\
 来源 & 测试程序 & 结果 & 主要覆盖内容 \\
 \midrule
 \endfirsthead
@@ -661,7 +665,7 @@ Table: RV32I 指令覆盖范围
 项目定向测试 & \texttt{pipeline} & 历史 FAIL & 双槽约束、前递、停顿、冲刷和 CRC 场景；失败原因待取得日志 \\
 项目定向测试 & \texttt{memory} & 历史 PASS & BRAM、子字访问、L0、MMIO 与 COUNTER \\
 性能微基准 & \texttt{perf\_micro} & 历史 PASS & ALU、访存、分支和 RV32M 混合负载 \\
-竞赛测试 & \texttt{irom-v2} 竞赛综合测试 & 未复现 & 当前结果文件不存在 \\
+历史兼容性 & \texttt{irom-v2} 竞赛综合测试 & 未复现 & 仅保留旧 SoC 接口和裸机镜像兼容性记录 \\
 \end{longtable}
 
 \begin{longtable}{@{}p{2.4cm}p{2.0cm}lll@{}}
@@ -698,11 +702,9 @@ Table: 早于当前 RTL 的历史通过负载统计
 
 `perf_micro` 的退休指令数高于周期数，说明该负载使用了双槽提交能力；其性能数字只用于说明历史快照的统计口径，不替代当前 RTL 的性能结果。开源白名单没有周期/CPI 字段，不用于性能表。
 
-## 竞赛 irom-v2 综合程序性能 {#sec-irom-v2-performance}
+## 旧竞赛镜像兼容性记录 {#sec-irom-v2-performance}
 
-当前 `verification/build/irom-v2-result.json` 不存在，本次没有可用于确认竞赛镜像当前通过状态或性能数据的结果文件。`docs/tests/cpu_test_report.md` 中记录的 2026-07-15 数据属于历史 CPU-only 证据，使用 240 MHz 配置，不能按比例换算为当前 200 MHz 结果：404,056,765 周期、380,344,360 条退休指令、CPI 1.062、L0 命中率 62.995%、COUNTER 1,683 ms。
-
-本节只确认测试输入、完成协议和证据状态：`irom-v2.coe` 与 `dram.coe` 应原样使用，PASS LED 为 `0x078B7323`，FAIL LED 为 `0x24181824`；当前竞赛结果标记为“未复现”，历史数字不作为当前结论。
+`irom-v2` 对应 COE 裸机验收，本文只引用其镜像格式、SoC 地址映射和 PASS/FAIL LED 协议。矩阵运算周期、CPI、L0 命中率和 240 MHz 计时数据属于该兼容性记录，不纳入 RT-Thread/CoreMark 性能结果。
 
 ## 官方 CoreMark 性能记录 {#sec-coremark-performance}
 
@@ -716,23 +718,19 @@ Table: 早于当前 RTL 的历史通过负载统计
 
 ## 板级测试程序与流程
 
-板级验证应使用与 CPU-only 端到端测试一致的 `irom-v2` 镜像，依次检查 RV32I、RV32M、CSR/trap、矩阵运算和显示/计时结果。正式结论需要 Vivado/XSim 日志、实现时序报告或开发板原始观测；本次环境没有 Vivado，未执行 elaboration、XSim、综合、布局布线、bitstream 或真实板级实验。
+板级测试使用包含 RT-Thread Nano 和 CoreMark 的 IROM/BRAM 镜像，检查系统启动、COUNTER tick、UART 透传、finsh/msh 命令和 CoreMark 自检输出。`irom-v2` 作为旧 SoC 接口的兼容性样例。正式结论需要 Vivado/XSim 日志、实现时序报告或开发板原始观测；本次环境没有 Vivado，未执行 elaboration、XSim、综合、布局布线、bitstream 或真实板级实验。
 
 ## 历史资料与当前状态
 
-![历史 FPGA 板级综合测试记录](assets/board-1683.png)
-
-上图及 `1,683 ms` 数据来自历史实验记录，不是当前 RTL 的板级复现实验。当前没有可发布的 LUT/FF/DSP/BRAM、WNS、TNS、Fmax、bitstream 或板级耗时数据，不能据此声称当前设计已完成 FPGA 验证。
+旧板级记录中的 `1,683 ms` 来自 `irom-v2` 矩阵程序，不是 RT-Thread/CoreMark 运行结果。当前没有可发布的 LUT/FF/DSP/BRAM、WNS、TNS、Fmax、bitstream 或操作系统板级耗时数据，不能据此声称当前设计已完成 FPGA 验证。
 
 # 结论
 
 当前 RTL 实现了 37 条 RV32I 基础指令、RV32M 8 条指令和项目测试需要的最小 Zicsr/M-mode trap 子集。核心采用双槽顺序发射与顺序提交，访存后端使用 MEM1/MEM2，BRAM load 经过 L0 cache，取指使用总容量 64 KiB 的共享双口 IROM；UART、FPU MMIO、RT-Thread Nano 3.1.5 和 finsh/msh 已接入同一套 SoC 地址空间。
 
-RT-Thread 移植使用 COUNTER 驱动 tick，能够通过 UART 进入 finsh/msh；CoreMark 使用官方算法，MMIO FPU 只在停止计时后完成时间换算，不改变 CPU 的 RV32I/RV32M 指令范围。现有 CPU-only 日志证明启动和 UART 透传路径走通，但 CoreMark 输出校验失败，不能形成成绩。
+RT-Thread 移植使用 COUNTER 驱动 tick，能够通过 UART 进入 finsh/msh；CoreMark 使用官方算法，MMIO FPU 只在停止计时后完成时间换算，不改变 CPU 的 RV32I/RV32M 指令范围。现有 CPU-only 日志证明系统启动和 UART 透传路径走通，但 CoreMark 输出校验失败，不能形成成绩。
 
-验证结果仍需按证据时间区分：本地定向测试和 `riscv-tests` 是早于当前 RTL 的历史快照，RT-Thread/CoreMark 日志也早于当前基线；当前环境缺少 RISC-V 交叉编译器，竞赛 `irom-v2` 没有新结果文件。
-
-本报告因此不提供当前 CoreMark 分数、FPGA 实现频率或板级性能数字。Vivado/板级验证、ACT4、形式验证、随机差分测试和能力边界外指令仍未执行。
+验证结果按证据时间区分：本地 CPU 定向测试和 `riscv-tests` 是历史快照，RT-Thread/CoreMark 日志也有明确的基线和日期；当前环境缺少 RISC-V 交叉编译器，无法重建操作系统镜像。`irom-v2` 作为兼容性资料，不代表 RT-Thread/CoreMark 的验收结果。
 
 # 附录
 
