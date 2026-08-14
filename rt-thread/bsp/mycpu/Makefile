@@ -3,7 +3,7 @@
 # 用法（在 rt-thread/bsp/mycpu/ 下）：
 #   make                构建 elf/bin/coe
 #   make size           打印段尺寸（IROM 预算 64 KiB，linker.ld 有 ASSERT 把关）
-#   make run            完整仿真（DEMO_RUN_MS=3000，STOP_NS=4s）
+#   make run            完整仿真（仅该目标启用 3 秒 LED 完成线程）
 #   make run DEMO_RUN_MS=500 STOP_NS=1500000000   快速仿真
 #   make coremark-smoke  短迭代 CRC/命令返回验收（不作为正式成绩）
 #   make clean
@@ -25,6 +25,7 @@ SIZE := $(CROSS)size
 PYTHON ?= python3
 
 BUILD := build
+SIM_DEMO_BUILD ?= build/sim-demo
 
 ARCH_FLAGS := -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medany \
 	-msmall-data-limit=0 -mno-relax
@@ -35,8 +36,9 @@ LDFLAGS := -nostdlib -nostartfiles -static \
 # BME280 的 64 位定点气压补偿需要 RV32IM/ilp32 对应的 libgcc 辅助例程。
 LIBGCC = $(shell $(CC) $(ARCH_FLAGS) -print-libgcc-file-name)
 
-# ---- 演示运行时长（毫秒），改值会触发 main.o 重编（见 demo_run_ms.txt 规则）
+# ---- 板卡默认禁用 3 秒 LED 完成线程；run/coremark-smoke 仅为仿真验收开启
 DEMO_RUN_MS ?= 3000
+DEMO_FINISH_THREAD ?= 0
 
 # ---- 仿真参数
 STOP_NS ?= 4000000000
@@ -95,9 +97,9 @@ $(BUILD)/finsh_cmd.o: $(FINSH)/cmd.c rtconfig.h | $(BUILD)
 $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# ---- 官方 CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
-#      把 core_main.c 的 main 重命名为 msh 命令入口，官方源不做任何修改）
-CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
+# ---- 官方 CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark_main
+#      保留 core_main.c 官方 CLI 语义，coremark_cmd.c 负责 msh 缺省参数）
+CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark_main -DPERFORMANCE_RUN=1 \
 	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) \
 	-DHAS_FLOAT=1 -DHARDWARE_FPU_SINGLE=1
 
@@ -127,13 +129,16 @@ $(BUILD)/cm_portme.o: coremark/core_portme.c coremark/coremark.h coremark/core_p
 $(BUILD)/cm_cmd.o: coremark_cmd.c rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
 	$(CC) $(CORE_CFLAGS) -c $< -o $@
 
-# DEMO_RUN_MS 变化时强制重编 main.o（内容不变则不动时间戳）
-$(BUILD)/demo_run_ms.txt: FORCE | $(BUILD)
-	@mkdir -p $(BUILD) && printf '%s' '$(DEMO_RUN_MS)' > $@.tmp \
+# main.c 编译配置变化时强制重编（内容不变则不动时间戳）
+$(BUILD)/main_config.txt: FORCE | $(BUILD)
+	@mkdir -p $(BUILD) && printf '%s\n' \
+		'DEMO_RUN_MS=$(DEMO_RUN_MS)' \
+		'DEMO_FINISH_THREAD=$(DEMO_FINISH_THREAD)' > $@.tmp \
 		&& (cmp -s $@ $@.tmp || mv $@.tmp $@) && rm -f $@.tmp
 
-$(BUILD)/main.o: main.c board.h bme280.h rtconfig.h $(BUILD)/demo_run_ms.txt | $(BUILD)
-	$(CC) $(CFLAGS) -DDEMO_RUN_MS=$(DEMO_RUN_MS) -c $< -o $@
+$(BUILD)/main.o: main.c board.h bme280.h rtconfig.h $(BUILD)/main_config.txt | $(BUILD)
+	$(CC) $(CFLAGS) -DDEMO_RUN_MS=$(DEMO_RUN_MS) \
+		-DDEMO_FINISH_THREAD=$(DEMO_FINISH_THREAD) -c $< -o $@
 
 $(BUILD)/rtthread.elf: $(OBJS) linker.ld
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
@@ -150,10 +155,11 @@ $(BUILD)/rtthread.irom.coe: $(BUILD)/rtthread.irom.bin
 $(BUILD)/rtthread.bram.coe: $(BUILD)/rtthread.bram.bin
 	$(PYTHON) $(ROOT)/verification/tools/bin_to_coe.py --max-words 65536 $< $@
 
-run: $(BUILD)/rtthread.irom.coe $(BUILD)/rtthread.bram.coe
+run:
+	$(MAKE) all BUILD=$(SIM_DEMO_BUILD) DEMO_FINISH_THREAD=1
 	$(ROOT)/sim_cpu_only/run_verilator.sh \
-		IROM_COE=$(abspath $(BUILD)/rtthread.irom.coe) \
-		BRAM_COE=$(abspath $(BUILD)/rtthread.bram.coe) \
+		IROM_COE=$(abspath $(SIM_DEMO_BUILD)/rtthread.irom.coe) \
+		BRAM_COE=$(abspath $(SIM_DEMO_BUILD)/rtthread.bram.coe) \
 		PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF EXPECTED_LED=C0DEC0DE \
 		STOP_NS=$(STOP_NS) PROGRESS_NS=$(PROGRESS_NS) TRACE=0 \
 		COREMARK_VERIFY=$(COREMARK_VERIFY)

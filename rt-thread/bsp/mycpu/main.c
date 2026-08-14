@@ -4,8 +4,8 @@
  * 启动序列：_start -> main -> rtthread_startup。调度器启动后 boot 上下文不再
  * 返回，因此演示线程必须在 rt_system_scheduler_start() 之前创建。
  *
- * 完成判据：fin 线程延时 DEMO_RUN_MS（默认 3000）毫秒后向 LED（0x80200040）
- * 写入 0xC0DEC0DE，sim_cpu_only 的 testbench 据此判定 PASS。
+ * 正常板卡镜像禁用 3 秒后写 LED 0xC0DEC0DE 的仿真完成线程，
+ * 避免覆盖 CoreMark 的 LED 开始/结束标记。
  */
 
 #include <rthw.h>
@@ -27,11 +27,16 @@
 #define DEMO_RUN_MS 3000
 #endif
 
+#ifndef DEMO_FINISH_THREAD
+#define DEMO_FINISH_THREAD 0
+#endif
+
 static struct rt_semaphore bme_control_sem;
 static volatile rt_uint8_t bme_periodic_enabled;
 static volatile rt_uint8_t bme_initialized;
 static volatile int bme_last_error;
 
+#if DEMO_FINISH_THREAD
 static void finish_entry(void *param)
 {
     (void)param;
@@ -43,6 +48,7 @@ static void finish_entry(void *param)
      * 睡眠，系统冻结（demo 完成后串口不再有任何输出） */
     rt_thread_mdelay(RT_WAITING_FOREVER);
 }
+#endif
 
 static int bme280_ensure_initialized(void)
 {
@@ -192,12 +198,16 @@ MSH_CMD_EXPORT_ALIAS(bme_command, bme, control BME280 periodic output);
 
 void rt_application_init(void)
 {
+#if DEMO_FINISH_THREAD
     rt_thread_t fin;
+#endif
     rt_thread_t bme;
 
+#if DEMO_FINISH_THREAD
     fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
     if (fin != RT_NULL)
         rt_thread_startup(fin);
+#endif
 
     if (rt_sem_init(&bme_control_sem, "bmectl", 0, RT_IPC_FLAG_FIFO) == RT_EOK)
     {

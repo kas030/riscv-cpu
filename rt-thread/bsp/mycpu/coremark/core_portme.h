@@ -64,7 +64,7 @@ Original Author: Shay Gal-on
 #define CM_STRINGIFY_INNER(value) #value
 #define CM_STRINGIFY(value)       CM_STRINGIFY_INNER(value)
 #define COMPILER_FLAGS \
-    "-Os -march=rv32im_zicsr -Dmain=coremark -DPERFORMANCE_RUN=1 " \
+    "-Os -march=rv32im_zicsr -Dmain=coremark_main -DPERFORMANCE_RUN=1 " \
     "-DTOTAL_DATA_SIZE=2000 -DITERATIONS=" CM_STRINGIFY(ITERATIONS) \
     " -DHAS_FLOAT=1 -DHARDWARE_FPU_SINGLE=1"
 #define MEM_LOCATION "Static"

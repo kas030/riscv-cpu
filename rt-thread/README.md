@@ -1,8 +1,9 @@
 # RT-Thread Nano 3.1.5 for mycpu（RV32IM）
 
 RT-Thread Nano 3.1.5 在自研 32 位 RISC-V CPU（RV32I + RV32M + Zicsr 陷阱）上的移植，
-含完整内核源码（vendor）、`bsp/mycpu` 板级移植与演示应用。演示程序在 Verilator
-CPU-only 仿真中通过 LED 写入 `0xC0DEC0DE` 判定完成。
+含完整内核源码（vendor）、`bsp/mycpu` 板级移植与演示应用。正常板卡镜像用
+物理 LED1 标记 CoreMark 正式计时区间；Verilator CPU-only 的
+`make run` 会单独启用 `0xC0DEC0DE` 完成判据。
 
 ## 目录结构
 
@@ -43,8 +44,8 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
   测量一次温度、气压和湿度。补偿后的定点结果直接打印到 UART，不使用浮点格式化。
 - **启动序列**（`main.c`）：`_start -> main -> rtthread_startup`：
   `rt_hw_board_init`（启动 COUNTER、注册 tick 钩子、`rt_system_heap_init`）
-  → `rt_show_version` → timer/scheduler init → `rt_application_init`（创建并
-  `rt_thread_startup` 三个演示线程）→ `rt_thread_idle_init` → `rt_system_scheduler_start`。
+  → `rt_show_version` → timer/scheduler init → `rt_application_init`（创建 BME280
+  线程并初始化 finsh）→ `rt_thread_idle_init` → `rt_system_scheduler_start`。
   注意：Nano 3.1.5 的 idle 线程由 BSP 显式初始化，漏调 `rt_thread_idle_init`
   会导致就绪表为空、调度器取到垃圾指针。
 - **链接布局**（`linker.ld`）：`.text` → IROM；`.rodata/.data/.bss` → BRAM；
@@ -137,6 +138,13 @@ msh >coremark 0x3415 0x3415 0x66 5000
 此时三项 CRC 应为 `e3c1 / 0747 / 8d84`。命令行第 4 个参数可覆盖迭代数，
 但少于 10 秒的结果只适合调试，不能作为正式成绩。
 
+CoreMark 进入正式计时段前，LED 寄存器写入 `0x00010000`，只点亮
+物理 LED1；内部停止计时后写入 `0` 熄灭。两次 MMIO 写均位于
+CoreMark 计时区间外，不计入报告成绩；评委可在 LED1 点亮时开始秒表、
+熄灭时停止秒表。裸命令由 msh 包装层补齐为标准性能种子和 5000 次，
+不再误入约 2--3 秒的自动校准；仍可显式输入 6000 次。只有明确把
+第 4 个参数设为 0 时，官方自动校准才会产生多次 LED 脉冲。
+
 ## 构建与运行
 
 Makefile 默认使用 `riscv32-unknown-elf-` 前缀，也可通过 `CROSS` 或
@@ -145,8 +153,8 @@ Makefile 默认使用 `riscv32-unknown-elf-` 前缀，也可通过 `CROSS` 或
 
 ```sh
 cd bsp/mycpu
-make              # 编译内核与 BSP，生成 irom/bram 的 .coe
-make run          # 全量仿真：3 秒演示，LED 写 0xC0DEC0DE 判定 PASS
+make              # 编译板卡镜像：禁用 3 秒完成线程，生成 irom/bram .coe
+make run          # 全量仿真：仅该目标启用 3 秒完成线程作 PASS 判据
 make run DEMO_RUN_MS=500 STOP_NS=900000000   # 缩短演示与仿真时间
 make coremark-smoke # 24 次短测，检查官方性能种子 CRC 与返回 msh
 ```
@@ -166,9 +174,14 @@ MobaXterm/SecureCRT 等终端直接连接即可——RT-Thread 启动时自动�
 启动 banner 与 `msh >` 提示符直接可见，输入 `help` 查看命令列表。
 竞赛模式上位机不受影响：它不写 `0x80200064`，twin 保持 IDLE。
 
-## 演示程序
+## 仿真完成线程
 
-完成线程 `fin`（优先级 12）：延时 `DEMO_RUN_MS`（默认 3000）ms 后打印
+正常 `make` 生成的板卡镜像将 `DEMO_FINISH_THREAD` 设为 0，不编译也不创建
+`fin` 线程，因此不会在上电约 3 秒后覆盖 CoreMark 的 LED 标记。
+`make run` 仅在独立的 `build/sim-demo` 仿真镜像中临时令
+`DEMO_FINISH_THREAD=1`，不会覆盖 Vivado 使用的默认 COE；完成线程
+`fin`（优先级 12）延时
+`DEMO_RUN_MS`（默认 3000）ms 后打印
 `demo done` 并写 LED `0xC0DEC0DE`，随后永久让出 CPU（`rt_thread_mdelay`
 `RT_WAITING_FOREVER`）——本平台无中断、tick 由 idle 钩子轮询产生，空转
 会饿死 idle 导致系统冻结，必须让出。控制台保持安静，msh 终端可用。

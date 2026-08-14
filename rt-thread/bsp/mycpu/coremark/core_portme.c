@@ -18,6 +18,7 @@ Original Author: Shay Gal-on
 /* 平台适配（mycpu：RV32IM + Zicsr + MMIO 单精度 FPU，无中断，RT-Thread Nano）
    - 计时：硬件 COUNTER（0x80200050）毫秒计数（board.c 已在 rt_hw_board_init
      启动；不用 rt_tick_get——无中断平台 tick 由 idle 钩子轮询推进，忙跑时冻结）
+   - 标记：正式计时前点亮物理 LED1，计时结束后熄灭
    - 浮点：硬件 FPU 完成 u32->binary32 与 binary32 除法，整数代码负责格式化
    - 输出：ee_printf/ee_print_float 直接转发到平台控制台（UART/SEG）
    - 种子/迭代数：SEED_ARG 模式，来自 msh 命令行（get_seed_args）
@@ -29,6 +30,7 @@ Original Author: Shay Gal-on
 #include <rtthread.h>
 #include <rthw.h>
 
+#define CM_LED_ADDR 0x80200040ul   /* 4x8 LED 阵列 */
 #define CM_CNT_ADDR 0x80200050ul   /* COUNTER：毫秒计数 */
 #define CM_FPU_A_ADDR      0x80200070ul
 #define CM_FPU_B_ADDR      0x80200074ul
@@ -38,6 +40,10 @@ Original Author: Shay Gal-on
 
 #define CM_FPU_CMD_U32_TO_F32 1u
 #define CM_FPU_CMD_DIV_F32    2u
+
+/* 原理图中物理 LED1 连接 FPGA F12，对应 virtual_led[16]。 */
+#define CM_LED_RUNNING 0x00010000u
+#define CM_LED_OFF     0x00000000u
 
 typedef union
 {
@@ -104,6 +110,8 @@ static CORETIMETYPE start_time_val, stop_time_val;
 void
 start_time(void)
 {
+    /* 先显示开始标记再取时间，LED 写入开销不计入 CoreMark 成绩。 */
+    *cm_mmio(CM_LED_ADDR) = CM_LED_RUNNING;
     GETMYTIME(&start_time_val);
 }
 /* Function : stop_time
@@ -113,6 +121,8 @@ void
 stop_time(void)
 {
     GETMYTIME(&stop_time_val);
+    /* 先停止内部计时再熄灭，便于评委用 LED 边沿复核时间。 */
+    *cm_mmio(CM_LED_ADDR) = CM_LED_OFF;
 }
 /* Function : get_time
         Return an abstract "ticks" number that signifies time on the system.
