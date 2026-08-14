@@ -23,6 +23,10 @@ QUIET := 1
   默认从 `PATH` 查找工具；如果工具不在 `PATH`，可以在命令行覆盖：
   `make VERILATOR=/path/to/verilator CXX=/path/to/g++ sim-verilator`。
 - 本流程直接编译 `rtl/` 下的 CPU 核心模块，不依赖 Vivado 工程。
+- MMIO FPU 可脱离 CPU 和 CoreMark 单独验证；在 `sim_cpu_only` 目录运行
+  `make test-fpu-mmio`。测试直接驱动寄存器协议，检查整数转单精度、除法、舍入、
+  符号、零值和 CoreMark 计时换算向量，日志写入
+  `build/fpu-mmio-test.log`。
 - IROM/BRAM 输入支持 Vivado `.coe`、Quartus-style `.mif`，以及每行一个
   32 位 hex/binary word 的 `.mem` 文本。
 - 默认竞赛镜像判定值为 `PASS_LED=078B7323`、`FAIL_LED=24181824`。程序写入

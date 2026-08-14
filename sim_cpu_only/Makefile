@@ -44,6 +44,9 @@ VFLAGS_BASE := --binary --timing $(VERILATOR_QUIET_FLAGS) -MAKEFLAGS -s -CFLAGS 
 VFLAGS_TRACE := $(if $(filter 1,$(TRACE)),--trace-fst --trace-structs -LDFLAGS -lz,)
 VFLAGS := $(VFLAGS_BASE) $(VFLAGS_TRACE) $(if $(filter 1,$(COREMARK_VERIFY)),-DCOREMARK_VERIFY,)
 VERILATOR_OBJ_DIR := $(if $(filter 1,$(TRACE)),obj_dir_trace,obj_dir)/$(SIM_CONFIG_ID)
+FPU_TEST_OBJ_DIR := obj_dir_fpu
+FPU_TEST_BIN := $(FPU_TEST_OBJ_DIR)/Vtb_fpu_mmio
+FPU_TEST_LOG := $(BUILD)/fpu-mmio-test.log
 INC_DIRS := -I$(SRC_COMMON) -I$(SRC_CONTROL) -I$(SRC_CORE) -I$(SRC_DATAPATH) -I$(SRC_HAZARD) -I$(SRC_MEMORY) -I$(SRC_PIPE_REG) -I$(SRC_PIPE_STAGE) -I$(SRC_PERIPH) -I$(SIM_CONFIG_DIR) -I$(BUILD)
 
 CPU_SRCS := \
@@ -83,7 +86,8 @@ CPU_SRCS := \
   $(SRC_PERIPH)/uart.sv \
   $(SRC_PERIPH)/twin_controller.sv
 
-.PHONY: all sim sim-iverilog sim-verilator clean check-tools check-verilator FORCE
+.PHONY: all sim sim-iverilog sim-verilator test-fpu-mmio clean check-tools \
+	check-verilator FORCE
 
 all: sim-verilator
 
@@ -102,6 +106,9 @@ $(SIM_CONFIG_DIR):
 	@mkdir -p $@
 
 $(VERILATOR_OBJ_DIR):
+	@mkdir -p $@
+
+$(FPU_TEST_OBJ_DIR):
 	@mkdir -p $@
 
 $(SIM_CONFIG): sim_config_gen.py | $(SIM_CONFIG_DIR)
@@ -128,5 +135,14 @@ $(VERILATOR_OBJ_DIR)/Vtb_cpu_only: tb_cpu_only.sv $(VERILATOR_CPP) $(CPU_SRCS) $
 sim-verilator: check-verilator $(BUILD)/irom.mem $(BUILD)/bram.mem $(VERILATOR_OBJ_DIR)/Vtb_cpu_only
 	@stdbuf -oL -eL ./$(VERILATOR_OBJ_DIR)/Vtb_cpu_only $(VERILATOR_RUNTIME_ARGS) | python3 $(TERMINAL_TEE) $(BUILD)/verilator-sim.log
 
+$(FPU_TEST_BIN): tb_fpu_mmio.sv $(VERILATOR_CPP) $(SRC_PERIPH)/fpu_mmio.sv | $(BUILD) $(FPU_TEST_OBJ_DIR)
+	@CXX=$(CXX) $(VERILATOR) $(VFLAGS_BASE) --Mdir $(FPU_TEST_OBJ_DIR) \
+		--top-module tb_fpu_mmio $^
+
+test-fpu-mmio: check-verilator $(FPU_TEST_BIN)
+	@./$(FPU_TEST_BIN) > $(FPU_TEST_LOG) 2>&1 || \
+		{ status=$$?; cat $(FPU_TEST_LOG); exit $$status; }
+	@cat $(FPU_TEST_LOG)
+
 clean:
-	@rm -rf $(BUILD) obj_dir obj_dir_trace
+	@rm -rf $(BUILD) obj_dir obj_dir_trace $(FPU_TEST_OBJ_DIR)
