@@ -135,10 +135,16 @@
     MEM1/MEM2 backend
   };
   \node[block, minimum width=120pt, minimum height=40pt] (irom0) at (5.5,5.8) {
-    {\bfseries Instruction ROM 0}\\Address: pc[13:2]
+    {\bfseries Instruction ROM 0}\\Address: pc[15:2]\\Shared dual-port IROM: 64 KiB total
   };
   \node[block, minimum width=120pt, minimum height=40pt] (irom1) at (5.5,4.2) {
-    {\bfseries Instruction ROM 1}\\Address: (pc+4)[13:2]
+    {\bfseries Instruction ROM 1}\\Address: (pc+4)[15:2]\\Port B of same 64 KiB IROM
+  };
+  \node[peripheral, minimum width=2.35cm, text width=2.1cm, font=\rmfamily\scriptsize] (counter) at (8.65,0) {
+    {\bfseries COUNTER}\\0x8020 0050\\50 MHz dual-clock
+  };
+  \node[peripheral, minimum width=3.15cm, text width=2.9cm, font=\rmfamily\scriptsize] (uartfpu) at (12.0,0) {
+    {\bfseries UART / FPU MMIO}\\0x8020 0060--0080\\CPU 200 MHz / peripheral 50 MHz
   };
 
   % Address-decoded memory and MMIO targets
@@ -157,16 +163,13 @@
   \node[peripheral] (led) at (5.85,0) {
     {\bfseries LED}\\0x8020 0040\\32-bit output
   };
-  \node[peripheral] (counter) at (8.82,0) {
-    {\bfseries COUNTER}\\0x8020 0050\\Dual-clock cnt
-  };
 
   \begin{scope}[on background layer, xshift=-1pt]
-    \node[group, fit=(bram)(sw)(key)(seg)(led)(counter), inner xsep=0.42cm,
+    \node[group, fit=(bram)(sw)(key)(seg)(led)(counter)(uartfpu), inner xsep=0.42cm,
           inner ysep=0.62cm] (bridge) {};
     \node[outer, fit=(core)(irom0)(irom1)(bridge), inner xsep=0.62cm,
           inner ysep=0.65cm] (student) {};
-    \node[group, fill=none, draw=ink, fit=(bram)(sw)(key)(seg)(led)(counter),
+    \node[group, fill=none, draw=ink, fit=(bram)(sw)(key)(seg)(led)(counter)(uartfpu),
           inner xsep=0.42cm, inner ysep=0.62cm] {};
   \end{scope}
   \node[group label] at ($(bridge.north west)+(0.18,0.08)$) {perip\_bridge};
