@@ -13,6 +13,52 @@ vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU
 vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 ```
 
+## 从 Ubuntu 调用 Windows 宿主机 Vivado
+
+仓库位于 VMware 共享目录、Vivado 安装在 Windows 宿主机时，可在 Ubuntu
+中通过 SSH 一条命令启动宿主机上的 Vivado。Windows 端首次使用时，在
+**管理员 PowerShell** 中运行以下一次性配置脚本：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+& D:\ic\riscv_cpu\scripts\setup_windows_vivado_ssh.ps1
+```
+
+脚本安装并启动 Windows OpenSSH Server，将其设为自动启动，并把入站 TCP 22
+限制为直接连接的本地子网。若虚拟机使用特殊的路由或桥接网络，需按实际网段
+调整 Windows 防火墙规则。
+
+在 Ubuntu 中创建个人配置（不要提交用户名、地址或私钥）：
+
+```sh
+mkdir -p ~/.config/riscv-cpu
+cat > ~/.config/riscv-cpu/vivado-host.conf <<'EOF'
+VIVADO_HOST=192.168.1.10
+VIVADO_USER=windows_user
+VIVADO_REMOTE_PS1=D:/ic/riscv_cpu/scripts/run_vivado_host.ps1
+EOF
+chmod 600 ~/.config/riscv-cpu/vivado-host.conf
+```
+
+先验证 SSH、共享目录和 Vivado 自动探测：
+
+```sh
+./scripts/vivado-host check
+```
+
+之后可直接创建工程、生成 bitstream 或运行 XSim：
+
+```sh
+./scripts/vivado-host create
+./scripts/vivado-host build bitstream
+./scripts/vivado-host sim tb_myCPU
+```
+
+`scripts/run_vivado_host.ps1` 会优先使用 Windows 用户环境变量
+`VIVADO_BIN`，其值可以是 `vivado.bat` 或所在目录；未设置时会探测常见的
+AMD/Xilinx 安装目录。Ubuntu 端还支持 `VIVADO_SSH_PORT` 和
+`VIVADO_SSH_IDENTITY`，分别用于非默认 SSH 端口和指定私钥。
+
 ## 脚本列表
 
 - `create_project.tcl`
