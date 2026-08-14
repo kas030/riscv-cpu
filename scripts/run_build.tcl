@@ -129,8 +129,10 @@ update_compile_order -fileset sources_1
 
 if {$build_mode in {synth impl bitstream}} {
     set synth_run [get_runs synth_1]
-    set_property AUTO_INCREMENTAL_CHECKPOINT false $synth_run
-    puts "INFO: synth_1 auto_incremental=false"
+    # 关闭自动选择后还必须清空已有参考 DCP，否则 run 仍会走手动增量流程。
+    set_property AUTO_INCREMENTAL_CHECKPOINT 0 $synth_run
+    reset_property INCREMENTAL_CHECKPOINT $synth_run
+    puts "INFO: synth_1 auto_incremental='[get_property AUTO_INCREMENTAL_CHECKPOINT $synth_run]' incremental_checkpoint='[get_property INCREMENTAL_CHECKPOINT $synth_run]'"
     reset_run synth_1
     run_and_wait synth_1 -jobs 8
     set synth_dcp [file join $repo_root vivado digital_twin.runs synth_1 top.dcp]
@@ -140,8 +142,9 @@ if {$build_mode in {synth impl bitstream}} {
 if {$build_mode in {impl bitstream}} {
     set impl_run [get_runs impl_1]
     set_property strategy $impl_strategy $impl_run
-    set_property AUTO_INCREMENTAL_CHECKPOINT false $impl_run
-    puts "INFO: impl_1 strategy=$impl_strategy auto_incremental=false"
+    set_property AUTO_INCREMENTAL_CHECKPOINT 0 $impl_run
+    reset_property INCREMENTAL_CHECKPOINT $impl_run
+    puts "INFO: impl_1 strategy=$impl_strategy auto_incremental='[get_property AUTO_INCREMENTAL_CHECKPOINT $impl_run]' incremental_checkpoint='[get_property INCREMENTAL_CHECKPOINT $impl_run]'"
     reset_run impl_1
     if {$build_mode eq "bitstream"} {
         run_and_wait impl_1 -to_step write_bitstream -jobs 8
