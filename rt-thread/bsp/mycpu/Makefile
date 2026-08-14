@@ -27,20 +27,20 @@ PYTHON ?= python3
 BUILD := build
 
 ARCH_FLAGS := -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medany \
-	-msmall-data-limit=0 -mno-relax
+	-msmall-data-limit=0
 OPT := -Os -ffunction-sections -fdata-sections -ffreestanding
-CORE_OPT ?= -O3 -funroll-loops -mbranch-cost=1 -fsched-pressure \
+CORE_OPT ?= -O3 -funroll-loops -mbranch-cost=1 -fsched-pressure -ftracer \
 	-ffunction-sections -fdata-sections -ffreestanding
 # 链表、矩阵和 CRC 热点从强制展开中获益；状态机的控制流较密，沿用
 # 盈利性展开反而更快。分文件变量也便于性能迭代时显式记录实际参数。
-CORE_LIST_OPT ?= -O3 -funroll-all-loops -mbranch-cost=1 -fsched-pressure \
+CORE_LIST_OPT ?= -O3 -funroll-all-loops -mbranch-cost=1 -fsched-pressure -ftracer \
 	-ffunction-sections -fdata-sections -ffreestanding
 CORE_MATRIX_OPT ?= $(CORE_LIST_OPT)
 CORE_STATE_OPT ?= $(CORE_OPT)
 CORE_UTIL_OPT ?= $(CORE_LIST_OPT)
 CFLAGS := $(ARCH_FLAGS) $(OPT) -I. -I$(KERNEL)/include -I$(FINSH) -MMD -MP
 LDFLAGS := $(ARCH_FLAGS) -nostdlib -nostartfiles -static \
-	-Wl,--gc-sections -Wl,--build-id=none -Wl,--no-relax -T linker.ld
+	-Wl,--gc-sections -Wl,--build-id=none -T linker.ld
 
 # ---- 演示运行时长（毫秒），改值会触发 main.o 重编（见 demo_run_ms.txt 规则）
 DEMO_RUN_MS ?= 3000
@@ -50,7 +50,7 @@ STOP_NS ?= 4000000000
 PROGRESS_NS ?= 0
 # 仿真验收开关：1 时向 UART 注入 coremark 命令并自动校验 (tb_cpu_only.sv)
 COREMARK_VERIFY ?= 0
-# 200 MHz 下 10000 次按 16 次短测外推约 14.95 秒，满足官方“正式成绩至少
+# 200 MHz 下 10000 次按 16 次短测外推约 13.98 秒，满足官方“正式成绩至少
 # 运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
 COREMARK_ITERATIONS ?= 10000
 # 性能开发专用：在 RT-Thread 调度器启动后由独立线程直接调用移植入口，

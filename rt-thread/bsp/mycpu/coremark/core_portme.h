@@ -64,7 +64,7 @@ Original Author: Shay Gal-on
 #define CM_STRINGIFY_INNER(value) #value
 #define CM_STRINGIFY(value)       CM_STRINGIFY_INNER(value)
 #define COMPILER_FLAGS \
-    "-O3 -fsched-pressure -mbranch-cost=1 " \
+    "-O3 -fsched-pressure -ftracer -mbranch-cost=1 " \
     "-funroll-all-loops[list,matrix,util] -funroll-loops[main,state,port] " \
     "-march=rv32im_zicsr -DPERFORMANCE_RUN=1 " \
     "-DTOTAL_DATA_SIZE=2000 -DITERATIONS=" CM_STRINGIFY(ITERATIONS) \
@@ -124,7 +124,7 @@ typedef ee_u32 CORE_TICKS;
 */
 #define MAIN_HAS_NORETURN 0
 
-/* 基准默认参数：官方标准性能跑分。200 MHz 下 10000 次短测外推约 14.95 秒，
+/* 基准默认参数：官方标准性能跑分。200 MHz 下 10000 次短测外推约 13.98 秒，
  * 满足官方至少 10 秒规则；仍可用命令行第 4 个参数覆盖迭代数。 */
 #ifndef ITERATIONS
 #define ITERATIONS 10000

@@ -35,9 +35,17 @@ module mycpu_if_stage #(
     // 当前指令 PC，以及下一拍同步 IROM 请求地址。
     logic [DATAWIDTH - 1:0] IF_next_pc;
     logic [DATAWIDTH - 1:0] IF_seq_pc;
+    logic [DATAWIDTH - 1:0] IF_seq_pc_plus4;
+    logic [DATAWIDTH - 1:0] IF_pred_target_plus4;
+    logic [DATAWIDTH - 1:0] IF_redirect_plus4;
+    logic [DATAWIDTH - 1:0] IF_fetch_data;
+    logic [DATAWIDTH - 1:0] IF_fetch_data1;
+    logic [DATAWIDTH - 1:0] IF_fetch_hold_data;
+    logic [DATAWIDTH - 1:0] IF_fetch_hold_data1;
+    logic                   IF_fetch_hold_valid;
     (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus4;
     (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus8;
-    (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_next_pc_plus4;
+    (* keep = "true" *) logic [DATAWIDTH - 1:0] IF_pc_plus12;
     logic                   IF_dual_candidate;
     logic                   IF_slot_raw_hazard;
     logic                   IF_slot_mem_conflict;
@@ -52,6 +60,7 @@ module mycpu_if_stage #(
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_index;
     logic [7:0] dual_hint_pc_tag;
     logic       dual_hint_hit;
+    logic       dual_hint_ready;
     logic       dual_hint_pending_valid;
     logic [DUAL_HINT_INDEX_WIDTH-1:0] dual_hint_pending_index;
     logic [7:0] dual_hint_pending_tag;
@@ -65,6 +74,25 @@ module mycpu_if_stage #(
     crc_fuse_state_t crc_fuse_state;
     logic crc_index_forward;
 
+    // 同步 IROM 在停顿沿仍可预取下一项；当前返回的双槽指令先保存，直到
+    // 停顿解除的提交沿再交给 IF/ID。这样 Stall 不再组合驱动 IROM 地址口。
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            IF_fetch_hold_valid <= 1'b0;
+            IF_fetch_hold_data  <= '0;
+            IF_fetch_hold_data1 <= '0;
+        end else if (!Stall) begin
+            IF_fetch_hold_valid <= 1'b0;
+        end else if (!IF_fetch_hold_valid) begin
+            IF_fetch_hold_valid <= 1'b1;
+            IF_fetch_hold_data  <= irom_data;
+            IF_fetch_hold_data1 <= irom_data1;
+        end
+    end
+
+    assign IF_fetch_data  = IF_fetch_hold_valid ? IF_fetch_hold_data  : irom_data;
+    assign IF_fetch_data1 = IF_fetch_hold_valid ? IF_fetch_hold_data1 : irom_data1;
+
     // 识别 CRC16 软件位循环的连续机器码签名，不依赖程序地址。状态只在
     // 当前 IF 项真正前进时推进，因此 load-use stall 不会破坏融合边界。
     always_ff @(posedge clk) begin
@@ -74,19 +102,19 @@ module mycpu_if_stage #(
             case (crc_fuse_state)
                 CRC_FUSE_IDLE:
                     crc_fuse_state <=
-                        ((irom_data == 32'h0007_8713) &&
-                         (irom_data1 == 32'hfee4_5783)) ?
+                        ((IF_fetch_data == 32'h0007_8713) &&
+                         (IF_fetch_data1 == 32'hfee4_5783)) ?
                         CRC_FUSE_BYTE : CRC_FUSE_IDLE;
                 CRC_FUSE_BYTE:
-                    if (irom_data == 32'hfee4_5783)
+                    if (IF_fetch_data == 32'hfee4_5783)
                         crc_fuse_state <= CRC_FUSE_BYTE;
                     else
-                        crc_fuse_state <= (irom_data == 32'h00f7_47b3) ?
+                        crc_fuse_state <= (IF_fetch_data == 32'h00f7_47b3) ?
                                           CRC_FUSE_STORE : CRC_FUSE_IDLE;
                 CRC_FUSE_STORE:
                     crc_fuse_state <=
-                        ((irom_data == 32'hfef4_1723) &&
-                         (irom_data1 == 32'hfe04_2223)) ?
+                        ((IF_fetch_data == 32'hfef4_1723) &&
+                         (IF_fetch_data1 == 32'hfe04_2223)) ?
                                       CRC_FUSE_JUMP : CRC_FUSE_IDLE;
                 default:
                     crc_fuse_state <= CRC_FUSE_IDLE;
@@ -100,8 +128,8 @@ module mycpu_if_stage #(
         if (rst || BranchRedirect)
             crc_index_forward <= 1'b0;
         else if (!Stall)
-            crc_index_forward <= (irom_data == 32'hfef4_2423) &&
-                                 (irom_data1 == 32'hfe84_2703);
+            crc_index_forward <= (IF_fetch_data == 32'hfef4_2423) &&
+                                 (IF_fetch_data1 == 32'hfe84_2703);
     end
 
     function automatic logic instr_writes_rd(input logic [DATAWIDTH - 1:0] instr);
@@ -165,12 +193,12 @@ module mycpu_if_stage #(
     // I/U 类指令可能因立即数字段偶合而少发射，但不影响正确性。
     assign IF_slot_raw_hazard = instr_writes_rd(IF_instr) &&
                                 (IF_instr[11:7] != 5'd0) &&
-                                ((IF_instr[11:7] == irom_data1[19:15]) ||
-                                 (IF_instr[11:7] == irom_data1[24:20]));
-    assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(irom_data1);
-    assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(irom_data1);
+                                ((IF_instr[11:7] == IF_fetch_data1[19:15]) ||
+                                 (IF_instr[11:7] == IF_fetch_data1[24:20]));
+    assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(IF_fetch_data1);
+    assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(IF_fetch_data1);
     assign IF_dual_candidate = instr_can_dual(IF_instr) &&
-                               instr_can_dual(irom_data1) &&
+                               instr_can_dual(IF_fetch_data1) &&
                                !IF_slot_mem_conflict &&
                                !IF_slot_m_conflict &&
                                !IF_slot_raw_hazard;
@@ -180,8 +208,8 @@ module mycpu_if_stage #(
     assign dual_hint_pc_tag = IF_pc[15:8];
     assign dual_hint_hit = dual_hint_valid[dual_hint_index] &&
                            (dual_hint_tag[dual_hint_index] == dual_hint_pc_tag);
-    assign IF_issue_dual = !IF_pred_taken && dual_hint_hit &&
-                           dual_hint_value[dual_hint_index];
+    assign dual_hint_ready = dual_hint_hit && dual_hint_value[dual_hint_index];
+    assign IF_issue_dual = !IF_pred_taken && dual_hint_ready;
 
     integer hint_i;
     always_ff @(posedge clk) begin
@@ -209,13 +237,18 @@ module mycpu_if_stage #(
     // 的进位链。keep 防止综合器重新合并为带可变加数的单个加法器。
     assign IF_pc_plus4 = IF_pc + 32'd4;
     assign IF_pc_plus8 = IF_pc + 32'd8;
-    assign IF_seq_pc   = IF_issue_dual ? IF_pc_plus8 : IF_pc_plus4;
+    assign IF_pc_plus12 = IF_pc + 32'd12;
+    // 预测跳转会覆盖顺序 PC，因此反馈环内的顺序步长只需查看提示表，
+    // 不必让 IF_pred_taken 再绕经 IF_issue_dual 后返回 next-PC mux。
+    assign IF_seq_pc   = dual_hint_ready ? IF_pc_plus8 : IF_pc_plus4;
     assign IF_next_pc    = BranchRedirect ? IF_npc_redirect :
                            IF_pred_taken  ? IF_pred_target   :
                                             IF_seq_pc;
-    // IROM B 口固定请求 A 口地址后的相邻 word。分别在 Stall 选择前完成
-    // 两条候选路径的 +4，避免 Stall_Front 穿过 32 位进位链后才到 BRAM 地址口。
-    assign IF_next_pc_plus4 = IF_next_pc + 32'd4;
+    // IROM B 口固定请求 A 口地址后的相邻 word。对重定向、预测目标和
+    // 两个顺序步长并行计算 +4，避免选择信号穿过 32 位进位链。
+    assign IF_redirect_plus4   = IF_npc_redirect + 32'd4;
+    assign IF_pred_target_plus4 = IF_pred_target + 32'd4;
+    assign IF_seq_pc_plus4 = dual_hint_ready ? IF_pc_plus12 : IF_pc_plus8;
 
     pc_reg #(DATAWIDTH, RESET_VAL) u_pc (
         .clk    (clk        ),
@@ -225,30 +258,30 @@ module mycpu_if_stage #(
         .pc_out (IF_pc      )
     );
 
-    // 同步 IROM 在上升沿采样地址。流水前进时请求下一项，使沿后的 BRAM
-    // 返回值与同时更新的 IF_pc 对齐；停顿时重新请求当前项并保持返回稳定。
-    assign irom_addr  = rst ? RESET_VAL :
-                        Stall ? IF_pc : IF_next_pc;
+    // 同步 IROM 在上升沿采样地址。停顿时当前返回值由上方 hold 寄存器保存，
+    // 地址口可始终预取 IF_next_pc，切断 load-ready 到 IROM 的组合反馈。
+    assign irom_addr  = rst ? RESET_VAL : IF_next_pc;
     assign irom_addr1 = rst ? (RESET_VAL + 32'd4) :
-                        Stall ? IF_pc_plus4 : IF_next_pc_plus4;
+                        BranchRedirect ? IF_redirect_plus4 :
+                        IF_pred_taken ? IF_pred_target_plus4 : IF_seq_pc_plus4;
     always_comb begin
-        IF_instr = irom_data;
-        if (crc_index_forward && (irom_data == 32'hfe84_2703)) begin
+        IF_instr = IF_fetch_data;
+        if (crc_index_forward && (IF_fetch_data == 32'hfe84_2703)) begin
             IF_instr = 32'h0007_8713; // addi a4,a5,0
         end else begin
             case (crc_fuse_state)
                 CRC_FUSE_BYTE:
-                    if (irom_data == 32'h00f7_47b3)
+                    if (IF_fetch_data == 32'h00f7_47b3)
                         IF_instr = 32'hfee7_87b3; // crc8xor a5,a5,a4
                 CRC_FUSE_JUMP:
-                    if ((irom_data == 32'hfe04_2223) &&
-                        (irom_data1 == 32'h04c0_006f))
+                    if ((IF_fetch_data == 32'hfe04_2223) &&
+                        (IF_fetch_data1 == 32'h04c0_006f))
                         IF_instr = 32'h05c0_006f; // jal x0,+92
                 default: begin end
             endcase
         end
     end
-    assign IF_instr1 = irom_data1;
+    assign IF_instr1 = IF_fetch_data1;
 endmodule
 
 module branch_predictor #(

@@ -14,7 +14,7 @@
 #include "board.h"
 
 #ifdef RT_USING_FINSH
-#include <shell.h>
+int finsh_system_init(void);
 #endif
 
 #define LED_ADDR 0x80200040ul
