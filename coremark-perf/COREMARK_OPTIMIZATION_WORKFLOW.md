@@ -20,8 +20,18 @@ COUNTER 毫秒值由 CPU 周期分频得到。CoreMark timed section 不访问 U
 
 ## 2. 首次基线
 
+基线必须同时记录 CoreMark 性能和 Vivado 实现后时序，不能只保留 Verilator
+结果。先运行短测，再按第 6 节完成一次 `build impl`，将 timing summary 复制到
+基线结果目录并重新生成带时序数据的报告：
+
 ```sh
 ./coremark-perf/run_coremark_verilator.sh estimate --tag baseline
+./scripts/vivado-host build impl
+cp vivado/digital_twin.runs/impl_1/top_timing_summary_routed.rpt \
+  coremark-perf/results/baseline-estimate/top_timing_summary_routed.rpt
+python3 coremark-perf/tools/analyze_coremark_run.py \
+  coremark-perf/results/baseline-estimate \
+  --timing-report coremark-perf/results/baseline-estimate/top_timing_summary_routed.rpt
 ```
 
 一次运行完成 16 次迭代，日志必须包含：
@@ -46,6 +56,7 @@ coremark-perf/results/baseline-estimate/
 ├── verilator_i16.log
 ├── estimate_10000.json
 ├── estimate_10000.md
+├── top_timing_summary_routed.rpt
 ├── protected_sources.sha256
 ├── port.sha256
 ├── firmware.sha256
@@ -54,7 +65,8 @@ coremark-perf/results/baseline-estimate/
 ```
 
 其中 `run.meta` 记录模式、采样点、自动解析出的 `core_bench_list` 地址、工具链和
-仿真覆盖参数。不要混用不同目录中的固件、RTL 哈希和日志。
+仿真覆盖参数。`estimate_10000.md/json` 必须包含基线的 Vivado 时序数据。不要混用
+不同目录中的固件、RTL 哈希、日志和 timing summary。
 
 ## 3. 外推解释
 
@@ -86,13 +98,33 @@ coremark-perf/results/baseline-estimate/
 
 1. 修改移植接口或 CPU RTL；
 2. 运行 `estimate --tag optNN`；
-3. 比较 CRC、`cycles/iteration`、稳态 CPI、load-use、EX busy、L0 命中率和
-   10000 次外推时间；
-4. 确认 `protected_sources.sha256` 未变化；
-5. 确认两个观察点的增量稳定后保留该轮结果，直接进入下一轮。
+3. 运行 `./scripts/vivado-host build impl`，完成该轮综合、布局布线和时序分析；
+4. 将 `top_timing_summary_routed.rpt` 复制到该轮结果目录，并用
+   `--timing-report` 重新生成 `estimate_10000.md/json`；
+5. 比较 CRC、`cycles/iteration`、稳态 CPI、load-use、EX busy、L0 命中率、
+   10000 次外推时间、WNS、TNS、时序约束是否满足和近似 Fmax；
+6. 确认 `protected_sources.sha256` 未变化；
+7. 确认两个观察点的增量稳定且该轮时序已经留档后，再进入下一轮。
 
-常规优化轮次只运行 `estimate`，不把 `stage` 当作候选版的固定步骤，也不运行
-`full`。`stage` 仅用于第 3 节所述的异常定位，不用于常规性能确认。
+例如 `opt01` 的完整记录命令为：
+
+```sh
+./coremark-perf/run_coremark_verilator.sh estimate --tag opt01
+./scripts/vivado-host build impl
+cp vivado/digital_twin.runs/impl_1/top_timing_summary_routed.rpt \
+  coremark-perf/results/opt01-estimate/top_timing_summary_routed.rpt
+python3 coremark-perf/tools/analyze_coremark_run.py \
+  coremark-perf/results/opt01-estimate \
+  --timing-report coremark-perf/results/opt01-estimate/top_timing_summary_routed.rpt
+```
+
+Vivado 的 `impl_1` 报告会被下一轮构建覆盖，因此必须在开始下一轮前复制到本轮
+结果目录。即使某轮性能退化、时序失败或最终不保留，也必须记录该轮 timing
+summary；不得沿用上一轮报告。
+
+常规优化轮次的 CoreMark 仿真只运行 `estimate`，不把 `stage` 当作候选版的固定
+步骤，也不运行 `full`；但每轮仍必须单独执行 Vivado `build impl` 并记录时序。
+`stage` 仅用于第 3 节所述的异常定位，不用于常规性能确认。
 
 同一 tag 会覆盖同名结果目录。需要保留历史时使用新 tag。
 
@@ -100,6 +132,12 @@ coremark-perf/results/baseline-estimate/
 
 ```sh
 ./coremark-perf/run_coremark_verilator.sh estimate --tag final
+./scripts/vivado-host build impl
+cp vivado/digital_twin.runs/impl_1/top_timing_summary_routed.rpt \
+  coremark-perf/results/final-estimate/top_timing_summary_routed.rpt
+python3 coremark-perf/tools/analyze_coremark_run.py \
+  coremark-perf/results/final-estimate \
+  --timing-report coremark-perf/results/final-estimate/top_timing_summary_routed.rpt
 ```
 
 最终验收仍使用 16 次短测和 10000 次外推，不运行 `full`。只有同时满足
@@ -109,6 +147,9 @@ coremark-perf/results/baseline-estimate/
 - 三项 CRC 完全匹配 `e714 / 1fd7 / 8e3a`；
 - 出现 `iterations=16 validity=short-run` 和 `[PASS]`；
 - 观察点周期与 CoreMark `Total ticks` 的一致性检查通过；
+- 已对 `final` 对应 RTL 重新执行 `build impl`，并将该次 timing summary 保存到
+  `final-estimate` 目录、合并进 `estimate_10000.md/json`；
+- Vivado 时序报告中的约束检查结果、WNS、TNS 和近似 Fmax 均已明确记录；
 - `protected_sources.sha256` 未变化，固件和 RTL 哈希与本次日志属于同一结果目录；
 - 不出现 CRC error、`Errors detected`、未知 seeds 或仿真超时。
 
@@ -126,8 +167,9 @@ SSH、共享仓库路径和 Vivado 自动探测：
 ```
 
 `check` 必须打印 Windows 侧的仓库路径、Vivado 可执行文件和版本，并以
-0 退出。连通后，硬件优化轮次先做 RTL 综合；只对准备保留的候选版做完整
-布局布线：
+0 退出。连通后，可以用 `build synth` 做修改过程中的快速检查，但它不能代替
+轮次时序记录。基线、每个优化轮次（包括失败或放弃的轮次）和最终版都必须执行
+一次 `build impl`：
 
 ```sh
 # 只检查 RTL 综合
@@ -153,15 +195,19 @@ products。因此应先确认当前 RT-Thread 固件已生成，不要使用其�
 ./scripts/vivado-host build bitstream
 ```
 
-实现完成后，Windows 和 Ubuntu 通过共享目录看到同一份结果，可在 Ubuntu
-中直接把 timing summary 合并到 estimate 报告：
+实现完成后，Windows 和 Ubuntu 通过共享目录看到同一份结果。必须先把 timing
+summary 复制到当前 tag 的结果目录，再从该副本合并到 estimate 报告。以下以
+`opt01` 为例：
 
 ```sh
+cp vivado/digital_twin.runs/impl_1/top_timing_summary_routed.rpt \
+  coremark-perf/results/opt01-estimate/top_timing_summary_routed.rpt
 python3 coremark-perf/tools/analyze_coremark_run.py \
   coremark-perf/results/opt01-estimate \
-  --timing-report vivado/digital_twin.runs/impl_1/top_timing_summary_routed.rpt
+  --timing-report coremark-perf/results/opt01-estimate/top_timing_summary_routed.rpt
 ```
 
-分析器给出的 Fmax 是基于目标周期和 WNS 的近似值。最终频率仍以实现后 timing
-summary、时钟约束和 route status 为准；不要编辑或提交 `.runs`、`.cache`、
-`.gen`、`.sim` 中的生成物。
+每轮至少记录时序约束是否满足、WNS、TNS 和近似 Fmax，并确认报告对应本轮的
+RTL/固件。分析器给出的 Fmax 是基于目标周期和 WNS 的近似值。最终频率仍以
+实现后 timing summary、时钟约束和 route status 为准；不要编辑或提交
+`.runs`、`.cache`、`.gen`、`.sim` 中的生成物。
