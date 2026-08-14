@@ -21,7 +21,7 @@ usage() {
         '  ./coremark-perf/run_coremark_verilator.sh stage    [--tag TAG] [NAME=VALUE ...]' \
         '  ./coremark-perf/run_coremark_verilator.sh full     [--tag TAG] [NAME=VALUE ...]' \
         '' \
-        'estimate=一次2次运行，以1/2观察点外推10000次；quick=1次；stage=16次；full=实跑10000次。' \
+        'estimate=一次16次运行，以8/16观察点外推10000次；quick=1次；stage=64次；full=实跑10000次。' \
         'NAME=VALUE 传给 CPU-only Makefile；CROSS 请用环境变量设置。'
 }
 
@@ -39,11 +39,11 @@ shift
 
 case "$mode" in
     estimate)
-        iterations=2
-        snapshot_low=1
-        snapshot_high=2
+        iterations=16
+        snapshot_low=8
+        snapshot_high=16
         require_valid=0
-        default_stop_ns=30000000
+        default_stop_ns=100000000
         ;;
     quick)
         iterations=1
@@ -53,11 +53,11 @@ case "$mode" in
         default_stop_ns=25000000
         ;;
     stage)
-        iterations=16
-        snapshot_low=8
-        snapshot_high=16
+        iterations=64
+        snapshot_low=32
+        snapshot_high=64
         require_valid=0
-        default_stop_ns=100000000
+        default_stop_ns=300000000
         ;;
     full)
         iterations=$TARGET_ITERATIONS

@@ -100,6 +100,7 @@ module tb_cpu_only;
     longint unsigned cnt_retired = 64'd0;
     longint unsigned crc_completed_rounds = 64'd0;
     longint unsigned coremark_bench_entries = 64'd0;
+    logic coremark_entry_retire_d = 1'b0;
     localparam logic [31:0] CRC_ROUND_DONE_PC = 32'h8000_066c;
     localparam logic [31:0] COREMARK_ENTRY_PC = `SIM_COREMARK_ENTRY_PC;
     localparam int unsigned COREMARK_ITERATIONS = `SIM_COREMARK_ITERATIONS;
@@ -115,6 +116,11 @@ module tb_cpu_only;
     localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
     localparam [31:0]         FAIL_LED         = `SIM_FAIL_LED;
     localparam bit            TRACE_ENABLED    = `SIM_TRACE;
+`ifdef COREMARK_PERF
+    wire coremark_entry_retire =
+        (dut.WB_retire_valid0 && dut.WB_pcadd4 == COREMARK_ENTRY_PC + 4) ||
+        (dut.WB_retire_valid1 && dut.WB_S1_pcadd4 == COREMARK_ENTRY_PC + 4);
+`endif
 `ifdef COREMARK_VERIFY
     /* 输出加速到 1 MHz；输入任务仍按 shell 可消费的 1.1 ms 字节间隔发送。 */
     localparam integer SIM_UART_BAUD = 1000000;
@@ -960,6 +966,7 @@ module tb_cpu_only;
         if (rst) begin
             crc_completed_rounds <= 64'd0;
             coremark_bench_entries <= 64'd0;
+            coremark_entry_retire_d <= 1'b0;
         end else begin
             if ((dut.EX_valid && dut.EX_pc == CRC_ROUND_DONE_PC) ||
                 (dut.EX_S1_valid && dut.EX_S1_pc == CRC_ROUND_DONE_PC)) begin
@@ -975,8 +982,9 @@ module tb_cpu_only;
                 $display("[COREMARK-VERIFY] heartbeat cycles=%0d pc=0x%08X qlen=%0d",
                          cycles, irom_addr, uart_cap_qlen);
             end
-            if ((dut.EX_valid && dut.EX_pc == COREMARK_ENTRY_PC) ||
-                (dut.EX_S1_valid && dut.EX_S1_pc == COREMARK_ENTRY_PC)) begin
+            /* 只在函数入口指令首次退休时计数。EX 会在前端/执行停顿期间保持
+             * valid 和 PC，按 EX 电平计数会把一次调用误算成多次。 */
+            if (coremark_entry_retire && !coremark_entry_retire_d) begin
                 coremark_bench_entries <= coremark_bench_entries + 1;
                 /* 每次 CoreMark 迭代调用 core_bench_list 两次；第二次入口是
                  * 可跨版本稳定识别、且相邻采样间严格相差完整迭代的观察点。 */
@@ -986,6 +994,7 @@ module tb_cpu_only;
                     print_coremark_snapshot((coremark_bench_entries + 1) >> 1);
                 end
             end
+            coremark_entry_retire_d <= coremark_entry_retire;
 `endif
             cycles <= cycles + 1;
             cnt_writeback <= cnt_writeback +

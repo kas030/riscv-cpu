@@ -11,6 +11,7 @@ from pathlib import Path
 
 TARGET_ITERATIONS = 10_000
 FIXED_TEST = "rt-thread/coremark-2k-performance"
+COREMARK_TICKS_PER_SECOND = 1_000
 INTEGER_METRICS = {
     "cnt_ms": "cnt_ms",
     "cycles": "cycles",
@@ -102,6 +103,19 @@ def parse_log(path: Path, iterations: int) -> dict[str, object]:
     if not freq:
         raise ValueError(f"{path}: missing cpu_freq_mhz")
     result["cpu_freq_mhz"] = float(freq[-1])
+    total_ticks = re.findall(
+        r"^\s*Total ticks\s*:\s*(\d+)\s*$", text, re.MULTILINE
+    )
+    total_time = re.findall(
+        r"^\s*Total time \(secs\)\s*:\s*([0-9.]+)\s*$", text, re.MULTILINE
+    )
+    if not total_ticks or not total_time:
+        raise ValueError(f"{path}: missing CoreMark Total ticks/time")
+    result["coremark_total_ticks"] = int(total_ticks[-1])
+    result["coremark_total_time_sec"] = float(total_time[-1])
+    expected_time = int(total_ticks[-1]) / COREMARK_TICKS_PER_SECOND
+    if abs(float(total_time[-1]) - expected_time) > 0.5 / COREMARK_TICKS_PER_SECOND:
+        raise ValueError(f"{path}: inconsistent CoreMark Total ticks/time")
     return result
 
 
@@ -174,9 +188,45 @@ def main() -> int:
     freq_mhz = float(final["cpu_freq_mhz"])
     steady_cycles = per_iteration["cycles"]
     steady_retired = per_iteration["retired_inst"]
+    if steady_cycles <= 0 or steady_retired <= 0 or per_iteration["bram_loads"] <= 0:
+        raise ValueError("snapshot deltas must contain positive work")
+
+    tick_ms = 1000.0 / COREMARK_TICKS_PER_SECOND
+    source_steady_time_ms = (
+        source_iterations * steady_cycles / (freq_mhz * 1000.0)
+    )
+    coremark_counter_time_ms = float(final["coremark_total_ticks"]) * tick_ms
+    timer_error_ms = source_steady_time_ms - coremark_counter_time_ms
+    timer_error_pct = 100.0 * timer_error_ms / source_steady_time_ms
+    # CoreMark reads a 1 ms free-running counter at each end of the timed section.
+    # The difference may differ from the exact elapsed time by less than one tick.
+    # Two ticks leave margin for the few instructions outside the repeated body.
+    timer_tolerance_ms = max(2.0 * tick_ms, 0.02 * source_steady_time_ms)
+    if source_iterations >= 8 and abs(timer_error_ms) > timer_tolerance_ms:
+        raise ValueError(
+            "snapshot/CoreMark timer mismatch: "
+            f"{source_steady_time_ms:.3f} ms from snapshots versus "
+            f"{coremark_counter_time_ms:.3f} ms from Total ticks "
+            f"(allowed {timer_tolerance_ms:.3f} ms); snapshot detection is unreliable"
+        )
+
+    counter_scale = TARGET_ITERATIONS / source_iterations
     derived: dict[str, float] = {
         "coremark_iterations_per_sec": freq_mhz * 1_000_000.0 / steady_cycles,
         "benchmark_time_ms": TARGET_ITERATIONS * steady_cycles / (freq_mhz * 1000.0),
+        "source_steady_time_ms": source_steady_time_ms,
+        "coremark_counter_time_ms": coremark_counter_time_ms,
+        "snapshot_timer_error_ms": timer_error_ms,
+        "snapshot_timer_error_pct": timer_error_pct,
+        "counter_extrapolated_time_ms": coremark_counter_time_ms * counter_scale,
+        "counter_extrapolated_lower_ms": max(
+            0.0, coremark_counter_time_ms - tick_ms
+        )
+        * counter_scale,
+        "counter_extrapolated_upper_ms": (
+            coremark_counter_time_ms + tick_ms
+        )
+        * counter_scale,
         "steady_cpi": steady_cycles / steady_retired,
         "steady_mips": freq_mhz * steady_retired / steady_cycles,
         "steady_l0_hit_rate_pct": (
@@ -206,6 +256,7 @@ def main() -> int:
         actual["cpi"] = actual["cycles"] / actual["retired_inst"]
         actual["mips"] = freq_mhz * actual["retired_inst"] / actual["cycles"]
         actual["end_to_end_ms"] = actual["cycles"] / (freq_mhz * 1000.0)
+        actual["coremark_reported_time_ms"] = coremark_counter_time_ms
         output["actual_10000"] = actual
         report_stem = "actual_10000"
         title = "CoreMark 10000 次正式回归"
@@ -245,12 +296,29 @@ def main() -> int:
         ("稳态 CPI", f"{derived['steady_cpi']:.4f}"),
         ("CoreMark iterations/s", f"{derived['coremark_iterations_per_sec']:.3f}"),
         ("10000 次稳态时间", f"{derived['benchmark_time_ms']:,.3f} ms"),
+        (
+            f"{source_iterations} 次 CoreMark 计时",
+            f"{derived['coremark_counter_time_ms']:,.3f} ms",
+        ),
+        (
+            "观察点/计时误差",
+            f"{derived['snapshot_timer_error_ms']:+,.3f} ms "
+            f"({derived['snapshot_timer_error_pct']:+.3f}%)",
+        ),
+        (
+            "计时器外推区间",
+            f"{derived['counter_extrapolated_lower_ms']:,.3f}–"
+            f"{derived['counter_extrapolated_upper_ms']:,.3f} ms",
+        ),
         ("稳态 L0 命中率", f"{derived['steady_l0_hit_rate_pct']:.3f}%"),
     ]
     if mode == "full":
         total = output["actual_10000"]
         assert isinstance(total, dict)
         rows.append(("实跑端到端 cycles", fmt_int(float(total["cycles"]))))
+        rows.append(
+            ("CoreMark 实际计时", f"{float(total['coremark_reported_time_ms']):,.3f} ms")
+        )
         rows.append(("实跑端到端时间", f"{float(total['end_to_end_ms']):,.3f} ms"))
     else:
         total = output["estimated_10000"]

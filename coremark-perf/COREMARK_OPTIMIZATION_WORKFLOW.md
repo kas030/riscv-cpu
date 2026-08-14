@@ -24,13 +24,13 @@ COUNTER 毫秒值由 CPU 周期分频得到。CoreMark timed section 不访问 U
 ./coremark-perf/run_coremark_verilator.sh estimate --tag baseline
 ```
 
-一次运行完成 2 次迭代，日志必须包含：
+一次运行完成 16 次迭代，日志必须包含：
 
 ```text
->>> [COREMARK_SNAPSHOT] iterations=1
->>> [COREMARK_SNAPSHOT] iterations=2
+>>> [COREMARK_SNAPSHOT] iterations=8
+>>> [COREMARK_SNAPSHOT] iterations=16
 >>> [COREMARK_CRC] crclist=e714 crcmatrix=1fd7 crcstate=8e3a
->>> [COREMARK_RUN] iterations=2 validity=short-run
+>>> [COREMARK_RUN] iterations=16 validity=short-run
 >>> [PASS]
 ```
 
@@ -43,7 +43,7 @@ coremark-perf/results/baseline-estimate/
 │   ├── rtthread.irom.coe
 │   ├── rtthread.bram.coe
 │   └── rtthread.disasm
-├── verilator_i2.log
+├── verilator_i16.log
 ├── estimate_10000.json
 ├── estimate_10000.md
 ├── protected_sources.sha256
@@ -58,9 +58,14 @@ coremark-perf/results/baseline-estimate/
 
 ## 3. 外推解释
 
-第 N 个观察点位于第 N 次迭代的第二次 `core_bench_list` 调用入口。虽然它不是
-循环末尾，但第 1 与第 2 个同相位观察点之间恰好包含 1 个完整迭代。分析器按
-差值计算每次迭代增量，再从 2 次运行的最终累计统计增加 9998 个增量。
+第 N 个观察点位于第 N 次迭代的第二次 `core_bench_list` 调用入口。入口按 WB
+退休事件识别，避免流水线停顿使 EX valid/PC 保持时重复计数。虽然观察点不是
+循环末尾，但第 8 与第 16 个同相位观察点之间恰好包含 8 个完整迭代。分析器按
+差值计算每次迭代增量，再从 16 次运行的最终累计统计增加 9984 个增量。
+
+分析器还把观察点得到的 `cycles/iteration × 运行次数` 与 CoreMark 自身的
+`Total ticks` 对照。考虑 COUNTER 的 1 ms 分辨率和 timed section 边界上的少量
+指令后仍不一致时，报告会失败，防止错误观察点产生看似合理的外推结果。
 
 报告中的两个时间含义不同：
 
@@ -70,7 +75,8 @@ coremark-perf/results/baseline-estimate/
   shell 的固定开销，适合估算整次 CPU-only 仿真。
 
 外推假设每次迭代进入稳定的确定性路径。新增优化若包含预热、自适应状态、周期性
-行为或饱和计数器，必须用 `stage` 和 `full` 复核，不能只比较 1/2 斜率。
+行为或饱和计数器，必须用 64 次、32/64 观察点的 `stage` 和 `full` 复核，不能
+只比较日常斜率。
 
 ## 4. 每轮优化
 
