@@ -30,7 +30,7 @@ ARCH_FLAGS := -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medany \
 	-msmall-data-limit=0 -mno-relax
 OPT := -Os -ffunction-sections -fdata-sections -ffreestanding
 CFLAGS := $(ARCH_FLAGS) $(OPT) -I. -I$(KERNEL)/include -I$(FINSH) -MMD -MP
-LDFLAGS := -nostdlib -nostartfiles -static \
+LDFLAGS := $(ARCH_FLAGS) -nostdlib -nostartfiles -static \
 	-Wl,--gc-sections -Wl,--build-id=none -Wl,--no-relax -T linker.ld
 
 # ---- 演示运行时长（毫秒），改值会触发 main.o 重编（见 demo_run_ms.txt 规则）
@@ -44,6 +44,12 @@ COREMARK_VERIFY ?= 0
 # 200 MHz 下实测约 430 iterations/s；5000 次约 11--12 秒，满足官方
 # “正式成绩至少运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
 COREMARK_ITERATIONS ?= 5000
+# 性能开发专用：在 RT-Thread 调度器启动后由独立线程直接调用移植入口，
+# 省去 CPU-only 仿真中的逐字节 UART 命令注入；正式固件默认关闭。
+COREMARK_AUTORUN ?= 0
+COREMARK_RUN_ITERATIONS ?= $(COREMARK_ITERATIONS)
+COREMARK_AUTORUN_FLAGS := $(if $(filter 1,$(COREMARK_AUTORUN)),\
+	-DCOREMARK_PERF_AUTORUN=1 -DCOREMARK_RUN_ITERATIONS=$(COREMARK_RUN_ITERATIONS),)
 
 # ---- 编译对象：内核 11 个 + libcpu common 4 个 + bsp 4 个 + finsh 3 个
 KSRC := clock cpu idle ipc irq kservice mem object scheduler thread timer
@@ -102,6 +108,10 @@ $(BUILD)/coremark_config.txt: FORCE | $(BUILD)
 	@printf '%s\n' '$(CORE_CFLAGS)' > $@.tmp \
 		&& (cmp -s $@ $@.tmp || mv $@.tmp $@) && rm -f $@.tmp
 
+$(BUILD)/coremark_autorun_config.txt: FORCE | $(BUILD)
+	@printf '%s\n' '$(COREMARK_AUTORUN_FLAGS)' > $@.tmp \
+		&& (cmp -s $@ $@.tmp || mv $@.tmp $@) && rm -f $@.tmp
+
 $(BUILD)/cm_list.o: coremark/core_list_join.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
 	$(CC) $(CORE_CFLAGS) -c $< -o $@
 
@@ -120,16 +130,16 @@ $(BUILD)/cm_util.o: coremark/core_util.c coremark/coremark.h coremark/core_portm
 $(BUILD)/cm_portme.o: coremark/core_portme.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
 	$(CC) $(CORE_CFLAGS) -c $< -o $@
 
-$(BUILD)/cm_cmd.o: coremark_cmd.c rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_CFLAGS) -c $< -o $@
+$(BUILD)/cm_cmd.o: coremark_cmd.c rtconfig.h $(BUILD)/coremark_config.txt $(BUILD)/coremark_autorun_config.txt | $(BUILD)
+	$(CC) $(CORE_CFLAGS) $(COREMARK_AUTORUN_FLAGS) -c $< -o $@
 
 # DEMO_RUN_MS 变化时强制重编 main.o（内容不变则不动时间戳）
 $(BUILD)/demo_run_ms.txt: FORCE | $(BUILD)
 	@mkdir -p $(BUILD) && printf '%s' '$(DEMO_RUN_MS)' > $@.tmp \
 		&& (cmp -s $@ $@.tmp || mv $@.tmp $@) && rm -f $@.tmp
 
-$(BUILD)/main.o: main.c board.h rtconfig.h $(BUILD)/demo_run_ms.txt | $(BUILD)
-	$(CC) $(CFLAGS) -DDEMO_RUN_MS=$(DEMO_RUN_MS) -c $< -o $@
+$(BUILD)/main.o: main.c board.h rtconfig.h $(BUILD)/demo_run_ms.txt $(BUILD)/coremark_autorun_config.txt | $(BUILD)
+	$(CC) $(CFLAGS) $(COREMARK_AUTORUN_FLAGS) -DDEMO_RUN_MS=$(DEMO_RUN_MS) -c $< -o $@
 
 $(BUILD)/rtthread.elf: $(OBJS) linker.ld
 	$(CC) $(LDFLAGS) -o $@ $(OBJS)

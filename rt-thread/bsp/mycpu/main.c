@@ -23,6 +23,10 @@
 #define DEMO_RUN_MS 3000
 #endif
 
+#ifdef COREMARK_PERF_AUTORUN
+void coremark_perf_autorun_init(void);
+#endif
+
 static void finish_entry(void *param)
 {
     rt_thread_mdelay(DEMO_RUN_MS);
@@ -37,6 +41,10 @@ static void finish_entry(void *param)
 void rt_application_init(void)
 {
     rt_thread_t fin;
+
+#ifdef COREMARK_PERF_AUTORUN
+    coremark_perf_autorun_init();
+#endif
 
     fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
     if (fin != RT_NULL)

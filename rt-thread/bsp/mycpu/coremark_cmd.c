@@ -13,3 +13,28 @@
 int coremark(int argc, char **argv);
 
 MSH_CMD_EXPORT(coremark, run official CoreMark 1.0 benchmark);
+
+#ifdef COREMARK_PERF_AUTORUN
+#define CM_PERF_STRINGIFY_INNER(value) #value
+#define CM_PERF_STRINGIFY(value) CM_PERF_STRINGIFY_INNER(value)
+
+static void coremark_perf_entry(void *parameter)
+{
+    char *argv[] = {
+        "coremark", "0", "0", "0x66", CM_PERF_STRINGIFY(COREMARK_RUN_ITERATIONS)
+    };
+
+    (void)parameter;
+    (void)coremark(5, argv);
+}
+
+void coremark_perf_autorun_init(void)
+{
+    rt_thread_t thread;
+
+    thread = rt_thread_create("cmperf", coremark_perf_entry, RT_NULL,
+                              8192, 11, 20);
+    if (thread != RT_NULL)
+        rt_thread_startup(thread);
+}
+#endif
