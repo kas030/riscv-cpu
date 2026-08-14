@@ -67,7 +67,6 @@ CPU_SRCS := \
   $(SRC_CONTROL)/csr_file.sv \
   $(SRC_CONTROL)/main_ctrl.sv \
   $(SRC_CONTROL)/imm_gen.sv \
-  $(SRC_CONTROL)/npc_calc.sv \
   $(SRC_CONTROL)/mycpu_decoder.sv \
   $(SRC_CONTROL)/mycpu_redirect_ctrl.sv \
   $(SRC_CORE)/mycpu.sv \
