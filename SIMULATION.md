@@ -26,7 +26,7 @@ IROM_COE := ../sim/coe/mext/irom-v2.coe
 BRAM_COE := ../sim/coe/mext/dram.coe
 EXPECTED_LED := 078b7323
 TRACE := 0
-CPU_FREQ_MHZ := 240.0
+CPU_FREQ_MHZ := 200.0
 STOP_NS := 400000000
 PROGRESS_NS := 10000000
 ```
@@ -39,7 +39,7 @@ EXPECTED_LED :=
 
 `STOP_NS` 是仿真停止时间，单位是 ns。`400000000` 表示 400 ms。
 
-`CPU_FREQ_MHZ` 是 CPU-only testbench 直接生成的 CPU 主频，单位 MHz。默认 `240.0`，即 CPU 时钟周期约 `4.167 ns`。这个流程不实例化 Vivado PLL，因此修改该值会改变 `tb_cpu_only.sv` 里驱动 `mycpu.cpu_clk` 的仿真时钟。
+`CPU_FREQ_MHZ` 是 CPU-only testbench 直接生成的 CPU 主频，单位 MHz。默认 `200.0`，即 CPU 时钟周期为 `5 ns`，与当前板级 CPU 时钟一致。这个流程不实例化 Vivado PLL，因此修改该值会改变 `tb_cpu_only.sv` 里驱动 `mycpu.cpu_clk` 的仿真时钟。
 
 `PROGRESS_NS` 是终端进度打印间隔，单位也是 ns。`10000000` 表示每 10 ms 仿真时间打印一次进度；设为 `0` 则关闭周期性进度输出。仿真结束时进度行会被清空，不会留在最终报告前。
 
