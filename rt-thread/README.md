@@ -73,12 +73,18 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 
 ## 官方 CoreMark 1.0
 
-`bsp/mycpu/coremark/` 中的五个核心算法源文件和 MD5 清单来自 EEMBC
-官方 CoreMark 仓库，基准算法保持原样。本平台的计时直接读取 COUNTER
-毫秒计数，避免 CoreMark 忙跑期间 idle hook 不执行而导致 RT-Thread tick
-停止。停止计时后，`0x80200070`--`0x80200080` 的最小化 MMIO 单精度 FPU
-仅负责 `ticks / 1000` 和 `iterations / seconds` 换算；不向 CoreMark 主循环
-加入浮点指令，也不要求 CPU 实现 RV32F 指令集。
+`bsp/mycpu/coremark/` 的上游源文件和 `coremark.md5` 来自 EEMBC 官方
+CoreMark 仓库。按该清单核对，`core_list_join.c`、`core_matrix.c`、
+`core_state.c` 和 `core_util.c` 保持上游内容；`core_main.c` 与 `coremark.h`
+为适配本平台的单精度计时换算和无 libc 结果输出做过修改，因此不会通过原始
+MD5 校验。相关修改位于自动迭代次数估算、计时结果换算和报告输出路径，不改变
+计时区内的 `iterate` 调用或三类工作负载算法。
+
+本平台的计时直接读取 COUNTER 毫秒计数，避免 CoreMark 忙跑期间 idle hook
+不执行而导致 RT-Thread tick 停止。停止计时后，`0x80200070`--`0x80200080`
+的最小化 MMIO 单精度 FPU 仅负责 `ticks / 1000` 和
+`iterations / seconds` 换算；不向 CoreMark 主循环加入浮点指令，也不要求
+CPU 实现 RV32F 指令集。
 
 CoreMark 通过 finsh 命令运行：
 

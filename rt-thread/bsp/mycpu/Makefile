@@ -90,8 +90,9 @@ $(BUILD)/finsh_cmd.o: $(FINSH)/cmd.c rtconfig.h | $(BUILD)
 $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# ---- 官方 CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
-#      把 core_main.c 的 main 重命名为 msh 命令入口，官方源不做任何修改）
+# ---- CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
+#      把 core_main.c 的 main 重命名为 msh 命令入口。core_main.c/coremark.h
+#      另含单精度计时与无 libc 输出适配，差异说明见 rt-thread/README.md）
 CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
 	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) \
 	-DHAS_FLOAT=1 -DHARDWARE_FPU_SINGLE=1
