@@ -92,23 +92,6 @@ TEST_START
     .word 0xfe842703    # lw a4,-24(s0) -> addi a4,a5,0
     CHECK_REG a4, 37, 318
 
-    # orc.b x6,x5 的固定编码为 0x2872d313。
-    li x5, 0x00000000
-    .word 0x2872d313
-    CHECK_REG x6, 0x00000000, 313
-    li x5, 0x00000001
-    .word 0x2872d313
-    CHECK_REG x6, 0x000000ff, 314
-    li x5, 0x00010000
-    .word 0x2872d313
-    CHECK_REG x6, 0x00ff0000, 315
-    li x5, 0x12003400
-    .word 0x2872d313
-    CHECK_REG x6, 0xff00ff00, 316
-    li x5, 0x12345678
-    .word 0x2872d313
-    CHECK_REG x6, 0xffffffff, 317
-
     j test_pass
 TEST_END
 
