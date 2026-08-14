@@ -41,9 +41,9 @@ STOP_NS ?= 4000000000
 PROGRESS_NS ?= 0
 # 仿真验收开关：1 时向 UART 注入 coremark 命令并自动校验 (tb_cpu_only.sv)
 COREMARK_VERIFY ?= 0
-# 200 MHz 下实测约 430 iterations/s；5000 次约 11--12 秒，满足官方
-# “正式成绩至少运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
-COREMARK_ITERATIONS ?= 5000
+# 200 MHz 下 10000 次约 18--19 秒，满足官方“正式成绩至少
+# 运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
+COREMARK_ITERATIONS ?= 10000
 # 性能开发专用：在 RT-Thread 调度器启动后由独立线程直接调用移植入口，
 # 省去 CPU-only 仿真中的逐字节 UART 命令注入；正式固件默认关闭。
 COREMARK_AUTORUN ?= 0

@@ -92,13 +92,13 @@ CoreMark 通过 finsh 命令运行：
 msh >coremark
 ```
 
-裸命令使用标准性能种子 `0,0,0x66`、总数据量 2000 字节和 5000 次迭代；
-200 MHz 配置下预计约 11--12 秒，满足官方结果至少运行 10 秒的规则。输出应包含
+裸命令使用标准性能种子 `0,0,0x66`、总数据量 2000 字节和 10000 次迭代；
+200 MHz 配置下预计约 18--19 秒，满足官方结果至少运行 10 秒的规则。输出应包含
 `Correct operation validated`、三项 CRC `e714 / 1fd7 / 8e3a` 和 CoreMark 分数。
 官方验证种子可另行运行：
 
 ```text
-msh >coremark 0x3415 0x3415 0x66 5000
+msh >coremark 0x3415 0x3415 0x66 10000
 ```
 
 此时三项 CRC 应为 `e3c1 / 0747 / 8d84`。命令行第 4 个参数可覆盖迭代数，
@@ -108,7 +108,8 @@ msh >coremark 0x3415 0x3415 0x66 5000
 
 Makefile 默认使用 `riscv32-unknown-elf-` 前缀，也可通过 `CROSS` 或
 `CC`/`OBJCOPY`/`SIZE` 覆盖为其他支持 RV32IM+Zicsr 的 GCC 工具链。本仓库当前
-跟踪的固件 COE 使用 Vivado 2025.2.1 自带 GCC 13.4.0 生成。
+跟踪的固件 COE 所用编译器版本以 CoreMark 输出中的
+`Compiler version` 为准。
 
 ```sh
 cd bsp/mycpu

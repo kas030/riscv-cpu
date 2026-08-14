@@ -43,14 +43,28 @@ if {[llength $ips] != 0} {
         if {$upgrade_err ne ""} {
             puts "WARN: upgrade_ip returned: $upgrade_err"
         }
-        reset_target all $ip
         if {[get_property NAME $ip] in {BRAM IROM}} {
+            if {[get_property NAME $ip] eq "IROM"} {
+                set memory_coe [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]
+            } else {
+                set memory_coe [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]
+            }
+            set memory_coe [string map {\\ /} [file normalize $memory_coe]]
+            if {![file exists $memory_coe]} {
+                puts "ERROR: initialization file not found: $memory_coe"
+                close_project
+                exit 1
+            }
+            set_property CONFIG.Load_Init_File true $ip
+            set_property CONFIG.Coe_File $memory_coe $ip
             set memory_xci [get_files -quiet -all *[get_property NAME $ip].xci]
             if {[llength $memory_xci] != 0} {
                 set_property GENERATE_SYNTH_CHECKPOINT false $memory_xci
                 puts "INFO: [get_property NAME $ip] uses global synthesis to inherit the top-level clock"
             }
+            puts "INFO: [get_property NAME $ip] initialization=$memory_coe"
         }
+        reset_target all $ip
         generate_target all $ip
     }
     export_ip_user_files -of_objects $ips -no_script -sync -force -quiet

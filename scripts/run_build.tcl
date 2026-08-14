@@ -86,6 +86,30 @@ proc run_and_wait {run_name args} {
     fail_if_run_failed $run_name
 }
 
+proc configure_memory_init {ip_name coe_path} {
+    set normalized_coe [string map {\\ /} [file normalize $coe_path]]
+    if {![file exists $normalized_coe]} {
+        puts "ERROR: $ip_name initialization file not found: $normalized_coe"
+        exit 1
+    }
+
+    set memory_ip [get_ips -quiet $ip_name]
+    if {[llength $memory_ip] != 1} {
+        puts "ERROR: expected exactly one $ip_name IP, found [llength $memory_ip]"
+        exit 1
+    }
+
+    set_property CONFIG.Load_Init_File true $memory_ip
+    set_property CONFIG.Coe_File $normalized_coe $memory_ip
+    set memory_xci [get_files -quiet -all *${ip_name}.xci]
+    if {[llength $memory_xci] != 0} {
+        set_property GENERATE_SYNTH_CHECKPOINT false $memory_xci
+    }
+    reset_target all $memory_ip
+    generate_target all $memory_ip
+    puts "INFO: $ip_name initialization refreshed from $normalized_coe"
+}
+
 if {![file exists $project_path]} {
     puts "INFO: project not found; recreating it first"
     source [file join $script_dir create_project.tcl]
@@ -93,6 +117,13 @@ if {![file exists $project_path]} {
 } elseif {[llength [current_project -quiet]] == 0} {
     open_project $project_path
 }
+
+configure_memory_init IROM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]
+configure_memory_init BRAM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]
+set memory_ips [concat [get_ips -quiet IROM] [get_ips -quiet BRAM]]
+export_ip_user_files -of_objects $memory_ips -no_script -sync -force -quiet
 
 update_compile_order -fileset sources_1
 
