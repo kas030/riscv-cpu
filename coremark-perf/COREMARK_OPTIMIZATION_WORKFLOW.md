@@ -139,7 +139,8 @@ python3 coremark-perf/tools/analyze_coremark_run.py \
 - 已对 `final` 对应 RTL 重新执行 `build impl`，并将该次 timing summary 保存到 `final-estimate` 目录、合并进 `estimate_10000.md/json`；
 - Vivado 时序报告中的约束检查结果、WNS、TNS 和近似 Fmax 均已明确记录；
 - `protected_sources.sha256` 未变化，固件和 RTL 哈希与本次日志属于同一结果目录；
-- 不出现 CRC error、`Errors detected`、未知 seeds 或仿真超时。
+- 不出现算法 CRC error、未知 seeds 或仿真超时；短测固定会触发的十秒规则错误及其
+  `Errors detected` 汇总不作为失败。
 
 `estimate_10000.md/json` 保存最终外推结果。报告必须明确标记为短测外推，不宣称为 10000 次实跑或官方完整 CoreMark 成绩。
 

@@ -342,8 +342,16 @@ def main() -> int:
         timing = output["vivado_timing"]
         assert isinstance(timing, dict)
         md.extend(["", "## Vivado 时序", "", f"- 报告：`{timing['path']}`"])
+        md.append(
+            "- 时序约束："
+            + ("满足" if bool(timing["constraints_met"]) else "未满足")
+        )
         if "wns_ns" in timing:
             md.append(f"- WNS：{float(timing['wns_ns']):.3f} ns")
+        if "tns_ns" in timing:
+            md.append(f"- TNS：{float(timing['tns_ns']):.3f} ns")
+        if "target_period_ns" in timing:
+            md.append(f"- 目标周期：{float(timing['target_period_ns']):.3f} ns")
         if "estimated_fmax_mhz" in timing:
             md.append(f"- 近似 Fmax：{float(timing['estimated_fmax_mhz']):.3f} MHz")
     if mode != "full":
@@ -351,7 +359,7 @@ def main() -> int:
             [
                 "",
                 "> 短测通过三项官方 CRC，但因不足 10 秒不是正式 CoreMark 成绩；",
-                "> 外推仅用于 RTL 优化排序，最终结论必须由 `full` 回归确认。",
+                "> 本报告是 16 次短测外推，不宣称为 10000 次实跑或官方 CoreMark 成绩。",
             ]
         )
     md.append("")

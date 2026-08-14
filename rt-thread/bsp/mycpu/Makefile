@@ -29,6 +29,7 @@ BUILD := build
 ARCH_FLAGS := -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medany \
 	-msmall-data-limit=0 -mno-relax
 OPT := -Os -ffunction-sections -fdata-sections -ffreestanding
+CORE_OPT := -O3 -ffunction-sections -fdata-sections -ffreestanding
 CFLAGS := $(ARCH_FLAGS) $(OPT) -I. -I$(KERNEL)/include -I$(FINSH) -MMD -MP
 LDFLAGS := $(ARCH_FLAGS) -nostdlib -nostartfiles -static \
 	-Wl,--gc-sections -Wl,--build-id=none -Wl,--no-relax -T linker.ld
@@ -41,7 +42,7 @@ STOP_NS ?= 4000000000
 PROGRESS_NS ?= 0
 # 仿真验收开关：1 时向 UART 注入 coremark 命令并自动校验 (tb_cpu_only.sv)
 COREMARK_VERIFY ?= 0
-# 200 MHz 下 10000 次约 18--19 秒，满足官方“正式成绩至少
+# 200 MHz 下 10000 次按 16 次短测外推约 16.6 秒，满足官方“正式成绩至少
 # 运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
 COREMARK_ITERATIONS ?= 10000
 # 性能开发专用：在 RT-Thread 调度器启动后由独立线程直接调用移植入口，
@@ -99,7 +100,8 @@ $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 # ---- CoreMark 统一编译参数（run rules：所有源同 flags；-Dmain=coremark
 #      把 core_main.c 的 main 重命名为 msh 命令入口。core_main.c/coremark.h
 #      另含单精度计时与无 libc 输出适配，差异说明见 rt-thread/README.md）
-CORE_CFLAGS := $(CFLAGS) -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
+CORE_CFLAGS := $(ARCH_FLAGS) $(CORE_OPT) -I. -I$(KERNEL)/include -I$(FINSH) \
+	-MMD -MP -Icoremark -Dmain=coremark -DPERFORMANCE_RUN=1 \
 	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) \
 	-DHAS_FLOAT=1 -DHARDWARE_FPU_SINGLE=1
 
