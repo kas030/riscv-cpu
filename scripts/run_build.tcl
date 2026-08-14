@@ -128,6 +128,9 @@ export_ip_user_files -of_objects $memory_ips -no_script -sync -force -quiet
 update_compile_order -fileset sources_1
 
 if {$build_mode in {synth impl bitstream}} {
+    set synth_run [get_runs synth_1]
+    set_property AUTO_INCREMENTAL_CHECKPOINT false $synth_run
+    puts "INFO: synth_1 auto_incremental=false"
     reset_run synth_1
     run_and_wait synth_1 -jobs 8
     set synth_dcp [file join $repo_root vivado digital_twin.runs synth_1 top.dcp]
@@ -137,9 +140,8 @@ if {$build_mode in {synth impl bitstream}} {
 if {$build_mode in {impl bitstream}} {
     set impl_run [get_runs impl_1]
     set_property strategy $impl_strategy $impl_run
-    set impl_auto_incremental [expr {$impl_strategy eq "Vivado Implementation Defaults"}]
-    set_property AUTO_INCREMENTAL_CHECKPOINT $impl_auto_incremental $impl_run
-    puts "INFO: impl_1 strategy=$impl_strategy auto_incremental=$impl_auto_incremental"
+    set_property AUTO_INCREMENTAL_CHECKPOINT false $impl_run
+    puts "INFO: impl_1 strategy=$impl_strategy auto_incremental=false"
     reset_run impl_1
     if {$build_mode eq "bitstream"} {
         run_and_wait impl_1 -to_step write_bitstream -jobs 8

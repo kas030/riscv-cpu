@@ -97,7 +97,8 @@ AMD/Xilinx 安装目录。Ubuntu 端还支持 `VIVADO_SSH_PORT` 和
   - 每次构建前把 IROM/BRAM 固定到 `rt-thread/bsp/mycpu/build/`
     下的 `rtthread.irom.coe` 和 `rtthread.bram.coe`，并重新生成两个
     存储 IP 的 output products，避免现有工程继续使用旧测试镜像。
-  - 日常迭代默认使用 `Vivado Implementation Defaults` 和自动增量布局。
+  - 默认使用 `Vivado Implementation Defaults`，并显式禁用综合和实现的
+    自动增量 checkpoint，避免旧网表状态影响资源映射与时序结果。
   - 阶段性候选版可显式使用高强度策略：
     `-tclargs impl Performance_NetDelay_high`。
 
