@@ -75,8 +75,10 @@ coremark-perf/results/baseline-estimate/
   shell 的固定开销，适合估算整次 CPU-only 仿真。
 
 外推假设每次迭代进入稳定的确定性路径。新增优化若包含预热、自适应状态、周期性
-行为或饱和计数器，必须用 64 次、32/64 观察点的 `stage` 和 `full` 复核，不能
-只比较日常斜率。
+行为或饱和计数器，先检查 8/16 两个观察点的增量是否稳定。日常与最终
+验收都不运行 `full`；只在斜率不稳定、优化状态无法在 16 次内收敛，或
+分析器无法证明外推一致时，才例外运行一次 `stage` 定位问题。若仍不能建立
+可靠的短测外推，应放弃或重设该优化，不用长时间仿真掩盖不稳定行为。
 
 ## 4. 每轮优化
 
@@ -87,32 +89,72 @@ coremark-perf/results/baseline-estimate/
 3. 比较 CRC、`cycles/iteration`、稳态 CPI、load-use、EX busy、L0 命中率和
    10000 次外推时间；
 4. 确认 `protected_sources.sha256` 未变化；
-5. 有明确收益后运行 `stage --tag optNN-stage`；
-6. 阶段结果稳定后运行 `full --tag optNN-full`。
+5. 确认两个观察点的增量稳定后保留该轮结果，直接进入下一轮。
+
+常规优化轮次只运行 `estimate`，不把 `stage` 当作候选版的固定步骤，也不运行
+`full`。`stage` 仅用于第 3 节所述的异常定位，不用于常规性能确认。
 
 同一 tag 会覆盖同名结果目录。需要保留历史时使用新 tag。
 
-## 5. 正式回归
+## 5. 最终高效验收
 
 ```sh
-./coremark-perf/run_coremark_verilator.sh full --tag final
+./coremark-perf/run_coremark_verilator.sh estimate --tag final
 ```
 
-正式回归只有同时满足以下条件才通过：
+最终验收仍使用 16 次短测和 10000 次外推，不运行 `full`。只有同时满足
+以下条件才通过：
 
-- 命令和输出均确认 10000 次；
-- 三项官方 CRC 完全匹配；
-- `Total time` 至少 10 秒；
-- 出现 `Correct operation validated`；
-- 不出现 CRC error、最短时间 error、`Errors detected` 或未知 seeds；
-- 返回 RT-Thread `msh >`。
+- 日志包含第 8 和第 16 次观察点；
+- 三项 CRC 完全匹配 `e714 / 1fd7 / 8e3a`；
+- 出现 `iterations=16 validity=short-run` 和 `[PASS]`；
+- 观察点周期与 CoreMark `Total ticks` 的一致性检查通过；
+- `protected_sources.sha256` 未变化，固件和 RTL 哈希与本次日志属于同一结果目录；
+- 不出现 CRC error、`Errors detected`、未知 seeds 或仿真超时。
 
-`actual_10000.md/json` 保存实跑结果。短测外推不得作为正式成绩替代它。
+`estimate_10000.md/json` 保存最终外推结果。报告必须明确标记为短测
+外推，不宣称为 10000 次实跑或官方完整 CoreMark 成绩。
 
 ## 6. Vivado 时序
 
-硬件优化后需用当前 RTL 重新执行 `vivado/digital_twin.xpr` 的综合和实现。完成后
-可把 timing summary 合并到任意 estimate/full 报告：
+当前 Ubuntu/VMware 开发环境已配置从 `scripts/vivado-host` 通过 SSH 调用
+Windows 宿主机上的 Vivado，无需在 Ubuntu 内另行安装 Vivado。首先检查
+SSH、共享仓库路径和 Vivado 自动探测：
+
+```sh
+./scripts/vivado-host check
+```
+
+`check` 必须打印 Windows 侧的仓库路径、Vivado 可执行文件和版本，并以
+0 退出。连通后，硬件优化轮次先做 RTL 综合；只对准备保留的候选版做完整
+布局布线：
+
+```sh
+# 只检查 RTL 综合
+./scripts/vivado-host build synth
+
+# 重新综合并完成布局布线，生成 timing summary
+./scripts/vivado-host build impl
+```
+
+`build` 会在工程不存在时自动重建 `vivado/digital_twin.xpr`，并在每次
+构建前用 `rt-thread/bsp/mycpu/build/rtthread.irom.coe` 和
+`rt-thread/bsp/mycpu/build/rtthread.bram.coe` 刷新 IROM/BRAM output
+products。因此应先确认当前 RT-Thread 固件已生成，不要使用其他
+结果目录中的历史 COE。
+
+综合、实现和 bitstream 一律使用默认策略。不传入
+`Performance_NetDelay_high` 或其他高强度实现策略，避免在布局布线上消耗
+过多优化时间。
+
+需要下板验证时再生成 bitstream：
+
+```sh
+./scripts/vivado-host build bitstream
+```
+
+实现完成后，Windows 和 Ubuntu 通过共享目录看到同一份结果，可在 Ubuntu
+中直接把 timing summary 合并到 estimate 报告：
 
 ```sh
 python3 coremark-perf/tools/analyze_coremark_run.py \
