@@ -162,6 +162,9 @@ printf 'fixed_test=%s\nmode=%s\ntag=%s\ntarget_iterations=%s\niterations=%s\nsna
     "$FIXED_TEST" "$mode" "$tag" "$TARGET_ITERATIONS" "$iterations" \
     "$snapshot_low" "$snapshot_high" "$require_valid" "$entry_hex" "$cross" \
     > "$run_dir/run.meta"
+while IFS= read -r compile_config; do
+    printf 'compiler_%s\n' "$compile_config" >> "$run_dir/run.meta"
+done < "$BUILD_DIR/coremark_config.txt"
 for override in "${overrides[@]}"; do
     printf 'override=%s\n' "$override" >> "$run_dir/run.meta"
 done

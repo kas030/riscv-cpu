@@ -59,7 +59,8 @@ CROSS=/opt/riscv/bin/riscv32-unknown-elf- \
 ```
 
 结果写入 `coremark-perf/results/<tag>-<mode>/`，包括固件、反汇编、仿真日志、
-RTL/移植层/固件哈希以及 JSON/Markdown 指标。`results/` 默认不提交。
+RTL/移植层/固件哈希以及 JSON/Markdown 指标。`run.meta` 还会逐项记录各
+CoreMark 源文件实际采用的编译参数。`results/` 默认不提交。
 
 ## 外推方法
 
