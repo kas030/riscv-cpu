@@ -466,8 +466,8 @@ CoreMark 算法源位于 `rt-thread/bsp/mycpu/coremark/`，平台层负责计时
 | COUNTER | 50 MHz |
 | IROM / BRAM | 64 KiB / 256 KiB |
 | 处理器复位地址 | `0x8000_0000` |
-| 工具链版本 | 本次实测待补 |
-| RTL 基线 | `final_version` 分支；提交哈希在正式执行时记录 |
+| 工具链版本 | `riscv32-unknown-elf-gcc` 16.1.0（g6afcc4f6d） |
+| RTL 基线 | `final_version`，`6d49d62d18d012e00345b3d85d3d186f6ade935b` |
 
 Table: CPU-only 实验配置
 
@@ -477,7 +477,7 @@ Table: CPU-only 实验配置
 
 功能用例以自检签名和退休的 LED store 为判据。性能统计只有在相应用例功能通过后才可发布。ACT4 与 Embench-IoT 尚未完成当前平台适配和能力审查，不得写成已通过；完整 RISC-V 架构认证、形式验证和能力边界外指令也不在本报告结论范围内。
 
-本次尝试执行 `make regression`，但环境缺少 `riscv64-unknown-elf-gcc`，构建在首个 ELF 前终止。因此下文保留完整方法和待填写表格，不沿用其他提交或历史频率下的结果冒充当前分支数据。
+2026-08-15 在上述 RTL 基线执行了 CPU-only 回归。定向测试命令为 `make regression CROSS=riscv32-unknown-elf-`；固定开源白名单先用 `build_riscv_tests.py --cross riscv32-unknown-elf-` 构建，再由 `run_riscv_tests.py` 执行。两组测试均使用默认 200 MHz CPU-only 配置，原始 JSON 位于 `verification/build/`。
 
 ## 评价指标
 
@@ -503,25 +503,27 @@ L0 命中率为命中次数除以 BRAM load 请求数；没有 BRAM load 的用�
 
 | 测试 | 当前分支结果 | 周期 | 退休指令 | CPI | 主要判据 |
 | --- | --- | ---: | ---: | ---: | --- |
-| `rv32i` |  |  |  |  | LED 自检与 signature |
-| `rv32m` |  |  |  |  | 八条 RV32M 及边界值 |
-| `zicsr_trap` |  |  |  |  | CSR 状态与 trap 返回 PC |
-| `pipeline` |  |  |  |  | 双槽、前递、冲刷、CRC 融合 |
-| `memory` |  |  |  |  | BRAM/L0/MMIO/COUNTER |
-| `perf_micro` |  |  |  |  | 自检先于性能统计 |
+| `rv32i` | PASS | 287 | 158 | 1.816 | LED 自检与 signature |
+| `rv32m` | PASS | 408 | 91 | 4.484 | 八条 RV32M 及边界值 |
+| `zicsr_trap` | PASS | 185 | 106 | 1.745 | CSR 状态与 trap 返回 PC |
+| `pipeline` | PASS | 414 | 233 | 1.777 | 双槽、前递、冲刷、CRC 融合 |
+| `memory` | PASS | 600,177 | 600,105 | 1.000 | BRAM/L0/MMIO/COUNTER |
+| `perf_micro` | PASS | 17,055 | 22,273 | 0.766 | 自检先于性能统计 |
 
 Table: 当前分支 CPU 定向回归结果
 
-本表只接受 `final_version` 当前提交重新构建并运行得到的结果。本次因缺少 RISC-V GNU 工具链未生成 ELF，故所有结果与性能字段留空。历史报告中的 240 MHz 数据对应其他提交和频率配置，不迁入本表。
+六组定向测试均通过。结果对应本节列出的 RTL 基线、工具链和 200 MHz CPU-only 配置；每个 ELF 均先通过地址、容量和 ISA 审计，原始数据见 `verification/build/local-results.json`。
 
 ## 开源指令测试
 
 固定白名单包含 37 个 RV32UI 和 8 个 RV32UM 用例。平台层只允许替换启动地址、内存布局、signature 与完成动作；每个 ELF 还需通过 IROM/BRAM 容量、段地址、重定位和反汇编 ISA 审计。该白名单不是完整 RISC-V 架构认证。
 
+`riscv-tests` 上游锁定提交为 `34e6b6d1e7936b526075432fb730d89148623484`。本次先核对锁定源，再对全部白名单 ELF 执行容量、段地址、重定位和反汇编审计。
+
 | 测试集 | 用例数 | 当前分支通过数 | 失败数 | 结果文件 |
 | --- | ---: | ---: | ---: | --- |
-| RV32UI | 37 |  |  | `verification/build/riscv-tests/results.json` |
-| RV32UM | 8 |  |  | `verification/build/riscv-tests/results.json` |
+| RV32UI | 37 | 37 | 0 | `verification/build/riscv-tests/results.json` |
+| RV32UM | 8 | 8 | 0 | `verification/build/riscv-tests/results.json` |
 
 Table: 当前分支开源白名单结果
 
@@ -546,16 +548,16 @@ Table: 运行时与 BME280 验收结果
 
 ## 定向负载统计
 
-下表在六组定向测试全部通过后填写。周期和退休数用于计算 CPI/IPC；MIPS按 200 MHz CPU-only 参数换算，只表示模型配置下的指令吞吐，不等于板上实测性能。
+定向性能统计来自上述全部通过的回归。MIPS 若需要报告，按 200 MHz CPU-only 参数换算，只表示模型配置下的指令吞吐，不等于板上实测性能。
 
 | 测试 | 周期 | 退休指令 | CPI | 双发射包 | 前端停顿 | load-use EX/MEM | EX busy | L0/BRAM load |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `rv32i` |  |  |  |  |  |  |  |  |
-| `rv32m` |  |  |  |  |  |  |  |  |
-| `zicsr_trap` |  |  |  |  |  |  |  |  |
-| `pipeline` |  |  |  |  |  |  |  |  |
-| `memory` |  |  |  |  |  |  |  |  |
-| `perf_micro` |  |  |  |  |  |  |  |  |
+| `rv32i` | 287 | 158 | 1.816 | 2 | 0 | 0/0 | 0 | 6/8 |
+| `rv32m` | 408 | 91 | 4.484 | 2 | 254 | 0/0 | 254 | 0/0 |
+| `zicsr_trap` | 185 | 106 | 1.745 | 1 | 0 | 0/0 | 0 | 0/0 |
+| `pipeline` | 414 | 233 | 1.777 | 35 | 42 | 3/5 | 34 | 0/5 |
+| `memory` | 600,177 | 600,105 | 1.000 | 2 | 9 | 2/7 | 0 | 4/11 |
+| `perf_micro` | 17,055 | 22,273 | 0.766 | 6,504 | 252 | 1/1 | 250 | 0/2,001 |
 
 Table: 当前分支 CPU-only 性能统计
 
@@ -616,7 +618,7 @@ Table: 当前分支板级验收结果
 
 `final_version` 的代码形成了一套边界清楚的 RV32IM FPGA 系统：CPU 核以双槽顺序流水为主体，用 MEM1/MEM2 处理同步 BRAM 时序；BHT/BTB、前递、L0 与 store bypass 针对控制和数据相关；RT-Thread BSP 在固定 MMIO 上提供 UART 命令行、CoreMark 和 BME280 采样。项目专用 CRC16 融合被明确限制为特定机器码序列，不扩张处理器对标准 ISA 的承诺。
 
-本文没有把历史提交的测试数字或示例传感器读数写成当前分支结论。当前分支仍需补齐 CPU 回归、开源白名单、RT-Thread/CoreMark、Vivado 实现和板级 BME280 数据；这些空项集中列于附录索引。待数据补齐后，结论应只引用可复现结果，并同时保留测试命令、提交哈希、工具版本和原始结果文件。
+2026-08-15 的 CPU-only 回归在提交 `6d49d62d18d012e00345b3d85d3d186f6ade935b` 上完成：六组定向测试均通过，固定 `riscv-tests` 白名单为 RV32UI 37/37、RV32UM 8/8 通过。结果只证明该提交在 200 MHz CPU-only 模型中的功能和定向性能；RT-Thread/CoreMark、Vivado 实现、板级 UART/BME280 仍无本次实测数据，不能据此扩展为时序收敛或板级通过结论。剩余数据集中列于附录索引。
 
 # 附录
 
@@ -668,15 +670,11 @@ riscv-cpu-remote/
 
 ## 待补实测数据索引
 
-下表列出正文全部空白数据。每次补录必须同时写明 `final_version` 的提交哈希、执行日期、工具版本、命令和原始结果文件；若测试失败，应填写失败状态和原因，不得只删除该项。
+下表列出正文仍为空白的实际数据。补录时必须同时写明 `final_version` 的提交哈希、执行日期、工具版本、命令和原始结果文件；若测试失败，应填写失败状态和原因，不得只删除该项。
 
 | 编号 | 正文位置 | 缺少的实际数据 | 建议证据 |
 | --- | --- | --- | --- |
-| D1 | CPU-only 实验配置 | RISC-V GNU 工具链版本、正式测试提交哈希 | `gcc --version`、`git rev-parse HEAD` 与运行日志 |
-| D2 | 当前分支 CPU 定向回归结果 | 六组测试的状态、周期、退休指令、CPI | `verification/build/local-results.json` |
-| D3 | 当前分支开源白名单结果 | RV32UI/RV32UM 通过数和失败数 | `verification/build/riscv-tests/results.json` |
 | D4 | 运行时与 BME280 验收结果 | RT-Thread、UART、msh、命令读回、BME280 探测和实物样本 | CPU-only UART 日志、板级串口记录和接线照片 |
-| D5 | 当前分支 CPU-only 性能统计 | 六组负载的周期、退休、CPI、双发射、停顿、busy、L0/BRAM load | 同 D2 的机器可读统计 |
 | D6 | 当前分支 CoreMark 正式成绩 | 提交、编译器、编译参数、频率、迭代数、时间、分数、CoreMark/MHz、CRC 与有效性检查 | 完整串口输出和 CoreMark 计时日志 |
 | D7 | 当前分支 FPGA 实现结果 | Vivado 版本、WNS、TNS、Fmax、资源利用率、route status | 当前提交的 timing/utilization/route 报告 |
 | D8 | 当前分支板级验收结果 | RT-Thread/msh、UART、LED/SEG/COUNTER、CoreMark 标记、BME280 与连续运行稳定性 | 板级操作记录、串口日志、照片或视频索引 |
