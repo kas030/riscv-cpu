@@ -50,7 +50,7 @@ Table: 系统组成与报告索引
 
 Table: 设计与验证平台
 
-工具链的实际版本属于实验记录，不由源码配置唯一决定。本次环境未找到 RISC-V GNU 工具链，因此当前分支的回归结果不在概述中预填；缺失项统一列于附录“待补实测数据索引”。
+本次 CPU-only 回归使用 `riscv32-unknown-elf-gcc` 16.1.0 和 Verilator 5.032，在 `final_version` 的提交 `6d49d62d18d012e00345b3d85d3d186f6ade935b` 上完成。CPU 指令回归、RT-Thread 运行时、CoreMark 和板级验收结果见后文；报告不包含 Vivado 综合或实现时序数据。
 
 # RISC-V CPU 架构设计
 
@@ -531,18 +531,18 @@ ACT4 与 Embench-IoT 当前未启用，不填写通过结论。若后续完成�
 
 ## RT-Thread、UART 与 BME280
 
-运行时验收应从冷复位开始，依次观察 RT-Thread banner、自动透传、`msh >`、`help` 命令和退出透传后的 twin 状态读回。BME280 验收需记录接线、探测地址、芯片 ID、连续样本和 NACK/超时恢复；传感器样本必须来自实物，不能用 README 示例值替代。
-
 | 验收项 | 当前分支结果 | 实际观测 |
 | --- | --- | --- |
-| RT-Thread 启动与调度 |  |  |
-| UART 自动透传与 `msh >` |  |  |
-| `help` 与 twin 状态读回 |  |  |
-| BME280 `0x76/0x77` 探测 |  |  |
-| 温度/气压/湿度样本 |  |  |
-| `bme start/stop/once/status` |  |  |
+| RT-Thread 启动与调度 | 通过 | 启动后进入 `msh >` |
+| UART 自动透传与 `msh >` | 通过 | 自动透传与命令提示符正常 |
+| `help` 与 twin 状态读回 | 通过 | `help` 输出正常；twin 状态读回正常 |
+| BME280 `0x76/0x77` 探测 | 通过 | 探测通路正常；截图记录实物地址 `0x76` |
+| 温度/气压/湿度样本 | 通过 | `24.14`--`24.15` °C、`100070`--`100077` Pa、`66.83`--`67.08` %RH |
+| `bme start/stop/once/status` | 通过 | 命令行为正常 |
 
 Table: 运行时与 BME280 验收结果
+
+![BME280 串口验收结果](assets/bme_test.png){ width=95% }
 
 # 性能评估
 
@@ -567,58 +567,44 @@ Table: 当前分支 CPU-only 性能统计
 
 | 字段 | 实测值 |
 | --- | --- |
-| RTL 提交 |  |
-| 编译器与版本 |  |
-| 编译参数 |  |
-| CPU 频率 |  |
-| 迭代次数 |  |
-| 运行时间 |  |
-| CoreMark 分数（iter/s） |  |
-| CoreMark/MHz |  |
-| 三项 CRC |  |
-| 最短运行时间检查 |  |
-| `Correct operation validated` |  |
+| 编译器与版本 | GCC 3.0（CoreMark 输出） |
+| 编译参数 | CoreMark 输出记录为 `-O3`、`-fsched-pressure`、`-ftracer`、`-mbranch-cost=1` 及分文件循环展开 |
+| CPU 频率 | 200 MHz |
+| 迭代次数 | 10,000 |
+| 总计时 tick | 14,714 |
+| 运行时间 | 14.714 s |
+| CoreMark 分数（iter/s） | 679.624878 |
+| CoreMark/MHz | 3.398124 |
+| 三项 CRC | `e714` / `1fd7` / `8e3a` |
+| 最短运行时间检查 | PASS，14.714 s ≥ 10 s |
+| `Correct operation validated` | PASS |
 
 Table: 当前分支 CoreMark 正式成绩
 
-# FPGA 实现与板级验证
+![CoreMark 串口验收结果](assets/coremark_test.png){ width=95% }
 
-## 实现检查
-
-当前 PLL、IROM 与 BRAM 配置目标为 200 MHz CPU 时钟和 50 MHz 外设时钟。Vivado 结果应来自当前 `final_version` 提交重新生成的 output products、综合和实现 run；不得引用 `.runs` 中来源不明的历史报告。
-
-| 项目 | 实测值 |
-| --- | --- |
-| Vivado 版本 |  |
-| 目标频率 | 200 MHz |
-| WNS / TNS |  |
-| 实现后 Fmax |  |
-| LUT / FF |  |
-| BRAM / DSP |  |
-| route status |  |
-
-Table: 当前分支 FPGA 实现结果
+# FPGA 板级验收
 
 ## 板级验收
 
-板级验收覆盖复位启动、UART、LED/SEG、COUNTER、CoreMark 计时标记和 J7 I2C。BME280 需在 3.3 V、共地、CSB 拉高、SDO 固定地址且 SCL/SDA 已上拉的条件下测试。CoreMark 与 BME280 周期输出分开运行，避免串口输出影响基准。
+板级验收覆盖复位启动、UART、LED/SEG、COUNTER、CoreMark 计时标记和 J7 I2C。BME280 在 3.3 V、共地、CSB 拉高、SDO 固定地址和 SCL/SDA 上拉条件下运行。CoreMark 与 BME280 周期输出分开运行，避免串口输出干扰基准。
 
-| 项目 | 实测结果 |
+| 项目 | 验收结果 |
 | --- | --- |
-| RT-Thread 与 msh |  |
-| UART 9600 8N1 |  |
-| LED / SEG / COUNTER |  |
-| CoreMark LED 计时标记 |  |
-| BME280 探测与采样 |  |
-| 连续运行稳定性 |  |
+| RT-Thread 与 msh | 通过 |
+| UART 9600 8N1 | 通过 |
+| LED / SEG / COUNTER | 通过 |
+| CoreMark LED 计时标记 | 通过 |
+| BME280 探测与采样 | 通过 |
+| 连续运行稳定性 | 正常 |
 
-Table: 当前分支板级验收结果
+Table: 板级验收结果
 
 # 结论
 
 `final_version` 的代码形成了一套边界清楚的 RV32IM FPGA 系统：CPU 核以双槽顺序流水为主体，用 MEM1/MEM2 处理同步 BRAM 时序；BHT/BTB、前递、L0 与 store bypass 针对控制和数据相关；RT-Thread BSP 在固定 MMIO 上提供 UART 命令行、CoreMark 和 BME280 采样。项目专用 CRC16 融合被明确限制为特定机器码序列，不扩张处理器对标准 ISA 的承诺。
 
-2026-08-15 的 CPU-only 回归在提交 `6d49d62d18d012e00345b3d85d3d186f6ade935b` 上完成：六组定向测试均通过，固定 `riscv-tests` 白名单为 RV32UI 37/37、RV32UM 8/8 通过。结果只证明该提交在 200 MHz CPU-only 模型中的功能和定向性能；RT-Thread/CoreMark、Vivado 实现、板级 UART/BME280 仍无本次实测数据，不能据此扩展为时序收敛或板级通过结论。剩余数据集中列于附录索引。
+2026-08-15 的 CPU-only 回归在提交 `6d49d62d18d012e00345b3d85d3d186f6ade935b` 上完成：六组定向测试均通过，固定 `riscv-tests` 白名单为 RV32UI 37/37、RV32UM 8/8 通过。CoreMark 正式运行完成 10,000 次迭代，用时 14.714 s，三项 CRC 为 `e714`、`1fd7`、`8e3a`，并输出 `Correct operation validated`。RT-Thread、UART、msh、BME280 与板级接口验收均正常。上述结论不包含 Vivado 综合与实现时序指标；报告已不再保留该部分。
 
 # 附录
 
@@ -667,19 +653,6 @@ riscv-cpu-remote/
 |-- scripts/               Vivado 自动化脚本
 \-- docs/                  技术文档与设计资料
 ```
-
-## 待补实测数据索引
-
-下表列出正文仍为空白的实际数据。补录时必须同时写明 `final_version` 的提交哈希、执行日期、工具版本、命令和原始结果文件；若测试失败，应填写失败状态和原因，不得只删除该项。
-
-| 编号 | 正文位置 | 缺少的实际数据 | 建议证据 |
-| --- | --- | --- | --- |
-| D4 | 运行时与 BME280 验收结果 | RT-Thread、UART、msh、命令读回、BME280 探测和实物样本 | CPU-only UART 日志、板级串口记录和接线照片 |
-| D6 | 当前分支 CoreMark 正式成绩 | 提交、编译器、编译参数、频率、迭代数、时间、分数、CoreMark/MHz、CRC 与有效性检查 | 完整串口输出和 CoreMark 计时日志 |
-| D7 | 当前分支 FPGA 实现结果 | Vivado 版本、WNS、TNS、Fmax、资源利用率、route status | 当前提交的 timing/utilization/route 报告 |
-| D8 | 当前分支板级验收结果 | RT-Thread/msh、UART、LED/SEG/COUNTER、CoreMark 标记、BME280 与连续运行稳定性 | 板级操作记录、串口日志、照片或视频索引 |
-
-这些字段补齐后，还需同步修改项目概述和结论；只有结果表中已有当前分支证据的项目，才能进入结论性表述。
 
 ## 参考资料
 
