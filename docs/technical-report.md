@@ -3,6 +3,19 @@ title-meta: RISC-V CPU 技术报告
 cover: assets/cover.pdf
 ---
 
+# 重要内容预览
+
+| 核心亮点 | 实现要点 | 结果与价值 |
+| --- | --- | --- |
+| 双槽顺序流水 | 双槽顺序发射和顺序提交；MEM1/MEM2 后端适配同步 BRAM 返回时序 | 在保持顺序体系结构语义的前提下挖掘相邻指令并行性 |
+| 控制流与数据相关优化 | 256 项双发射提示表、64 项 BHT/BTB、多级前递、load-use 冒险控制、64 项 L0 load cache 与 4 项 store bypass | 降低控制重定向和数据相关造成的前端与后端停顿 |
+| RV32IM 与运行时支持 | 37 条 RV32I、8 条 RV32M、最小 Zicsr/M-mode trap 子集 | 支持整数程序、RT-Thread 调度和机器模式异常返回 |
+| CRC16 硬件加速 | IF 级指令序列握手状态机在预定义序列完成交接后启动 CRC16 加速路径 | 缩短 CoreMark CRC16 热点的字节更新路径；不改变标准 RISC-V ISA 范围 |
+| SoC 与系统软件 | 64 KiB IROM、256 KiB BRAM、UART、COUNTER、I2C/BME280 和 RT-Thread Nano | 提供 finsh/msh 命令行、环境采样和 CoreMark 运行环境 |
+| 功能与性能验证 | 六组定向测试、45 个开源指令用例、运行时与外设验收及 CoreMark | 定向测试全部通过；CoreMark 在 10,000 次迭代下达到 679.624878 iter/s |
+
+Table: 作品核心亮点预览
+
 # 项目概述
 
 ## 项目背景
