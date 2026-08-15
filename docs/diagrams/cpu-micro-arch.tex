@@ -122,7 +122,8 @@
   \node[stage, fill=frontendfill, minimum height=7.50cm] (ifstage) at (-0.55,4) {
     {\bfseries IF}\\[5pt]
     PC \& Fetch\\
-    Branch\\ Predictor
+    256-entry Dual-hint\\
+    64-entry BHT / BTB
   };
 
   % Pipeline registers
@@ -247,11 +248,10 @@
 
   % Forwarding control and data selection
   \node[shared, fill=purple!7, minimum width=5.1cm, minimum height=1.50cm] (forwarding) at (19.8,10) {
-    {\bfseries Forwarding Network}\\MEM1 / MEM2 / WB
+    {\bfseries Forwarding Network}\\MEM1 / MEM2 / late data
   };
   \draw[forwardpath] ($(mem10.north)+(1,0)$) |- ($(forwarding.west)+(0,-0.4)$);
   \draw[forwardpath] (mem20.north) -- (mem20.north |- forwarding.south);
-  \draw[forwardpath] (wb0.north) |- (forwarding.east);
   \draw[forwardpath] (forwarding.west) -| (11.4,8) |- ($(ex0.east)+(0,1)$);
   \draw[forwardpath] (forwarding.west) -| (11.4,8) |- ($(ex1.east)+(0,1)$);
 
@@ -260,7 +260,7 @@
     {\bfseries Shared LSU}\\Single Data Port
   };
   \node[shared, fill=memoryfill, minimum width=4.0cm, text width=3.55cm] (l0) at (21.6,-2.05) {
-    {\bfseries 64-entry L0 Cache}\\Direct-mapped
+    {\bfseries 64-entry L0 Cache}\\Direct-mapped\\2 EX probes
   };
   \node[shared, fill=memoryfill, minimum width=3.8cm, text width=3.35cm] (databus) at (16.5,-2.05) {
     {\bfseries Data Bus}\\BRAM / MMIO
