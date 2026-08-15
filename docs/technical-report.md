@@ -452,8 +452,6 @@ FPGA 内的 `i2c_register_master` 提供 100 kHz 单事务寄存器访问。RT-T
 
 基准算法主体来自 EEMBC CoreMark 1.0。`core_list_join.c`、`core_matrix.c`、`core_state.c` 和 `core_util.c` 保持上游内容；`core_main.c` 与 `coremark.h` 为本平台的单精度计时换算、无 libc 输出和迭代次数处理做了适配，计时区内的 `iterate` 调用及三类工作负载算法未改动。平台层负责计时、参数传递和输出。
 
-裸命令 `coremark` 使用性能种子 `0,0,0x66`、总数据量 2000 字节和 10000 次迭代；当前构建对 CoreMark 使用 `-O3` 分文件优化，其余固件使用 `-Os`。命令行可显式覆盖三项种子和迭代数，迭代数为 0 时进入自动校准。性能种子的期望 CRC 为 `e714`、`1fd7`、`8e3a`；验证种子 `0x3415,0x3415,0x66` 的期望 CRC 为 `e3c1`、`0747`、`8d84`。这些值是测试判据，不是本次运行结果。CoreMark 主循环不执行浮点指令；停止计时后，MMIO FPU 只计算秒数和迭代率。
-
 # 实验环境与方法
 
 ## CPU-only 仿真环境
