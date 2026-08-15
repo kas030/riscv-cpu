@@ -1,3 +1,4 @@
 build/
 obj_dir/
 obj_dir_trace/
+obj_dir_fpu/

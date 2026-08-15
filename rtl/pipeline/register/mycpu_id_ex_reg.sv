@@ -34,9 +34,6 @@ module mycpu_id_ex_reg #(
     input  logic [5:0]              ID_CSRControll  ,
     input  logic [2:0]              ID_ForwardA     ,
     input  logic [2:0]              ID_ForwardB     ,
-    input  logic [DATAWIDTH - 1:0]  ID_late_data1   ,
-    input  logic [DATAWIDTH - 1:0]  ID_late_data2   ,
-    input  logic [DATAWIDTH - 1:0]  ID_late_load_word,
     input  logic                    ID_pred_taken   ,
     input  logic [DATAWIDTH - 1:0]  ID_pred_target  ,
     input  logic                    clk             ,
@@ -67,12 +64,6 @@ module mycpu_id_ex_reg #(
     output logic [5:0]              EX_CSRControll  ,
     output logic [2:0]              EX_ForwardA     ,
     output logic [2:0]              EX_ForwardB     ,
-    (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-    output logic [DATAWIDTH - 1:0]  EX_late_data1   ,
-    (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-    output logic [DATAWIDTH - 1:0]  EX_late_data2   ,
-    (* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-    output logic [DATAWIDTH - 1:0]  EX_late_load_word,
     output logic                    EX_pred_taken   ,
     output logic [DATAWIDTH - 1:0]  EX_pred_target
     ,output logic                   EX_pipe_valid
@@ -93,9 +84,6 @@ module mycpu_id_ex_reg #(
             EX_CSRControll  <= '0;
             EX_ForwardA     <= '0;
             EX_ForwardB     <= '0;
-            EX_late_data1   <= '0;
-            EX_late_data2   <= '0;
-            EX_late_load_word <= '0;
             EX_pc           <= '0;
             EX_imm          <= '0;
             EX_rR1_data     <= '0;
@@ -144,9 +132,6 @@ module mycpu_id_ex_reg #(
                 EX_CSRControll  <= ID_CSRControll;
                 EX_ForwardA     <= ID_ForwardA;
                 EX_ForwardB     <= ID_ForwardB;
-                EX_late_data1   <= ID_late_data1;
-                EX_late_data2   <= ID_late_data2;
-                EX_late_load_word <= ID_late_load_word;
                 EX_pred_taken   <= ID_pred_taken;
                 EX_pred_target  <= ID_pred_target;
             end

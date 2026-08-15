@@ -80,6 +80,28 @@ proc run_logged {argv} {
     }
 }
 
+proc configure_memory_init {ip_name coe_path} {
+    set normalized_coe [string map {\\ /} [file normalize $coe_path]]
+    if {![file exists $normalized_coe]} {
+        error "$ip_name initialization file not found: $normalized_coe"
+    }
+
+    set memory_ip [get_ips -quiet $ip_name]
+    if {[llength $memory_ip] != 1} {
+        error "expected exactly one $ip_name IP, found [llength $memory_ip]"
+    }
+
+    set_property CONFIG.Load_Init_File true $memory_ip
+    set_property CONFIG.Coe_File $normalized_coe $memory_ip
+    set memory_xci [get_files -quiet -all *${ip_name}.xci]
+    if {[llength $memory_xci] != 0} {
+        set_property GENERATE_SYNTH_CHECKPOINT false $memory_xci
+    }
+    reset_target all $memory_ip
+    generate_target all $memory_ip
+    puts "INFO: $ip_name initialization refreshed from $normalized_coe"
+}
+
 proc run_manual_xsim {repo_root sim_top runtime} {
     puts "INFO: falling back to manual XSim flow"
 
@@ -218,6 +240,13 @@ set i2c_tb [string map {\\ /} [file join $repo_root tb tb_i2c_register_master.sv
 if {[file exists $i2c_tb] && [llength [get_files -quiet -all $i2c_tb]] == 0} {
     add_files -norecurse -fileset sim_1 $i2c_tb
 }
+
+configure_memory_init IROM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]
+configure_memory_init BRAM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]
+set memory_ips [concat [get_ips -quiet IROM] [get_ips -quiet BRAM]]
+export_ip_user_files -of_objects $memory_ips -no_script -sync -force -quiet
 
 set_property top $sim_top [get_filesets sim_1]
 set_property top_lib xil_defaultlib [get_filesets sim_1]

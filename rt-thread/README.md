@@ -113,12 +113,18 @@ SDO 是否固定到 GND/3.3V，并确认已重新生成固件 COE 和 FPGA bitst
 
 ## 官方 CoreMark 1.0
 
-`bsp/mycpu/coremark/` 中的五个核心算法源文件和 MD5 清单来自 EEMBC
-官方 CoreMark 仓库，基准算法保持原样。本平台的计时直接读取 COUNTER
-毫秒计数，避免 CoreMark 忙跑期间 idle hook 不执行而导致 RT-Thread tick
-停止。停止计时后，`0x80200070`--`0x80200080` 的最小化 MMIO 单精度 FPU
-仅负责 `ticks / 1000` 和 `iterations / seconds` 换算；不向 CoreMark 主循环
-加入浮点指令，也不要求 CPU 实现 RV32F 指令集。
+`bsp/mycpu/coremark/` 的上游源文件和 `coremark.md5` 来自 EEMBC 官方
+CoreMark 仓库。按该清单核对，`core_list_join.c`、`core_matrix.c`、
+`core_state.c` 和 `core_util.c` 保持上游内容；`core_main.c` 与 `coremark.h`
+为适配本平台的单精度计时换算和无 libc 结果输出做过修改，因此不会通过原始
+MD5 校验。相关修改位于自动迭代次数估算、计时结果换算和报告输出路径，不改变
+计时区内的 `iterate` 调用或三类工作负载算法。
+
+本平台的计时直接读取 COUNTER 毫秒计数，避免 CoreMark 忙跑期间 idle hook
+不执行而导致 RT-Thread tick 停止。停止计时后，`0x80200070`--`0x80200080`
+的最小化 MMIO 单精度 FPU 仅负责 `ticks / 1000` 和
+`iterations / seconds` 换算；不向 CoreMark 主循环加入浮点指令，也不要求
+CPU 实现 RV32F 指令集。
 
 CoreMark 通过 finsh 命令运行：
 
@@ -126,13 +132,14 @@ CoreMark 通过 finsh 命令运行：
 msh >coremark
 ```
 
-裸命令使用标准性能种子 `0,0,0x66`、总数据量 2000 字节和 5000 次迭代；
-200 MHz 配置下预计约 11--12 秒，满足官方结果至少运行 10 秒的规则。输出应包含
+裸命令使用标准性能种子 `0,0,0x66`、总数据量 2000 字节和 10000 次迭代；
+200 MHz 配置下，CoreMark 对象使用 `-O3`、其余固件保持 `-Os` 时，按 16 次短测
+外推约 13.98 秒，满足官方结果至少运行 10 秒的规则。输出应包含
 `Correct operation validated`、三项 CRC `e714 / 1fd7 / 8e3a` 和 CoreMark 分数。
 官方验证种子可另行运行：
 
 ```text
-msh >coremark 0x3415 0x3415 0x66 5000
+msh >coremark 0x3415 0x3415 0x66 10000
 ```
 
 此时三项 CRC 应为 `e3c1 / 0747 / 8d84`。命令行第 4 个参数可覆盖迭代数，
@@ -141,15 +148,16 @@ msh >coremark 0x3415 0x3415 0x66 5000
 CoreMark 进入正式计时段前，LED 寄存器写入 `0x00010000`，只点亮
 物理 LED1；内部停止计时后写入 `0` 熄灭。两次 MMIO 写均位于
 CoreMark 计时区间外，不计入报告成绩；评委可在 LED1 点亮时开始秒表、
-熄灭时停止秒表。裸命令由 msh 包装层补齐为标准性能种子和 5000 次，
-不再误入约 2--3 秒的自动校准；仍可显式输入 6000 次。只有明确把
+熄灭时停止秒表。裸命令由 msh 包装层补齐为标准性能种子和 10000 次，
+不再误入约 2--3 秒的自动校准；仍可通过第 4 个参数指定其他次数。只有明确把
 第 4 个参数设为 0 时，官方自动校准才会产生多次 LED 脉冲。
 
 ## 构建与运行
 
 Makefile 默认使用 `riscv32-unknown-elf-` 前缀，也可通过 `CROSS` 或
 `CC`/`OBJCOPY`/`SIZE` 覆盖为其他支持 RV32IM+Zicsr 的 GCC 工具链。本仓库当前
-跟踪的固件 COE 使用 Vivado 2025.2.1 自带 GCC 13.4.0 生成。
+跟踪的固件 COE 所用编译器版本以 CoreMark 输出中的
+`Compiler version` 为准。
 
 ```sh
 cd bsp/mycpu

@@ -36,6 +36,7 @@ module tb_cpu_only;
     logic        cnt_enable = 1'b0;
     logic [31:0] cnt_ms = 32'd0;
     logic [15:0] cnt_1ms = 16'd0;
+    logic [31:0] cnt_cpu_cycles = 32'd0;
     logic        cnt_started = 1'b0;
     time         cnt_start_time = 0;
     logic [31:0] irom [0:16383];
@@ -66,6 +67,21 @@ module tb_cpu_only;
     logic [7:0]  uart_cap_queue [0:4095];
     integer      uart_cap_qlen = 0;
     integer      uart_cap_qhead = 0;
+`ifdef COREMARK_PERF
+    string       coremark_uart_line = "";
+    integer      coremark_prompt_match = 0;
+    bit          coremark_prompt_seen = 1'b0;
+    bit          coremark_seen_parameters = 1'b0;
+    bit          coremark_seen_iterations = 1'b0;
+    bit          coremark_seen_seedcrc = 1'b0;
+    bit          coremark_seen_crclist = 1'b0;
+    bit          coremark_seen_crcmatrix = 1'b0;
+    bit          coremark_seen_crcstate = 1'b0;
+    bit          coremark_seen_time_warning = 1'b0;
+    bit          coremark_seen_valid = 1'b0;
+    bit          coremark_seen_errors = 1'b0;
+    bit          coremark_seen_cannot_validate = 1'b0;
+`endif
 
     longint unsigned cycles = 64'd0;
     longint unsigned cnt_writeback = 64'd0;
@@ -83,14 +99,28 @@ module tb_cpu_only;
     longint unsigned cnt_bram_load = 64'd0;
     longint unsigned cnt_retired = 64'd0;
     longint unsigned crc_completed_rounds = 64'd0;
+    longint unsigned coremark_bench_entries = 64'd0;
+    logic coremark_entry_retire_d = 1'b0;
     localparam logic [31:0] CRC_ROUND_DONE_PC = 32'h8000_066c;
+    localparam logic [31:0] COREMARK_ENTRY_PC = `SIM_COREMARK_ENTRY_PC;
+    localparam int unsigned COREMARK_ITERATIONS = `SIM_COREMARK_ITERATIONS;
+    localparam int unsigned COREMARK_SNAPSHOT_LOW = `SIM_COREMARK_SNAPSHOT_LOW;
+    localparam int unsigned COREMARK_SNAPSHOT_HIGH = `SIM_COREMARK_SNAPSHOT_HIGH;
+    localparam bit COREMARK_REQUIRE_VALID = `SIM_COREMARK_REQUIRE_VALID;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
+    localparam int unsigned   PERF_COUNTER_CYCLES_PER_MS =
+        $rtoi(CPU_FREQ_MHZ * 1000.0);
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
     localparam [31:0]         EXPECTED_LED     = `SIM_EXPECTED_LED;
     localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
     localparam [31:0]         FAIL_LED         = `SIM_FAIL_LED;
     localparam bit            TRACE_ENABLED    = `SIM_TRACE;
+`ifdef COREMARK_PERF
+    wire coremark_entry_retire =
+        (dut.WB_retire_valid0 && dut.WB_pcadd4 == COREMARK_ENTRY_PC + 4) ||
+        (dut.WB_retire_valid1 && dut.WB_S1_pcadd4 == COREMARK_ENTRY_PC + 4);
+`endif
 `ifdef COREMARK_VERIFY
     /* 输出加速到 1 MHz；输入任务仍按 shell 可消费的 1.1 ms 字节间隔发送。 */
     localparam integer SIM_UART_BAUD = 1000000;
@@ -112,9 +142,12 @@ module tb_cpu_only;
     string stop_reason;
     integer init_idx;
     bit coremark_smoke_pass = 1'b0;
+    bit coremark_perf_pass = 1'b0;
 
     always #(CPU_HALF_PERIOD_NS) clk = ~clk;
+`ifndef COREMARK_PERF
     always #10 cnt_clk = ~cnt_clk;
+`endif
 
     mycpu dut (
         .cpu_rst     (rst),
@@ -140,6 +173,7 @@ module tb_cpu_only;
 `endif
 
     /* UART 透传链路：tb(PC) <-> uart <-> twin_controller <-> uart_bridge <-> CPU */
+`ifndef COREMARK_PERF
     uart #(
         .CLK_FREQ  (50000000),
         .BAUD_RATE (SIM_UART_BAUD)
@@ -193,6 +227,7 @@ module tb_cpu_only;
         .ps_wen         (perip_wen && perip_addr == UART_STATUS_ADDR),
         .passthrough_req(twin_passthrough_req)
     );
+`endif
 
     fpu_mmio fpu_mmio_inst (
         .clk   (clk),
@@ -282,8 +317,15 @@ module tb_cpu_only;
                 KEY_ADDR: perip_rdata = {24'd0, twin_key};
                 SEG_ADDR: perip_rdata = seg_wdata;
                 CNT_ADDR: perip_rdata = cnt_ms;
+`ifdef COREMARK_PERF
+                /* CoreMark 计时区间不访问 UART。性能模式直接报告透传
+                 * 已就绪且 TX 空闲，仅省略与算法无关的位级等待。 */
+                UART_DATA_ADDR:   perip_rdata = 32'd0;
+                UART_STATUS_ADDR: perip_rdata = 32'd4;
+`else
                 UART_DATA_ADDR:   perip_rdata = uart_rdata;
                 UART_STATUS_ADDR: perip_rdata = uart_rdata;
+`endif
                 default: perip_rdata = 32'd0;
             endcase
         end
@@ -299,12 +341,89 @@ module tb_cpu_only;
             cnt_started <= 1'b0;
             bram_rdata_q <= 32'd0;
             bram_resp_valid <= 1'b0;
+`ifdef COREMARK_PERF
+            uart_cap_qlen = 0;
+            coremark_uart_line = "";
+            coremark_prompt_match = 0;
+            coremark_prompt_seen <= 1'b0;
+            coremark_seen_parameters <= 1'b0;
+            coremark_seen_iterations <= 1'b0;
+            coremark_seen_seedcrc <= 1'b0;
+            coremark_seen_crclist <= 1'b0;
+            coremark_seen_crcmatrix <= 1'b0;
+            coremark_seen_crcstate <= 1'b0;
+            coremark_seen_time_warning <= 1'b0;
+            coremark_seen_valid <= 1'b0;
+            coremark_seen_errors <= 1'b0;
+            coremark_seen_cannot_validate <= 1'b0;
+`endif
         end else begin
             bram_resp_valid <= !perip_wen && (perip_addr >= BRAM_BASE && perip_addr <= BRAM_END);
             if (!perip_wen && (perip_addr >= BRAM_BASE && perip_addr <= BRAM_END)) begin
                 bram_rdata_q <= select_load_word(bram[(perip_addr - BRAM_BASE) >> 2], perip_mask, perip_addr[1:0]);
             end
             if (perip_wen) begin
+`ifdef COREMARK_PERF
+                if (perip_addr == UART_DATA_ADDR && uart_cap_qlen < 4096) begin
+                    uart_cap_queue[uart_cap_qlen] = perip_wdata[7:0];
+                    uart_cap_qlen = uart_cap_qlen + 1;
+                    $write("%c", perip_wdata[7:0]);
+                    if (perip_wdata[7:0] == 8'h0a) begin
+                        $fflush();
+                        if (coremark_uart_line ==
+                            "2K performance run parameters for coremark.")
+                            coremark_seen_parameters <= 1'b1;
+                        if (coremark_uart_line ==
+                            $sformatf("Iterations       : %0d", COREMARK_ITERATIONS))
+                            coremark_seen_iterations <= 1'b1;
+                        if (coremark_uart_line == "seedcrc          : 0xe9f5")
+                            coremark_seen_seedcrc <= 1'b1;
+                        if (coremark_uart_line == "[0]crclist       : 0xe714")
+                            coremark_seen_crclist <= 1'b1;
+                        if (coremark_uart_line == "[0]crcmatrix     : 0x1fd7")
+                            coremark_seen_crcmatrix <= 1'b1;
+                        if (coremark_uart_line == "[0]crcstate      : 0x8e3a")
+                            coremark_seen_crcstate <= 1'b1;
+                        if (coremark_uart_line ==
+                            "ERROR! Must execute for at least 10 secs for a valid result!")
+                            coremark_seen_time_warning <= 1'b1;
+                        if (coremark_uart_line ==
+                            "Correct operation validated. See README.md for run and reporting rules.")
+                            coremark_seen_valid <= 1'b1;
+                        if (coremark_uart_line == "Errors detected")
+                            coremark_seen_errors <= 1'b1;
+                        if (coremark_uart_line ==
+                            "Cannot validate operation for these seed values, please compare with results on a known platform.")
+                            coremark_seen_cannot_validate <= 1'b1;
+                        coremark_uart_line = "";
+                    end else if (perip_wdata[7:0] != 8'h0d) begin
+                        coremark_uart_line = {coremark_uart_line, perip_wdata[7:0]};
+                    end
+
+                    case (coremark_prompt_match)
+                        0: coremark_prompt_match =
+                               (perip_wdata[7:0] == "m") ? 1 : 0;
+                        1: coremark_prompt_match =
+                               (perip_wdata[7:0] == "s") ? 2 :
+                               ((perip_wdata[7:0] == "m") ? 1 : 0);
+                        2: coremark_prompt_match =
+                               (perip_wdata[7:0] == "h") ? 3 :
+                               ((perip_wdata[7:0] == "m") ? 1 : 0);
+                        3: coremark_prompt_match =
+                               (perip_wdata[7:0] == " ") ? 4 :
+                               ((perip_wdata[7:0] == "m") ? 1 : 0);
+                        default: begin
+                            if (perip_wdata[7:0] == ">") begin
+                                coremark_prompt_seen <= 1'b1;
+                                $write("\n");
+                                $fflush();
+                            end
+                            coremark_prompt_match =
+                                (perip_wdata[7:0] == "m") ? 1 : 0;
+                        end
+                    endcase
+                end
+`endif
                 if (perip_addr >= BRAM_BASE && perip_addr <= BRAM_END) begin
                     bram[(perip_addr - BRAM_BASE) >> 2] <= merge_store_word(
                         bram[(perip_addr - BRAM_BASE) >> 2],
@@ -339,6 +458,25 @@ module tb_cpu_only;
         end
     end
 
+`ifdef COREMARK_PERF
+    /* COUNTER 仍以毫秒返回被测 CPU 时间；用 CPU 周期等价分频，
+     * 避免为与 CoreMark 无关的 50 MHz 时钟产生额外仿真事件。 */
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            cnt_ms <= 32'd0;
+            cnt_cpu_cycles <= 32'd0;
+        end else if (cnt_enable) begin
+            if (cnt_cpu_cycles == PERF_COUNTER_CYCLES_PER_MS - 1) begin
+                cnt_cpu_cycles <= 32'd0;
+                cnt_ms <= cnt_ms + 1;
+            end else begin
+                cnt_cpu_cycles <= cnt_cpu_cycles + 1;
+            end
+        end else begin
+            cnt_cpu_cycles <= 32'd0;
+        end
+    end
+`else
     always_ff @(posedge cnt_clk) begin
         if (rst) begin
             cnt_ms <= 32'd0;
@@ -354,6 +492,7 @@ module tb_cpu_only;
             cnt_1ms <= 16'd0;
         end
     end
+`endif
 
     /* ---- UART 行为模型；COREMARK_VERIFY 使用高速仿真串口 ---- */
     localparam time UART_BIT_NS = (SIM_UART_BAUD == 9600) ? 104160 : 1000;
@@ -376,6 +515,15 @@ module tb_cpu_only;
         end
     endtask
 
+    task automatic uart_tx_string(input string data);
+        integer char_idx;
+        begin
+            for (char_idx = 0; char_idx < data.len(); char_idx = char_idx + 1)
+                uart_tx_byte(data[char_idx]);
+        end
+    endtask
+
+`ifndef COREMARK_PERF
     always begin : uart_tx_capture
         logic [7:0] cap_byte;
         integer bit_idx;
@@ -396,17 +544,22 @@ module tb_cpu_only;
 `endif
         end
     end
+`endif
 
     function automatic bit uart_queue_has_str(string s);
         integer i, j;
         bit found;
         begin
             found = 1'b0;
-            for (i = 0; i <= uart_cap_qlen - s.len() && !found; i = i + 1) begin
-                found = 1'b1;
-                for (j = 0; j < s.len(); j = j + 1) begin
-                    if (uart_cap_queue[i + j] != s[j]) begin
-                        found = 1'b0;
+            /* 字符串长度参与算术时可被提升为无符号。
+             * 先检查长度，避免空队列下 0-len 下溢成巨大循环上界。 */
+            if (uart_cap_qlen >= s.len()) begin
+                for (i = 0; i <= uart_cap_qlen - s.len() && !found; i = i + 1) begin
+                    found = 1'b1;
+                    for (j = 0; j < s.len(); j = j + 1) begin
+                        if (uart_cap_queue[i + j] != s[j]) begin
+                            found = 1'b0;
+                        end
                     end
                 end
             end
@@ -419,11 +572,13 @@ module tb_cpu_only;
         bit found;
         begin
             found = 1'b0;
-            for (i = start_idx; i <= uart_cap_qlen - s.len() && !found; i = i + 1) begin
-                found = 1'b1;
-                for (j = 0; j < s.len(); j = j + 1) begin
-                    if (uart_cap_queue[i + j] != s[j])
-                        found = 1'b0;
+            if (start_idx >= 0 && uart_cap_qlen - start_idx >= s.len()) begin
+                for (i = start_idx; i <= uart_cap_qlen - s.len() && !found; i = i + 1) begin
+                    found = 1'b1;
+                    for (j = 0; j < s.len(); j = j + 1) begin
+                        if (uart_cap_queue[i + j] != s[j])
+                            found = 1'b0;
+                    end
                 end
             end
             uart_queue_has_str_from = found;
@@ -432,19 +587,31 @@ module tb_cpu_only;
 
     initial begin : uart_verify
         integer coremark_output_start;
+        string coremark_command;
         /* CPU 启动时主动请求透传（board.c rt_hw_board_init 写 UART_STATUS）：
          * 等待透传建立（twin 进 PASSTHROUGH）与 finsh banner 输出完成。 */
-`ifdef COREMARK_VERIFY
+`ifdef COREMARK_PERF
+        wait (!rst);
+`elsif COREMARK_VERIFY
         #(15_000_000);
 `else
         #(200_000_000);
 `endif
+`ifdef COREMARK_PERF
+        $display("[COREMARK-VERIFY] direct UART capture active (qlen=%0d)",
+                 uart_cap_qlen);
+`else
         if (twin_inst.current_state == 2) begin
             $display("[UART-VERIFY] passthrough established by CPU (state=%0d)", twin_inst.current_state);
         end else begin
             $display("[UART-VERIFY] FAIL: passthrough not established (state=%0d)", twin_inst.current_state);
             finish_sim("uart_assert_fail");
         end
+`endif
+`ifdef COREMARK_PERF
+        $display("[COREMARK-VERIFY] RT-Thread autorun active (qlen=%0d)",
+                 uart_cap_qlen);
+`else
         $display("[UART-VERIFY] inject 'help\\r'");
         uart_tx_byte("h");
         uart_tx_byte("e");
@@ -469,7 +636,39 @@ module tb_cpu_only;
             $display("[UART-VERIFY] FAIL: help output missing 'version' (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
         end
+`endif
 `ifdef COREMARK_VERIFY
+`ifdef COREMARK_PERF
+        /* 开发外推和正式 10000 次回归共用同一路径。短测必须得到三项
+         * 官方 CRC 和迭代数回显；正式回归还必须满足十秒规则。 */
+        coremark_command = $sformatf("coremark 0 0 0x66 %0d", COREMARK_ITERATIONS);
+        $display("[COREMARK-VERIFY] wait for autorun '%s'", coremark_command);
+        wait (coremark_prompt_seen || sim_done);
+
+        if (!sim_done && coremark_seen_parameters && coremark_seen_seedcrc &&
+            coremark_seen_crclist && coremark_seen_crcmatrix &&
+            coremark_seen_crcstate && coremark_seen_iterations &&
+            !coremark_seen_cannot_validate &&
+            ((!COREMARK_REQUIRE_VALID &&
+              coremark_seen_time_warning) ||
+             (COREMARK_REQUIRE_VALID &&
+              coremark_seen_valid && !coremark_seen_time_warning &&
+              !coremark_seen_errors))) begin
+            coremark_perf_pass = 1'b1;
+            $display(">>> [COREMARK_CRC] crclist=e714 crcmatrix=1fd7 crcstate=8e3a");
+            if (COREMARK_REQUIRE_VALID)
+                $display(">>> [COREMARK_RUN] iterations=%0d validity=official-valid",
+                         COREMARK_ITERATIONS);
+            else
+                $display(">>> [COREMARK_RUN] iterations=%0d validity=short-run",
+                         COREMARK_ITERATIONS);
+            finish_sim("coremark_perf");
+        end else begin
+            $display("[COREMARK-VERIFY] FAIL: CoreMark output mismatch (qlen=%0d)",
+                     uart_cap_qlen);
+            finish_sim("uart_assert_fail");
+        end
+`else
         /* TOTAL_DATA_SIZE=2000 由三个算法均分为 666 bytes：官方 2K 档。
          * 24 次仅用于 RTL smoke test，必然触发官方“至少 10 秒”提示；
          * 正式跑分使用裸 coremark 的 5000 次默认值。 */
@@ -515,6 +714,8 @@ module tb_cpu_only;
             finish_sim("uart_assert_fail");
         end
 `endif
+`endif
+`ifndef COREMARK_PERF
         $display("[UART-VERIFY] inject 0xCA (exit passthrough)");
         uart_tx_byte(8'hCA);
         #(10_000_000);
@@ -530,6 +731,7 @@ module tb_cpu_only;
             $display("[UART-VERIFY] FAIL: readback too short (qlen=%0d)", uart_cap_qlen);
             finish_sim("uart_assert_fail");
         end
+`endif
     end
 
     /* twin 回读内容用确定值（避免 x 传播到 UART 线） */
@@ -662,13 +864,38 @@ module tb_cpu_only;
         end
     endtask
 
+    task automatic print_coremark_snapshot(input longint unsigned completed_iterations);
+        begin
+            clear_progress_line();
+            $display(">>> [COREMARK_SNAPSHOT] iterations=%0d", completed_iterations);
+            $display(" cnt_ms            : %0d", cnt_ms);
+            $display(" cycles            : %0d", cycles);
+            $display(" writeback (reg_file)    : %0d", cnt_writeback);
+            $display(" slot1 writeback   : %0d", cnt_slot1_writeback);
+            $display(" stores            : %0d", cnt_store);
+            $display(" taken branches    : %0d", cnt_branch);
+            $display(" dual issue packets: %0d", cnt_dual_issue);
+            $display(" front stall cycles: %0d", cnt_stall_front);
+            $display(" load/use stalls   : %0d", cnt_stall_hazard);
+            $display(" load/use EX stalls: %0d", cnt_load_use_ex);
+            $display(" load/use MEM stalls: %0d", cnt_load_use_mem);
+            $display(" hazard+EX busy    : %0d", cnt_stall_both);
+            $display(" ex busy cycles    : %0d", cnt_ex_busy);
+            $display(" L0 load hits      : %0d", cnt_l0_hit);
+            $display(" BRAM loads        : %0d", cnt_bram_load);
+            $display(" retired inst      : %0d", cnt_retired);
+        end
+    endtask
+
     task automatic finish_sim(input string reason);
         bit result_ok;
         begin
             if (!sim_done) begin
                 sim_done = 1'b1;
                 stop_reason = reason;
-`ifdef COREMARK_VERIFY
+`ifdef COREMARK_PERF
+                result_ok = coremark_perf_pass && (reason == "coremark_perf");
+`elsif COREMARK_VERIFY
                 result_ok = coremark_smoke_pass && (reason == "coremark_smoke");
 `else
                 result_ok = (virtual_led != FAIL_LED) &&
@@ -680,7 +907,11 @@ module tb_cpu_only;
                     $display(">>> [PASS] final state matches enabled checks");
                 else
                     $display(">>> [FAIL] final state mismatch");
-`ifdef COREMARK_VERIFY
+`ifdef COREMARK_PERF
+                $display(" coremark_perf     : %s", coremark_perf_pass ? "pass" : "fail");
+                $display(" coremark_iterations: %0d", COREMARK_ITERATIONS);
+                $display(" coremark_entry_pc : 0x%08X", COREMARK_ENTRY_PC);
+`elsif COREMARK_VERIFY
                 $display(" coremark_smoke    : %s", coremark_smoke_pass ? "pass" : "fail");
 `else
                 if (HAS_EXPECTED_LED)
@@ -734,6 +965,8 @@ module tb_cpu_only;
     always_ff @(posedge clk) begin
         if (rst) begin
             crc_completed_rounds <= 64'd0;
+            coremark_bench_entries <= 64'd0;
+            coremark_entry_retire_d <= 1'b0;
         end else begin
             if ((dut.EX_valid && dut.EX_pc == CRC_ROUND_DONE_PC) ||
                 (dut.EX_S1_valid && dut.EX_S1_pc == CRC_ROUND_DONE_PC)) begin
@@ -743,6 +976,26 @@ module tb_cpu_only;
                     print_crc_snapshot(crc_completed_rounds + 1);
                 end
             end
+`ifdef COREMARK_PERF
+            if (cycles == 1_000_000 || cycles == 10_000_000 ||
+                cycles == 100_000_000) begin
+                $display("[COREMARK-VERIFY] heartbeat cycles=%0d pc=0x%08X qlen=%0d",
+                         cycles, irom_addr, uart_cap_qlen);
+            end
+            /* 只在函数入口指令首次退休时计数。EX 会在前端/执行停顿期间保持
+             * valid 和 PC，按 EX 电平计数会把一次调用误算成多次。 */
+            if (coremark_entry_retire && !coremark_entry_retire_d) begin
+                coremark_bench_entries <= coremark_bench_entries + 1;
+                /* 每次 CoreMark 迭代调用 core_bench_list 两次；第二次入口是
+                 * 可跨版本稳定识别、且相邻采样间严格相差完整迭代的观察点。 */
+                if ((coremark_bench_entries[0] == 1'b1) &&
+                    (((coremark_bench_entries + 1) >> 1) == COREMARK_SNAPSHOT_LOW ||
+                     ((coremark_bench_entries + 1) >> 1) == COREMARK_SNAPSHOT_HIGH)) begin
+                    print_coremark_snapshot((coremark_bench_entries + 1) >> 1);
+                end
+            end
+            coremark_entry_retire_d <= coremark_entry_retire;
+`endif
             cycles <= cycles + 1;
             cnt_writeback <= cnt_writeback +
                              ((dut.rf_inst.wen && dut.rf_inst.waddr != 5'd0) ? 1 : 0) +

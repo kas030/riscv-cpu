@@ -15,7 +15,7 @@
 #include "bme280.h"
 
 #ifdef RT_USING_FINSH
-#include <shell.h>
+int finsh_system_init(void);
 #endif
 
 #define LED_ADDR 0x80200040ul
@@ -35,6 +35,10 @@ static struct rt_semaphore bme_control_sem;
 static volatile rt_uint8_t bme_periodic_enabled;
 static volatile rt_uint8_t bme_initialized;
 static volatile int bme_last_error;
+
+#ifdef COREMARK_PERF_AUTORUN
+void coremark_perf_autorun_init(void);
+#endif
 
 #if DEMO_FINISH_THREAD
 static void finish_entry(void *param)
@@ -202,6 +206,10 @@ void rt_application_init(void)
     rt_thread_t fin;
 #endif
     rt_thread_t bme;
+
+#ifdef COREMARK_PERF_AUTORUN
+    coremark_perf_autorun_init();
+#endif
 
 #if DEMO_FINISH_THREAD
     fin = rt_thread_create("fin", finish_entry, RT_NULL, 1024, 12, 20);
