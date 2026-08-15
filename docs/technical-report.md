@@ -417,6 +417,27 @@ Table: perip_bridge 接口描述
 
 `UART_DATA` 和 `UART_STATUS` 的位语义见 SoC 地址表。`fpu_mmio` 只提供 CoreMark 计时换算所需的有限 binary32 操作，不代表处理器实现 RV32F。`i2c_register_master` 每次执行一个寄存器级读写事务；软件负责设置从机地址、寄存器地址和方向，并轮询 BUSY/DONE/NACK。
 
+### fpu_mmio
+功能：CoreMark 计时结果换算使用的单精度 MMIO 协处理模块。模块支持无符号 32 位整数到 binary32 的转换，以及有限正规 binary32 除法；运算以多周期状态机执行。它不接入 CPU 的 EX 流水线，不执行 RISC-V 浮点指令，也不构成 RV32F 实现。
+
+软件通过 `FPU_A`、`FPU_B` 写入操作数，再向 `FPU_CMD` 写入命令。`FPU_STATUS[0]` 表示忙状态，`FPU_STATUS[1]` 表示结果完成，`FPU_RESULT` 返回 32 位 binary32 结果。除零、零操作数和非有限/非正规输入均按模块定义的结果路径处理；该模块仅覆盖 CoreMark 计时换算所需的运算范围。
+
+| 端口名 | 类型 | 描述 |
+| --- | --- | --- |
+| `clk`, `rst` | input | CPU 时钟与高有效复位 |
+| `addr`, `wdata`, `wen` | input | MMIO 地址、写数据与写使能 |
+| `rdata` | output | MMIO 读数据 |
+
+| 地址 | 寄存器 | 作用 |
+| --- | --- | --- |
+| `0x8020_0070` | `FPU_A` | 操作数 A |
+| `0x8020_0074` | `FPU_B` | 操作数 B |
+| `0x8020_0078` | `FPU_CMD` | 命令：`1` 为 u32→binary32，`2` 为 binary32 除法 |
+| `0x8020_007C` | `FPU_STATUS` | `busy` 与 `done` 状态 |
+| `0x8020_0080` | `FPU_RESULT` | binary32 结果 |
+
+Table: fpu_mmio 接口与寄存器映射
+
 # 处理器特色功能设计
 
 ## CRC16 硬件加速
