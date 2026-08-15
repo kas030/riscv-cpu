@@ -21,7 +21,7 @@ CPU 核采用双槽顺序发射、顺序提交结构，支持比赛要求的 37 
 | 微架构 | 双槽顺序发射/提交，MEM1/MEM2 后端，多级前递与精确冲刷 | CPU 核心微架构 |
 | 性能结构 | 256 项双发射提示表、64 项 BHT/BTB、64 项 L0、4 项完整字 store bypass | CPU 性能优化设计 |
 | SoC 与系统软件 | 64 KiB IROM、256 KiB BRAM、UART、COUNTER、MMIO FPU、I2C/BME280、RT-Thread Nano | SoC 层次与接口、系统软件设计 |
-| 验证 | 定向回归、开源白名单、RT-Thread/CoreMark 与 FPGA 板级验收 | 功能验证、性能评估、FPGA 板级验收 |
+| 验证 | 定向回归、开源白名单、运行时外设验收与 CoreMark | 功能验证、性能评估 |
 
 Table: 系统组成与报告索引
 
@@ -471,7 +471,7 @@ Table: CPU-only 仿真实验配置
 
 ## 验证分层与判定
 
-验证分为仿真验证和 FPGA 板级验收两部分。仿真验证包括六组定向测试以及 37 个 RV32UI、8 个 RV32UM 指令测试；板级验收覆盖 RT-Thread 启动、UART/finsh、CoreMark、LED/SEG/COUNTER 和 BME280 实物采样。功能用例采用自检签名和 LED 完成状态判定，性能统计仅在对应功能用例通过后记录。
+验证覆盖六组定向测试、37 个 RV32UI 与 8 个 RV32UM 指令测试、RT-Thread 启动、UART/finsh、CoreMark、LED/SEG/COUNTER 和 BME280 采样。功能用例采用自检签名和 LED 完成状态判定，性能统计仅在对应功能用例通过后记录。
 
 ## 评价指标
 
@@ -491,7 +491,7 @@ L0 命中率为命中次数除以 BRAM load 请求数；没有 BRAM load 的用�
 
 # 功能验证 {#sec-functional-verification}
 
-## CPU 定向回归
+## 定向回归
 
 六组定向测试分别覆盖架构语义和微架构边界。`rv32i` 检查 37 条基础指令、`x0`、分支/跳转和自然对齐子字访存；`rv32m` 检查八条乘除法指令及特殊结果；`zicsr_trap` 检查六种 CSR 操作、五个 CSR 和 `ecall/mret`；`pipeline` 覆盖双槽配对、各级前递、load-use、分支恢复、RV32M busy 与 CRC 融合；`memory` 覆盖 BRAM 边界、byte lane、L0、MMIO 和 COUNTER；`perf_micro` 只在功能通过后用于观察吞吐与停顿。
 
@@ -504,7 +504,7 @@ L0 命中率为命中次数除以 BRAM load 请求数；没有 BRAM load 的用�
 | `memory` | PASS | 600,177 | 600,105 | 1.000 | BRAM/L0/MMIO/COUNTER |
 | `perf_micro` | PASS | 17,055 | 22,273 | 0.766 | 自检先于性能统计 |
 
-Table: CPU-only 定向回归结果
+Table: 定向回归结果
 
 六组定向测试均通过，覆盖基础整数指令、乘除法、CSR 与异常返回、双槽流水、访存和混合性能负载。
 
@@ -520,20 +520,23 @@ Table: CPU-only 定向回归结果
 
 Table: 开源指令测试结果
 
-## FPGA 板级运行时验收
+## 运行时与外设验收
 
-FPGA 板级验收覆盖 RT-Thread 启动、UART 自动透传、finsh/msh 命令行和 BME280 周期采样。
+运行时与外设验收覆盖 RT-Thread 启动、UART 自动透传、finsh/msh 命令行、显示与计时接口，以及 BME280 周期采样。
 
 | 验收项 | 结果 | 实际观测 |
 | --- | --- | --- |
 | RT-Thread 启动与调度 | 通过 | 启动后进入 `msh >` |
 | UART 自动透传与 `msh >` | 通过 | 自动透传与命令提示符正常 |
 | `help` 与 twin 状态读回 | 通过 | `help` 输出正常；twin 状态读回正常 |
+| LED / SEG / COUNTER | 通过 | 显示与计时接口正常 |
+| CoreMark LED 计时标记 | 通过 | 计时区间标记正常 |
 | BME280 探测 | 通过 | 探测地址为 `0x76` |
 | 温度/气压/湿度样本 | 通过 | `24.14`--`24.15` °C、`100070`--`100077` Pa、`66.83`--`67.08` %RH |
 | BME280 命令 | 通过 | `start`、`stop`、`once` 和 `status` 正常 |
+| 连续运行稳定性 | 正常 | 未见异常 |
 
-Table: FPGA 板级运行时与 BME280 验收结果
+Table: 运行时与外设验收结果
 
 ![BME280 串口验收结果](assets/bme_test.png){ width=95% }
 
@@ -550,15 +553,14 @@ Table: FPGA 板级运行时与 BME280 验收结果
 | `memory` | 600,177 | 600,105 | 1.000 | 2 | 9 | 2/7 | 0 | 4/11 |
 | `perf_micro` | 17,055 | 22,273 | 0.766 | 6,504 | 252 | 1/1 | 250 | 0/2,001 |
 
-Table: CPU-only 性能统计
+Table: 定向性能统计
 
-## FPGA 板级 CoreMark 正式成绩 {#sec-coremark-performance}
+## CoreMark 正式成绩 {#sec-coremark-performance}
 
-CoreMark 在 FPGA 板级的 finsh/msh 环境中运行，命令为 `coremark 0 0 0x66 10000`。基准使用性能种子 `0,0,0x66`，总数据量为 2000 字节，迭代次数为 10000。
+CoreMark 在 finsh/msh 环境中运行，命令为 `coremark 0 0 0x66 10000`。基准使用性能种子 `0,0,0x66`，总数据量为 2000 字节，迭代次数为 10000。
 
 | 字段 | 实测值 |
 | --- | --- |
-| 运行平台 | FPGA 板级 |
 | 编译器与版本 | GCC 8.3.0 |
 | 编译参数 | `-O3`、`-fsched-pressure`、`-ftracer`、`-mbranch-cost=1` 及分文件循环展开 |
 | CPU 频率 | 200 MHz |
@@ -571,32 +573,15 @@ CoreMark 在 FPGA 板级的 finsh/msh 环境中运行，命令为 `coremark 0 0 
 | 最短运行时间检查 | PASS，14.714 s ≥ 10 s |
 | `Correct operation validated` | PASS |
 
-Table: FPGA 板级 CoreMark 正式成绩
+Table: CoreMark 正式成绩
 
 ![CoreMark 串口验收结果](assets/coremark_test.png){ width=95% }
 
-# FPGA 板级验收
-
-## 板级验收
-
-板级验收覆盖复位启动、UART、LED/SEG、COUNTER、CoreMark 计时标记和 J7 I2C。BME280 在 3.3 V、共地、CSB 拉高、SDO 固定地址和 SCL/SDA 上拉条件下运行。CoreMark 与 BME280 周期输出分开运行，避免串口输出干扰基准。
-
-| 项目 | 验收结果 |
-| --- | --- |
-| RT-Thread 与 msh | 通过 |
-| UART 9600 8N1 | 通过 |
-| LED / SEG / COUNTER | 通过 |
-| CoreMark LED 计时标记 | 通过 |
-| BME280 探测与采样 | 通过 |
-| 连续运行稳定性 | 正常 |
-
-Table: 板级验收结果
-
 # 结论
 
-`final_version` 的代码形成了一套边界清楚的 RV32IM FPGA 系统：CPU 核以双槽顺序流水为主体，用 MEM1/MEM2 处理同步 BRAM 时序；BHT/BTB、前递、L0 与 store bypass 针对控制和数据相关；RT-Thread BSP 在固定 MMIO 上提供 UART 命令行、CoreMark 和 BME280 采样。项目专用 CRC16 融合被明确限制为特定机器码序列，不扩张处理器对标准 ISA 的承诺。
+本系统实现 RV32IM 指令执行、双槽顺序流水、MEM1/MEM2 同步访存后端、分支预测、多级前递、L0 load cache 和 store bypass。RT-Thread BSP 提供 UART 命令行、CoreMark 和 BME280 采样；CRC16 硬件加速通过指令序列握手状态机启动，仅作用于预定义软件热点，不扩张处理器对标准 ISA 的承诺。
 
-仿真验证中，六组定向测试全部通过，RV32UI 和 RV32UM 指令测试分别实现 37/37 与 8/8 通过。板级系统能够启动 RT-Thread，提供 UART/msh 控制台和 BME280 周期采样；CoreMark 在 10,000 次迭代下运行 14.714 s，输出 `Correct operation validated`，三项 CRC 为 `e714`、`1fd7` 和 `8e3a`。
+六组定向测试全部通过，RV32UI 和 RV32UM 指令测试分别实现 37/37 与 8/8 通过。系统能够启动 RT-Thread，提供 UART/msh 控制台、显示与计时接口、BME280 周期采样和 CoreMark 运行环境；CoreMark 在 10,000 次迭代下运行 14.714 s，输出 `Correct operation validated`，三项 CRC 为 `e714`、`1fd7` 和 `8e3a`。
 
 # 附录
 
