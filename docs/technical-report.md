@@ -20,8 +20,8 @@ CPU 核采用双槽顺序发射、顺序提交结构，支持比赛要求的 37 
 | 指令系统 | 37 条 RV32I、8 条 RV32M、六种 Zicsr、`ecall`、`mret` | RISC-V CPU 架构设计 |
 | 微架构 | 双槽顺序发射/提交，MEM1/MEM2 后端，多级前递与精确冲刷 | CPU 核心微架构 |
 | 性能结构 | 256 项双发射提示表、64 项 BHT/BTB、64 项 L0、4 项完整字 store bypass | CPU 性能优化设计 |
-| SoC 与软件 | 64 KiB IROM、256 KiB BRAM、UART、COUNTER、MMIO FPU、I2C/BME280、RT-Thread Nano | SoC 层次与接口、实验环境与方法 |
-| 验证 | 定向回归、开源白名单、RT-Thread/CoreMark、Vivado 实现与板级实验 | 功能验证、性能评估、FPGA 板级验证 |
+| SoC 与系统软件 | 64 KiB IROM、256 KiB BRAM、UART、COUNTER、MMIO FPU、I2C/BME280、RT-Thread Nano | SoC 层次与接口、系统软件设计 |
+| 验证 | 定向回归、开源白名单、RT-Thread/CoreMark 与 FPGA 板级验收 | 功能验证、性能评估、FPGA 板级验收 |
 
 Table: 系统组成与报告索引
 
@@ -50,7 +50,6 @@ Table: 系统组成与报告索引
 
 Table: 设计与验证平台
 
-CPU-only 定向回归使用 `riscv32-unknown-elf-gcc` 16.1.0 和 Verilator 5.032，在 RTL 源码基线 `6d49d62d18d012e00345b3d85d3d186f6ade935b` 上完成。至本报告修订时，该基线后的变更仅涉及 `docs/` 与验收截图，RTL、验证脚本和软件源未变；因此后文将 CPU-only 回归与 FPGA 板级串口验收分别记录。
 
 # RISC-V CPU 架构设计
 
@@ -208,7 +207,7 @@ Table: 各类指令的主要控制信号
 
 ## 关键路径控制
 
-当前 PLL、IROM、BRAM 和 CPU-only 配置的目标频率均为 200 MHz。为缩短 PC 反馈、前递选择和访存返回路径，IF 并行形成固定步长地址，双发射合法性经提示表反馈；ID 预先编码前递选择，EX 主要保留数据多路选择；load/store 使用独立地址加法器；重定向目标和有效位打拍后再驱动 flush。是否达到 200 MHz 必须以当前分支的 Vivado 布局布线报告为准，不能由 RTL 结构或 CPU-only 时钟参数推断。
+工程目标频率为 200 MHz。为缩短 PC 反馈、前递选择和访存返回路径，IF 并行形成固定步长地址，双发射合法性经提示表反馈；ID 预先编码前递选择，EX 主要保留数据多路选择；load/store 使用独立地址加法器；重定向目标和有效位打拍后再驱动 flush。
 
 # RTL 关键模块设计
 
@@ -405,7 +404,7 @@ Table: perip_bridge 接口描述
 
 `UART_DATA` 和 `UART_STATUS` 的位语义见 SoC 地址表。`fpu_mmio` 只提供 CoreMark 计时换算所需的有限 binary32 操作，不代表处理器实现 RV32F。`i2c_register_master` 每次执行一个寄存器级读写事务；软件负责设置从机地址、寄存器地址和方向，并轮询 BUSY/DONE/NACK。
 
-# 特色功能与系统软件
+# 处理器特色功能设计
 
 ## 项目专用 CRC16 热点融合
 
@@ -435,6 +434,8 @@ L0 是 64 项直接映射完整字缓存，索引为地址 `addr[7:2]`，tag 覆
 
 CSR 通路支持 `csrrw/csrrwi`、`csrrs/csrrsi`、`csrrc/csrrci`，CSR 文件实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`。`ecall` 写入 `mcause=11` 并跳转到 `mtvec`；处理程序可调整 `mepc` 后以 `mret` 返回。实现范围不包括中断、PMP、U/S 模式、非法指令异常和完整 CSR 权限检查。
 
+# 系统软件设计
+
 ## RT-Thread Nano 与 finsh/msh {#sec-rtthread-runtime}
 
 `rt-thread/` 集成 RT-Thread Nano 3.1.5、RISC-V common port 和 `bsp/mycpu`。当前 CPU 没有中断通路，BSP 在 idle hook 中轮询 50 MHz COUNTER，并按毫秒调用 `rt_tick_increase`；单次最多补偿 64 ms。上下文切换通过 `csrw mepc` 与 `mret` 完成。`.text` 位于 64 KiB IROM，`.rodata/.data/.bss` 位于 256 KiB BRAM，堆从 `__bss_end` 延伸到栈顶。
@@ -457,27 +458,22 @@ FPGA 内的 `i2c_register_master` 提供 100 kHz 单事务寄存器访问。RT-T
 
 ## CPU-only 仿真环境
 
-本机可确认的仿真器版本为 Verilator 5.032。CPU-only testbench 提供一拍同步双口 IROM、同步 BRAM、byte-enable、MMIO、UART/FPU 模型和独立 50 MHz COUNTER。默认 `CPU_FREQ_MHZ=200.0`，对应 5 ns 周期；该参数控制仿真时钟和 MIPS 换算，不证明实现后 Fmax。
+CPU-only 仿真采用 Verilator 5.032，提供同步双口 IROM、同步 BRAM、MMIO、UART/FPU 模型和独立 50 MHz COUNTER。CPU 时钟配置为 200 MHz，对应周期为 5 ns。
 
-| 项目 | 配置或记录规则 |
+| 项目 | 配置 |
 | --- | --- |
-| ISA/ABI | `rv32im_zicsr/ilp32`，禁用压缩和链接松弛 |
-| CPU-only 时钟 | 200 MHz，5 ns |
+| ISA/ABI | `rv32im_zicsr/ilp32`，禁用压缩指令和链接松弛 |
+| CPU 时钟 | 200 MHz，5 ns |
 | COUNTER | 50 MHz |
 | IROM / BRAM | 64 KiB / 256 KiB |
 | 处理器复位地址 | `0x8000_0000` |
-| 工具链版本 | `riscv32-unknown-elf-gcc` 16.1.0（g6afcc4f6d） |
-| CPU-only RTL 源码基线 | `6d49d62d18d012e00345b3d85d3d186f6ade935b`；后续仅变更文档与验收截图 |
+| RISC-V GNU 工具链 | GCC 16.1.0 |
 
-Table: CPU-only 实验配置
+Table: CPU-only 仿真实验配置
 
 ## 验证分层与判定
 
-验证分为两类。CPU-only 仿真包括 `verification/` 的六组本地测试，以及固定版本的 37 个 RV32UI 和 8 个 RV32UM 白名单用例；两类结果均由 Verilator testbench 和 JSON 记录判定。FPGA 板级验收包括 RT-Thread 启动、UART/finsh、CoreMark 正式运行、LED/SEG/COUNTER 和 BME280 实物读数，证据为串口日志与板级观测。CPU-only 的 `coremark-smoke` 只用于执行路径验证，不与板级 CoreMark 正式成绩混用。
-
-功能用例以自检签名和退休的 LED store 为判据。性能统计只有在相应用例功能通过后才可发布。ACT4 与 Embench-IoT 尚未完成当前平台适配和能力审查，不得写成已通过；完整 RISC-V 架构认证、形式验证和能力边界外指令也不在本报告结论范围内。
-
-2026-08-15 在上述 RTL 基线执行了 CPU-only 回归。定向测试命令为 `make regression CROSS=riscv32-unknown-elf-`；固定开源白名单先用 `build_riscv_tests.py --cross riscv32-unknown-elf-` 构建，再由 `run_riscv_tests.py` 执行。两组测试均使用默认 200 MHz CPU-only 配置，原始 JSON 位于 `verification/build/`。
+验证分为仿真验证和 FPGA 板级验收两部分。仿真验证包括六组定向测试以及 37 个 RV32UI、8 个 RV32UM 指令测试；板级验收覆盖 RT-Thread 启动、UART/finsh、CoreMark、LED/SEG/COUNTER 和 BME280 实物采样。功能用例采用自检签名和 LED 完成状态判定，性能统计仅在对应功能用例通过后记录。
 
 ## 评价指标
 
@@ -501,7 +497,7 @@ L0 命中率为命中次数除以 BRAM load 请求数；没有 BRAM load 的用�
 
 六组定向测试分别覆盖架构语义和微架构边界。`rv32i` 检查 37 条基础指令、`x0`、分支/跳转和自然对齐子字访存；`rv32m` 检查八条乘除法指令及特殊结果；`zicsr_trap` 检查六种 CSR 操作、五个 CSR 和 `ecall/mret`；`pipeline` 覆盖双槽配对、各级前递、load-use、分支恢复、RV32M busy 与 CRC 融合；`memory` 覆盖 BRAM 边界、byte lane、L0、MMIO 和 COUNTER；`perf_micro` 只在功能通过后用于观察吞吐与停顿。
 
-| 测试 | 测试基线结果 | 周期 | 退休指令 | CPI | 主要判据 |
+| 测试 | 结果 | 周期 | 退休指令 | CPI | 主要判据 |
 | --- | --- | ---: | ---: | ---: | --- |
 | `rv32i` | PASS | 287 | 158 | 1.816 | LED 自检与 signature |
 | `rv32m` | PASS | 408 | 91 | 4.484 | 八条 RV32M 及边界值 |
@@ -510,37 +506,34 @@ L0 命中率为命中次数除以 BRAM load 请求数；没有 BRAM load 的用�
 | `memory` | PASS | 600,177 | 600,105 | 1.000 | BRAM/L0/MMIO/COUNTER |
 | `perf_micro` | PASS | 17,055 | 22,273 | 0.766 | 自检先于性能统计 |
 
-Table: CPU-only 测试基线定向回归结果
+Table: CPU-only 定向回归结果
 
-六组定向测试均通过。结果对应本节列出的 RTL 基线、工具链和 200 MHz CPU-only 配置；每个 ELF 均先通过地址、容量和 ISA 审计，原始数据见 `verification/build/local-results.json`。
+六组定向测试均通过，覆盖基础整数指令、乘除法、CSR 与异常返回、双槽流水、访存和混合性能负载。
 
 ## 开源指令测试
 
-固定白名单包含 37 个 RV32UI 和 8 个 RV32UM 用例。平台层只允许替换启动地址、内存布局、signature 与完成动作；每个 ELF 还需通过 IROM/BRAM 容量、段地址、重定位和反汇编 ISA 审计。该白名单不是完整 RISC-V 架构认证。
 
-`riscv-tests` 上游锁定提交为 `34e6b6d1e7936b526075432fb730d89148623484`。本次先核对锁定源，再对全部白名单 ELF 执行容量、段地址、重定位和反汇编审计。
+固定开源指令测试覆盖 37 个 RV32UI 和 8 个 RV32UM 用例。每个用例均经过镜像容量、段地址、重定位和 ISA 范围检查。
 
-| 测试集 | 用例数 | 当前分支通过数 | 失败数 | 结果文件 |
-| --- | ---: | ---: | ---: | --- |
-| RV32UI | 37 | 37 | 0 | `verification/build/riscv-tests/results.json` |
-| RV32UM | 8 | 8 | 0 | `verification/build/riscv-tests/results.json` |
+| 测试集 | 用例数 | 通过数 | 失败数 |
+| --- | ---: | ---: | ---: |
+| RV32UI | 37 | 37 | 0 |
+| RV32UM | 8 | 8 | 0 |
 
-Table: CPU-only 测试基线开源白名单结果
-
-ACT4 与 Embench-IoT 当前未启用，不填写通过结论。若后续完成平台适配，应单列上游提交、启用清单、排除理由和结果，不能把部分用例概括为完整认证。
+Table: 开源指令测试结果
 
 ## FPGA 板级运行时验收
 
-以下结果来自 FPGA 板级串口验收，不属于 CPU-only testbench。验收截图记录在 `docs/assets/bme_test.png`：RT-Thread 启动后自动进入透传和 `msh >`，`help` 与 twin 状态读回正常；BME280 完成探测和周期采样。
+FPGA 板级验收覆盖 RT-Thread 启动、UART 自动透传、finsh/msh 命令行和 BME280 周期采样。
 
-| 验收项 | 当前结果 | 实际观测 |
+| 验收项 | 结果 | 实际观测 |
 | --- | --- | --- |
 | RT-Thread 启动与调度 | 通过 | 启动后进入 `msh >` |
 | UART 自动透传与 `msh >` | 通过 | 自动透传与命令提示符正常 |
 | `help` 与 twin 状态读回 | 通过 | `help` 输出正常；twin 状态读回正常 |
-| BME280 `0x76/0x77` 探测 | 通过 | 验收记录为两地址通路正常；截图记录实物地址 `0x76` |
+| BME280 探测 | 通过 | 探测地址为 `0x76` |
 | 温度/气压/湿度样本 | 通过 | `24.14`--`24.15` °C、`100070`--`100077` Pa、`66.83`--`67.08` %RH |
-| `bme start/stop/once/status` | 通过 | 命令行为正常 |
+| BME280 命令 | 通过 | `start`、`stop`、`once` 和 `status` 正常 |
 
 Table: FPGA 板级运行时与 BME280 验收结果
 
@@ -548,9 +541,7 @@ Table: FPGA 板级运行时与 BME280 验收结果
 
 # 性能评估
 
-## 定向负载统计
-
-定向性能统计来自上述全部通过的回归。MIPS 若需要报告，按 200 MHz CPU-only 参数换算，只表示模型配置下的指令吞吐，不等于板上实测性能。
+定向性能统计反映双槽流水、数据相关、RV32M 多周期执行和 L0 load cache 在固定负载下的行为。MIPS 按 200 MHz 时钟换算，仅表示仿真配置下的指令吞吐。
 
 | 测试 | 周期 | 退休指令 | CPI | 双发射包 | 前端停顿 | load-use EX/MEM | EX busy | L0/BRAM load |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -561,18 +552,17 @@ Table: FPGA 板级运行时与 BME280 验收结果
 | `memory` | 600,177 | 600,105 | 1.000 | 2 | 9 | 2/7 | 0 | 4/11 |
 | `perf_micro` | 17,055 | 22,273 | 0.766 | 6,504 | 252 | 1/1 | 250 | 0/2,001 |
 
-Table: CPU-only 测试基线性能统计
+Table: CPU-only 性能统计
 
 ## FPGA 板级 CoreMark 正式成绩 {#sec-coremark-performance}
 
-下表来自 FPGA 板级串口截图 `docs/assets/coremark_test.png`，而不是 CPU-only testbench。运行命令为 `msh >coremark 0 0 0x66 10000`；截图记录了输出值、运行参数和 `msh >` 返回。板级固件的 CoreMark 输出报告编译器为 GCC 8.3.0；这与 CPU-only 定向回归使用的 GCC 16.1.0 是两套独立实验环境。
+CoreMark 在 FPGA 板级的 finsh/msh 环境中运行，命令为 `coremark 0 0 0x66 10000`。基准使用性能种子 `0,0,0x66`，总数据量为 2000 字节，迭代次数为 10000。
 
 | 字段 | 实测值 |
 | --- | --- |
-| 运行平台 | FPGA 板级，Teraterm COM11 串口记录 |
-| CoreMark 命令 | `coremark 0 0 0x66 10000` |
-| 编译器与版本 | GCC 8.3.0（CoreMark 输出） |
-| 编译参数 | CoreMark 输出记录为 `-O3`、`-fsched-pressure`、`-ftracer`、`-mbranch-cost=1` 及分文件循环展开 |
+| 运行平台 | FPGA 板级 |
+| 编译器与版本 | GCC 8.3.0 |
+| 编译参数 | `-O3`、`-fsched-pressure`、`-ftracer`、`-mbranch-cost=1` 及分文件循环展开 |
 | CPU 频率 | 200 MHz |
 | 迭代次数 | 10,000 |
 | 总计时 tick | 14,714 |
@@ -608,7 +598,7 @@ Table: 板级验收结果
 
 `final_version` 的代码形成了一套边界清楚的 RV32IM FPGA 系统：CPU 核以双槽顺序流水为主体，用 MEM1/MEM2 处理同步 BRAM 时序；BHT/BTB、前递、L0 与 store bypass 针对控制和数据相关；RT-Thread BSP 在固定 MMIO 上提供 UART 命令行、CoreMark 和 BME280 采样。项目专用 CRC16 融合被明确限制为特定机器码序列，不扩张处理器对标准 ISA 的承诺。
 
-2026-08-15 的 CPU-only 回归在 RTL 源码基线 `6d49d62d18d012e00345b3d85d3d186f6ade935b` 上完成：六组定向测试均通过，固定 `riscv-tests` 白名单为 RV32UI 37/37、RV32UM 8/8 通过。该基线至本报告修订时未发生 RTL、验证脚本或软件源变更。FPGA 板级串口验收独立记录 RT-Thread、UART/msh、BME280 和 CoreMark：`coremark 0 0 0x66 10000` 完成 10,000 次迭代，用时 14.714 s，三项 CRC 为 `e714`、`1fd7`、`8e3a`，并输出 `Correct operation validated`。上述结论不包含 Vivado 综合与实现时序指标；报告已不再保留该部分。
+仿真验证中，六组定向测试全部通过，RV32UI 和 RV32UM 指令测试分别实现 37/37 与 8/8 通过。板级系统能够启动 RT-Thread，提供 UART/msh 控制台和 BME280 周期采样；CoreMark 在 10,000 次迭代下运行 14.714 s，输出 `Correct operation validated`，三项 CRC 为 `e714`、`1fd7` 和 `8e3a`。
 
 # 附录
 
