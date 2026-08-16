@@ -15,6 +15,7 @@ cover: assets/cover.pdf
 | 功能与性能验证 | 六组定向测试、45 个开源指令用例、运行时与外设验收及 CoreMark | 定向测试全部通过；CoreMark 在 10,000 次迭代下达到 679.624878 iter/s |
 
 Table: 作品核心亮点预览
+{widths=18,47,35}
 
 # 项目概述
 

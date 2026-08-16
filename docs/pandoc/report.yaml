@@ -12,6 +12,7 @@ resource-path:
   - .
   - assets
 filters:
+  - pandoc/table-widths.lua
   - pandoc/report.lua
 csl: pandoc/gb-t-7714-2015-numeric.csl
 include-in-header:
