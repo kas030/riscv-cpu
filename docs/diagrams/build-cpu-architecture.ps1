@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateRange(72, 600)]
-    [int]$Dpi = 220
+    [int]$Dpi = 300
 )
 
 $ErrorActionPreference = "Stop"

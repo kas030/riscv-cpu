@@ -30,6 +30,38 @@ xelatex --version
 
 默认目标为 `report`，会构建统一的技术文档。PDF 输出为 `docs/build/technical-report.pdf`。
 
+## CPU 架构图手动渲染
+
+CPU SoC 架构图和核心微架构图的源文件位于 `docs/diagrams/`。渲染前需确保
+`latexmk`、XeLaTeX、`pdfunite` 和 `pdftoppm` 可用。在仓库根目录运行：
+
+```powershell
+.\docs\diagrams\build-cpu-architecture.ps1
+```
+
+脚本会分别编译 `cpu-soc-arch.tex` 和 `cpu-micro-arch.tex`，合并 PDF，并以
+300 DPI 生成用于文档引用的 PNG。可通过 `-Dpi` 调整 PNG 分辨率，例如：
+
+```powershell
+.\docs\diagrams\build-cpu-architecture.ps1 -Dpi 400
+```
+
+最终文件为：
+
+- `docs/assets/cpu-architecture.pdf`
+- `docs/assets/cpu-soc-overview.png`
+- `docs/assets/cpu-core-microarchitecture.png`
+
+若只需检查 SoC 架构图，可单独运行：
+
+```powershell
+latexmk -xelatex -interaction=nonstopmode -halt-on-error -file-line-error `
+  -outdir=docs/build/cpu-architecture/soc `
+  docs/diagrams/cpu-soc-arch.tex
+```
+
+单图 PDF 输出为 `docs/build/cpu-architecture/soc/cpu-soc-arch.pdf`。
+
 报告 YAML 元数据可用 `cover` 指定相对于 `docs/` 的封面：
 
 ```yaml
