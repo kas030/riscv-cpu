@@ -139,12 +139,16 @@
     Dual-issue in-order pipeline\\
     MEM1/MEM2 backend
   };
-  \node[block, minimum width=120pt, minimum height=40pt] (irom0) at (5.11,5.8) {
-    {\bfseries Instruction ROM 0}\\Address: pc[15:2]
+  \node[block, minimum width=125pt, minimum height=75pt] (irom) at (5.11,4.93) {
+    {\bfseries Dual-port IROM}\\[2pt]
+    Port A: pc[15:2]\\
+    Port B: pc1[15:2]\\
+    pc1 = pc + 4\\
+    16K $\times$ 32-bit\\
+    synchronous read
   };
-  \node[block, minimum width=120pt, minimum height=40pt] (irom1) at (5.11,4.05) {
-    {\bfseries Instruction ROM 1}\\Address: (pc+4)[15:2]
-  };
+  \coordinate (iromporta) at ($(irom.west)+(0,0.48)$);
+  \coordinate (iromportb) at ($(irom.west)+(0,-0.48)$);
 
   % Address-decoded memory and MMIO targets
   \node[peripheral, minimum width=180pt] (bram) at (-3.2,0.5) {
@@ -184,7 +188,7 @@
   \begin{scope}[on background layer, xshift=-1pt, yshift=3pt]
     \node[group, fit=(bram)(sw)(key)(seg)(led)(counter)(uartbridge)(i2cmaster), inner xsep=0.42cm,
           inner ysep=0.62cm] (bridge) {};
-    \node[outer, fit=(core)(irom0)(irom1)(bridge), inner xsep=0.62cm,
+    \node[outer, fit=(core)(irom)(bridge), inner xsep=0.62cm,
           inner ysep=0.65cm] (student) {};
     \node[group, fill=none, draw=ink, fit=(bram)(sw)(key)(seg)(led)(counter)(uartbridge)(i2cmaster), inner xsep=0.42cm, inner ysep=0.72cm] (perip_bridge) {};
   \end{scope}
@@ -200,12 +204,12 @@
   \draw[controlpath, solid] (cntclk.east) -- node[bus label, above=15pt, fill=none, text=ink, pos=0.62, rotate=90] {cnt\_clk} (cntclk.east -| counter.west);
 
   % Orthogonal instruction interfaces
-  \draw[databoth] (irom0.west -| core.east) -- node[bus label, above=2pt, fill=none, text=ink] {
+  \draw[databoth] (iromporta -| core.east) -- node[bus label, above=2pt, fill=none, text=ink] {
     irom\_addr[31:0] \\ irom\_data[31:0]
-  } (irom0.west);
-  \draw[databoth] (irom1.west -| core.east) -- node[bus label, above=2pt, fill=none, text=ink] {
+  } (iromporta);
+  \draw[databoth] (iromportb -| core.east) -- node[bus label, below=2pt, fill=none, text=ink] {
     irom\_addr1[31:0] \\ irom\_data1[31:0]
-  } (irom1.west);
+  } (iromportb);
 
   % Orthogonal unified data interface
   \draw[memboth] (core.south) -- node[bus label, right=2pt, fill=none, text=ink, pos=0.5] {32-bit data interface} (core.south |- perip_bridge.north);
