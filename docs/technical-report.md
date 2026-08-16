@@ -21,9 +21,9 @@ Table: 作品核心亮点预览
 
 ## 项目背景
 
-本项目面向竞业达 FPGA 数字孪生平台，设计并实现一套 32 位小端 RISC-V 处理器系统。处理器运行 RV32IM 裸机程序和 RT-Thread Nano 3.1.5；SoC 同时提供 finsh/msh 串口命令行、EEMBC CoreMark 1.0、板级显示接口和 BME280 环境传感器接入。
+本项目面向竞业达 FPGA 数字孪生平台，设计并实现一套 32 位小端 RISC-V 处理器系统。处理器运行 RV32IM 裸机程序和 RT-Thread Nano 3.1.5。SoC 同时提供 finsh/msh 串口命令行、EEMBC CoreMark 1.0、板级显示接口和 BME280 环境传感器接入。
 
-CPU 核采用双槽顺序发射、顺序提交结构，支持比赛要求的 37 条 RV32I 基础指令、RV32M 全部 8 条指令，以及项目运行时使用的最小 Zicsr/M-mode trap 子集。为适配 FPGA 同步存储器，后端采用 MEM1/MEM2 两级访存流水；前端配有分支预测和双发射提示表，数据侧配有多级前递、load-use 冒险控制与小容量 L0 load cache。CoreMark CRC16 热点采用项目专用硬件加速，IF 级通过指令序列握手状态机在预定义序列完成交接后启动加速路径；该路径不是标准 RISC-V 扩展。
+CPU 核采用双槽顺序发射、顺序提交结构，支持比赛要求的 37 条 RV32I 基础指令、RV32M 全部 8 条指令，以及项目运行时使用的最小 Zicsr/M-mode trap 子集。为适配 FPGA 同步存储器，后端采用 MEM1/MEM2 两级访存流水；前端配有分支预测和双发射提示表，数据侧配有多级前递、load-use 冒险控制与小容量 L0 load cache。CoreMark CRC16 热点采用项目专用硬件加速，IF 级通过指令序列握手状态机在预定义序列完成交接后启动加速路径。该路径不是标准 RISC-V 扩展。
 
 ## 系统组成
 
@@ -58,9 +58,9 @@ Table: 系统组成与报告索引
 | 目标器件 | Xilinx Kintex-7 XC7K325T-FFG900-2 |
 | FPGA 工具 | AMD Vivado 2025.2.1 |
 | RTL | SystemVerilog |
-| CPU-only 仿真 | Verilator 5.032；独立同步 IROM/BRAM、MMIO、UART 和 FPU 模型 |
+| CPU-only 仿真 | Verilator 5.032，采用独立同步 IROM/BRAM、MMIO、UART 和 FPU 模型 |
 | 测试 ISA/ABI | `rv32im_zicsr/ilp32`，禁用压缩指令和链接松弛 |
-| 板级时钟 | 200 MHz 差分输入；PLL 输出 200 MHz CPU 时钟和 50 MHz 外设时钟 |
+| 板级时钟 | 200 MHz 差分输入，PLL 输出 200 MHz CPU 时钟和 50 MHz 外设时钟 |
 | 存储空间 | 64 KiB IROM，256 KiB BRAM |
 
 Table: 设计与验证平台
@@ -90,7 +90,7 @@ Table: RV32I 基础指令支持范围
 
 ## SoC 层次与接口 {#sec-soc-interface}
 
-系统以 `student_top` 为处理器子系统边界，由 CPU 核 `Core_cpu`、共享双口 IROM 和外设桥 `perip_bridge` 组成。两路 IROM 端口分别读取当前 PC 和 `PC+4` 对应的 32 位指令。`student_top` 使用 14 位字地址访问 `16384 × 32 bit` IROM，物理容量为 64 KiB；PC 高位不参与片内 ROM 寻址，因此软件必须把可执行代码限制在 `0x8000_0000`--`0x8000_FFFF`。
+系统以 `student_top` 为处理器子系统边界，由 CPU 核 `Core_cpu`、共享双口 IROM 和外设桥 `perip_bridge` 组成。两路 IROM 端口分别读取当前 PC 和 `PC+4` 对应的 32 位指令。`student_top` 使用 14 位字地址访问 `16384 × 32 bit` IROM，物理容量为 64 KiB。PC 高位不参与片内 ROM 寻址，因此软件必须把可执行代码限制在 `0x8000_0000`--`0x8000_FFFF`。
 
 ![CPU SoC 总体结构](assets/cpu-soc-overview.png){ width=100% }
 
@@ -103,7 +103,7 @@ CPU 数据侧只有一组统一接口。`perip_bridge` 将请求译码到同步 
 | KEY | `0x8020_0010` | 8 位虚拟按键，只读 |
 | SEG | `0x8020_0020` | 40 位数码管输出，写数据可回读 |
 | LED | `0x8020_0040` | 32 位 LED 输出 |
-| COUNTER | `0x8020_0050` | 50 MHz 计时器；特定写值控制启动和停止 |
+| COUNTER | `0x8020_0050` | 50 MHz 计时器，特定写值控制启动和停止 |
 | UART DATA / STATUS | `0x8020_0060` / `0x8020_0064` | UART 数据、忙/有效/透传状态 |
 | CoreMark FPU | `0x8020_0070`--`0x8020_0080` | 计时结果换算用有限 binary32 MMIO 单元，不属于 RV32F |
 | I2C/BME280 | `0x8020_0084`--`0x8020_0090` | 从机地址、寄存器地址、数据和控制/状态寄存器 |
@@ -119,33 +119,33 @@ CPU 采用双槽顺序发射、顺序提交结构。源码仍按 IF、ID、EX、
 
 ![CPU 双槽流水微架构](assets/cpu-core-microarchitecture.png){ width=100% }
 
-蓝色主通路表示取指、级间数据传递和寄存器写回，橙色通路表示共享 LSU、数据总线与 L0 cache 的访存路径，紫色通路表示 MEM1/MEM2 前递和 WB 同拍读旁路，红色通路表示 stall、flush、busy 和重定向等控制反馈。数据与控制信号随 valid 经过级间寄存器；复位、冲刷或气泡会清除有效性，并屏蔽错误路径上的体系结构副作用。
+蓝色主通路表示取指、级间数据传递和寄存器写回，橙色通路表示共享 LSU、数据总线与 L0 cache 的访存路径，紫色通路表示 MEM1/MEM2 前递和 WB 同拍读旁路，红色通路表示 stall、flush、busy 和重定向等控制反馈。数据与控制信号随 valid 经过级间寄存器。复位、冲刷或气泡会清除有效性，并屏蔽错误路径上的体系结构副作用。
 
 ### 双路取指与分支预测（IF）
 
 PC 是复位值为 `0x8000_0000` 的 32 位寄存器。IF 并行形成 `PC+4`、`PC+8` 和预测目标，并在 EX 重定向、预测跳转与顺序地址之间选择下一 PC。双发射时顺序前进 8 字节，单发射时前进 4 字节。
 
-双发射提示表共有 256 项，索引为 `pc[9:2]`，tag 覆盖 `pc[15:8]`。同步 IROM 返回候选包后，前端按指令类别、包内 RAW、双访存和双 RV32M 冲突训练表项；冷启动和 tag 未命中均保守单发射。分支预测器包含 64 项 BHT 和 64 项 BTB，索引为 `pc[7:2]`，BTB tag 同样覆盖 `pc[15:8]`。BTB 未命中时预测不跳转；命中后，`jal` 直接预测跳转，条件分支由 2 位饱和计数器决定方向。`jalr`、`ecall` 和 `mret` 在 EX 解析。
+双发射提示表共有 256 项，索引为 `pc[9:2]`，tag 覆盖 `pc[15:8]`。同步 IROM 返回候选包后，前端按指令类别、包内 RAW、双访存和双 RV32M 冲突训练表项。冷启动和 tag 未命中均保守单发射。分支预测器包含 64 项 BHT 和 64 项 BTB，索引为 `pc[7:2]`，BTB tag 同样覆盖 `pc[15:8]`。BTB 未命中时预测不跳转。命中后，`jal` 直接预测跳转，条件分支由 2 位饱和计数器决定方向。`jalr`、`ecall` 和 `mret` 在 EX 解析。
 
 ### 译码、寄存器读取与发射控制（ID）
 
-两个 ID 槽分别完成主控制译码、ALU/CSR 控制译码、立即数生成和寄存器索引提取。共享寄存器组包含 32 个 32 位通用寄存器，提供 4 个读端口和 2 个写端口，可同时为两个槽读取各自的 `rs1`、`rs2`，并在同一拍接收两路写回。对 `x0` 的写入被屏蔽，读取 `x0` 始终得到 0；WB 到 ID 的同周期旁路用于消除寄存器组读写同拍造成的数据陈旧。
+两个 ID 槽分别完成主控制译码、ALU/CSR 控制译码、立即数生成和寄存器索引提取。共享寄存器组包含 32 个 32 位通用寄存器，提供 4 个读端口和 2 个写端口，可同时为两个槽读取各自的 `rs1`、`rs2`，并在同一拍接收两路写回。对 `x0` 的写入被屏蔽，读取 `x0` 始终得到 0。WB 到 ID 的同周期旁路用于消除寄存器组读写同拍造成的数据陈旧。
 
-槽 1 只有在包内不存在从槽 0 到槽 1 的 RAW 相关且资源允许时才有效。WAW 不阻止配对；若两槽同拍写同一非零 `rd`，槽 1 的较新值最终可见。控制流、CSR/SYSTEM、双访存和双 RV32M 组合均退化为单发射。该约束避免引入乱序调度和重排序缓冲区，同时保持槽 0 先于槽 1 的程序顺序。
+槽 1 只有在包内不存在从槽 0 到槽 1 的 RAW 相关且资源允许时才有效。WAW 不阻止配对。若两槽同拍写同一非零 `rd`，槽 1 的较新值最终可见。控制流、CSR/SYSTEM、双访存和双 RV32M 组合均退化为单发射。该约束避免引入乱序调度和重排序缓冲区，同时保持槽 0 先于槽 1 的程序顺序。
 
 ### 整数执行、多周期运算与重定向（EX）
 
 两个 EX 槽均包含 RV32I ALU 和 RV32M 运算通路。ALU 使用 24 位独热控制码：低 14 位选择 RV32I 算术、逻辑、移位和比较，`[21:14]` 选择 RV32M，bit 22 当前未用，bit 23 选择项目专用 CRC16 硬件加速运算。Load/store 地址由独立的 `rs1+imm` 加法通路形成，分支比较也单独产生结果。
 
-RV32M 单元启动时锁存操作数与类型。RV32M 单元中的普通 `mul` 等待一个周期，高位乘法等待两个周期，普通除法和余数进行 32 次迭代；EX 级另对操作数可证明处于 18 位有符号范围的普通 `mul` 使用窄值域快速路径，不启动多周期单元。任一实际进入多周期单元的槽 busy 时，前端与 ID/EX 保持，避免尚未完成的指令被覆盖。完成结果与普通 ALU 结果一样进入后端，可被后续指令前递。
+RV32M 单元启动时锁存操作数与类型。RV32M 单元中的普通 `mul` 等待一个周期，高位乘法等待两个周期，普通除法和余数进行 32 次迭代。EX 级另对操作数可证明处于 18 位有符号范围的普通 `mul` 使用窄值域快速路径，不启动多周期单元。任一实际进入多周期单元的槽 busy 时，前端与 ID/EX 保持，避免尚未完成的指令被覆盖。完成结果与普通 ALU 结果一样进入后端，可被后续指令前递。
 
-槽 0 还包含 CSR 文件与统一重定向逻辑。CSR 文件实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`；`ecall` 保存异常 PC 并写入 `mcause=11` 后跳转到 `mtvec`，`mret` 恢复相关状态并跳转到 `mepc`。EX 将分支实际方向和目标与预测元数据比较，只有不一致时才把正确 PC 反馈到 IF，并冲刷 IF/ID 与 ID/EX。
+槽 0 还包含 CSR 文件与统一重定向逻辑。CSR 文件实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`。`ecall` 保存异常 PC 并写入 `mcause=11` 后跳转到 `mtvec`，`mret` 恢复相关状态并跳转到 `mepc`。EX 将分支实际方向和目标与预测元数据比较，只有不一致时才把正确 PC 反馈到 IF，并冲刷 IF/ID 与 ID/EX。
 
 ### 共享访存端口与 L0 cache（MEM1/MEM2）
 
-CPU 数据侧只有一个端口，因此同一发射包最多包含一条 load/store。MEM1 从两个槽中选择有效访存请求，通过共享 LSU 输出地址、写数据和访问宽度；LSU 按小端字节序生成 `sb`、`sh`、`sw` 所需的写数据与 byte mask。MEM2 将同步 BRAM 返回的完整 32 位原始字与相应流水元数据对齐，byte/half lane 选择及符号或零扩展留到写回路径完成。
+CPU 数据侧只有一个端口，因此同一发射包最多包含一条 load/store。MEM1 从两个槽中选择有效访存请求，通过共享 LSU 输出地址、写数据和访问宽度。LSU 按小端字节序生成 `sb`、`sh`、`sw` 所需的写数据与 byte mask。MEM2 将同步 BRAM 返回的完整 32 位原始字与相应流水元数据对齐，byte/half lane 选择及符号或零扩展留到写回路径完成。
 
-64 项直接映射 L0 load cache 只保存 BRAM 的完整 32 位数据字，不缓存 MMIO。Load 在 EX 提前探测缓存；命中时，数据可在下一拍由 MEM1 送入前递网络。未命中时，冒险控制等待 BRAM 数据沿 MEM2 后端返回。Store 对 BRAM 写穿，并使同一字地址的 L0 行失效。另有 4 项完整字 store bypass 保存近期 `sw` 数据；byte/half store 会失效对应项，避免后续 load 读到不完整的整字。
+64 项直接映射 L0 load cache 只保存 BRAM 的完整 32 位数据字，不缓存 MMIO。Load 在 EX 提前探测缓存。命中时，数据可在下一拍由 MEM1 送入前递网络。未命中时，冒险控制等待 BRAM 数据沿 MEM2 后端返回。Store 对 BRAM 写穿，并使同一字地址的 L0 行失效。另有 4 项完整字 store bypass 保存近期 `sw` 数据；byte/half store 会失效对应项，避免后续 load 读到不完整的整字。
 
 ### 冒险控制与前递网络
 
@@ -201,7 +201,7 @@ Table: 各类指令的主要控制信号
 
 控制器采用分层译码。`main_ctrl` 生成寄存器写、访存、写回和下一 PC 控制；`imm_gen` 生成 I/S/B/U/J 五类立即数；`alu_ctrl` 根据 `opcode`、`funct3` 和 `funct7` 产生 24 位独热运算码，其中 bit `[13:0]` 用于 RV32I/分支运算，`[21:14]` 用于 RV32M，bit 22 未用，bit 23 用于项目专用 CRC16 硬件加速运算；`csr_ctrl_decode` 识别六种 Zicsr 指令以及 `ecall`、`mret`。`mycpu_decoder` 把这些子模块封装成单槽译码器，两个 ID 槽各实例化一套。
 
-双发射判定会检查 slot0 到 slot1 的 RAW 依赖，以及双访存和双 RV32M 冲突；WAW 不会阻止双发射，同一拍写入同一 `rd` 时，第二槽结果覆盖第一槽。控制流、CSR、双访存及双 RV32M 组合均按单发射执行。EX 级把实际分支结果与预测元数据进行比较；方向或目标不一致时重定向 PC，并冲刷 IF/ID 和 ID/EX，预测正确时则让流水线继续执行。
+双发射判定会检查 slot0 到 slot1 的 RAW 依赖，以及双访存和双 RV32M 冲突；WAW 不会阻止双发射，同一拍写入同一 `rd` 时，第二槽结果覆盖第一槽。控制流、CSR、双访存及双 RV32M 组合均按单发射执行。EX 级把实际分支结果与预测元数据进行比较。方向或目标不一致时重定向 PC，并冲刷 IF/ID 和 ID/EX，预测正确时则让流水线继续执行。
 
 执行 `ecall` 时，处理器保存异常 PC，写入 `mcause=11`，随后跳转到 `mtvec`；执行 `mret` 时，处理器恢复 `mstatus.MIE/MPIE` 并跳转到 `mepc`。目前尚未实现非法指令、未对齐访问、中断、U/S 模式和完整的 CSR 权限检查。
 译码结果不会跨级直接驱动后端副作用，而是与 PC、寄存器索引、预测元数据和 valid 一起逐级寄存。ID 发射控制先关闭不满足配对条件的槽 1；冒险控制再根据在途指令决定保持或插入气泡；EX 重定向则使错误路径失效。当前异常体系只覆盖项目测试所需的机器模式最小子集，尚未实现非法指令、未对齐访问、总线故障、中断、U/S 模式和完整 CSR 权限检查。
@@ -210,7 +210,7 @@ Table: 各类指令的主要控制信号
 
 ## 双槽顺序发射与后端流水化 {#sec-dual-issue-memory}
 
-双槽结构在不改变顺序语义的前提下利用相邻指令间的并行性。IF 级根据候选指令的类别、slot0→slot1 RAW、双访存和双 RV32M 冲突判断双发射合法性，并将结果训练到提示表；命中后，ID 级完成译码、寄存器读取、前递选择和在途冒险控制。无法配对时，槽 1 失效，槽 0 按单发射继续执行；不需要编译器插入专用打包指令。
+双槽结构在不改变顺序语义的前提下利用相邻指令间的并行性。IF 级根据候选指令的类别、slot0→slot1 RAW、双访存和双 RV32M 冲突判断双发射合法性，并将结果训练到提示表。命中后，ID 级完成译码、寄存器读取、前递选择和在途冒险控制。无法配对时，槽 1 失效，槽 0 按单发射继续执行。不需要编译器插入专用打包指令。
 
 ![双发射提示表表项与索引结构](diagrams/xml/export/diht-5x.png){ width=88% }
 
@@ -230,7 +230,7 @@ Table: 各类指令的主要控制信号
 
 ## 流水级模块
 ### `mycpu_if_stage`
-功能：IF 级维护 PC，在顺序地址、BTB 预测目标和 EX 重定向目标之间选择下一 PC。内部 256 项双发射提示表把候选包判断移出 PC 反馈关键路径；同步 IROM 停顿期间由 hold 寄存器保存当前返回包，地址口可以继续形成预取请求。
+功能：IF 级维护 PC，在顺序地址、BTB 预测目标和 EX 重定向目标之间选择下一 PC。内部 256 项双发射提示表把候选包判断移出 PC 反馈关键路径。同步 IROM 停顿期间由 hold 寄存器保存当前返回包，地址口可以继续形成预取请求。
 
 接口：
 
@@ -305,7 +305,7 @@ Table: mycpu_ex_stage 关键接口信号
 ## 执行与多周期运算
 
 ### alu
-功能：EX 级 32 位算术逻辑单元。`ALUControl[13:0]` 选择加减、逻辑、移位和比较；`ALUControl[23]` 选择项目专用 CRC16 硬件加速结果。加法、减法及比较共享加减法器，分支判断通过 `isTrue` 独立输出，避免控制流路径再次汇总完整结果。
+功能：EX 级 32 位算术逻辑单元。`ALUControl[13:0]` 选择加减、逻辑、移位和比较。`ALUControl[23]` 选择项目专用 CRC16 硬件加速结果。加法、减法及比较共享加减法器，分支判断通过 `isTrue` 独立输出，避免控制流路径再次汇总完整结果。
 
 接口：
 
@@ -319,7 +319,7 @@ Table: mycpu_ex_stage 关键接口信号
 Table: alu 接口描述
 
 ### rv32m_unit
-功能：实现 `mul`、`mulh`、`mulhsu`、`mulhu`、`div`、`divu`、`rem` 和 `remu`。RV32M 单元中的普通乘法等待 1 个周期，高位乘法等待 2 个周期，正常除法和余数运算执行 32 次迭代；EX 级的窄值域普通 `mul` 快速路径绕过本单元。除零及有符号除法溢出使用快速特殊结果路径。
+功能：实现 `mul`、`mulh`、`mulhsu`、`mulhu`、`div`、`divu`、`rem` 和 `remu`。RV32M 单元中的普通乘法等待 1 个周期，高位乘法等待 2 个周期，正常除法和余数运算执行 32 次迭代。EX 级的窄值域普通 `mul` 快速路径绕过本单元。除零及有符号除法溢出使用快速特殊结果路径。
 
 接口：
 
@@ -342,7 +342,7 @@ Table: rv32m_unit 接口描述
 ## 冒险、前递与存储优化
 
 ### forwarding_unit
-功能：EX 级的 MEM1 前递数据多路器。ID 阶段预先计算 `ForwardA_sel`/`ForwardB_sel` 并随消费者寄存；本模块仅在 ID/EX 原始操作数和 MEM1 两槽数据之间选择。MEM2、late load 和 WB 路径在 `mycpu` 顶层及 ID/EX 数据准备逻辑中解析，不是本模块端口。
+功能：EX 级的 MEM1 前递数据多路器。ID 阶段预先计算 `ForwardA_sel`/`ForwardB_sel` 并随消费者寄存。本模块仅在 ID/EX 原始操作数和 MEM1 两槽数据之间选择。MEM2、late load 和 WB 路径在 `mycpu` 顶层及 ID/EX 数据准备逻辑中解析，不是本模块端口。
 
 接口：
 
@@ -350,7 +350,7 @@ Table: rv32m_unit 接口描述
 | --- | --- | --- |
 | `ID_EX_data1`, `ID_EX_data2` | input | 两个 ID/EX 原始操作数 |
 | `EX_MEM_data0`, `EX_MEM_data1` | input | MEM1 槽 0 / 槽 1 前递数据 |
-| `ForwardA_sel`, `ForwardB_sel` | input | 两组 3 位选择码；`2`/`5` 分别选择 MEM1 槽 0 / 槽 1 |
+| `ForwardA_sel`, `ForwardB_sel` | input | 两组 3 位选择码，`2`/`5` 分别选择 MEM1 槽 0 / 槽 1 |
 | `ForwardAData`, `ForwardBData` | output | 两个最终操作数 |
 
 Table: forwarding_unit 接口描述
@@ -419,12 +419,12 @@ Table: load_l0_cache 接口描述
 
 Table: perip_bridge 接口描述
 
-`UART_DATA` 和 `UART_STATUS` 的位语义见 SoC 地址表。`fpu_mmio` 只提供 CoreMark 计时换算所需的有限 binary32 操作，不代表处理器实现 RV32F。`i2c_register_master` 每次执行一个寄存器级读写事务；软件负责设置从机地址、寄存器地址和方向，并轮询 BUSY/DONE/NACK。
+`UART_DATA` 和 `UART_STATUS` 的位语义见 SoC 地址表。`fpu_mmio` 只提供 CoreMark 计时换算所需的有限 binary32 操作，不代表处理器实现 RV32F。`i2c_register_master` 每次执行一个寄存器级读写事务。软件负责设置从机地址、寄存器地址和方向，并轮询 BUSY/DONE/NACK。
 
 ### fpu_mmio
-功能：CoreMark 计时结果换算使用的单精度 MMIO 协处理模块。模块支持无符号 32 位整数到 binary32 的转换，以及有限正规 binary32 除法；运算以多周期状态机执行。它不接入 CPU 的 EX 流水线，不执行 RISC-V 浮点指令，也不构成 RV32F 实现。
+功能：CoreMark 计时结果换算使用的单精度 MMIO 协处理模块。模块支持无符号 32 位整数到 binary32 的转换，以及有限正规 binary32 除法。运算以多周期状态机执行。它不接入 CPU 的 EX 流水线，不执行 RISC-V 浮点指令，也不构成 RV32F 实现。
 
-软件通过 `FPU_A`、`FPU_B` 写入操作数，再向 `FPU_CMD` 写入命令。`FPU_STATUS[0]` 表示忙状态，`FPU_STATUS[1]` 表示结果完成，`FPU_RESULT` 返回 32 位 binary32 结果。除零、零操作数和非有限/非正规输入均按模块定义的结果路径处理；该模块仅覆盖 CoreMark 计时换算所需的运算范围。
+软件通过 `FPU_A`、`FPU_B` 写入操作数，再向 `FPU_CMD` 写入命令。`FPU_STATUS[0]` 表示忙状态，`FPU_STATUS[1]` 表示结果完成，`FPU_RESULT` 返回 32 位 binary32 结果。除零、零操作数和非有限/非正规输入均按模块定义的结果路径处理。该模块仅覆盖 CoreMark 计时换算所需的运算范围。
 
 | 端口名 | 类型 | 描述 |
 | --- | --- | --- |
@@ -459,32 +459,32 @@ CoreMark 的 CRC16 字节更新使用专用硬件加速路径。IF 级的指令�
 
 ## L0 load cache {#sec-l0-cache-design}
 
-L0 是 64 项直接映射完整字缓存，索引为地址 `addr[7:2]`，tag 覆盖 BRAM 剩余字地址位。EX 的两个 probe 端口用于提前判断 load 数据是否可在 MEM1 前递，MEM1 lookup 提供实际数据；BRAM 返回后经 fill 端口写入。MMIO 不进入缓存，store 写穿并使同字地址缓存行失效。
+L0 是 64 项直接映射完整字缓存，索引为地址 `addr[7:2]`，tag 覆盖 BRAM 剩余字地址位。EX 的两个 probe 端口用于提前判断 load 数据是否可在 MEM1 前递，MEM1 lookup 提供实际数据。BRAM 返回后经 fill 端口写入。MMIO 不进入缓存，store 写穿并使同字地址缓存行失效。
 
 ![L0 load cache 表项与索引结构](diagrams/xml/export/l0_cache-5x.png){ width=88% }
 
 
 ## RV32M 多周期运算 {#sec-rv32m-design}
 
-`rv32m_unit` 实现 RV32M 八条指令。RV32M 单元中的普通 `mul` 等待 1 个周期，高位乘法等待 2 个周期，常规除法和余数执行 32 次迭代；EX 级的窄值域普通 `mul` 快速路径绕过该单元。除零与有符号 `INT_MIN/-1` 溢出采用专门结果路径；溢出快速路径只对 `div/rem` 生效，`divu/remu` 仍按无符号语义执行。
+`rv32m_unit` 实现 RV32M 八条指令。RV32M 单元中的普通 `mul` 等待 1 个周期，高位乘法等待 2 个周期，常规除法和余数执行 32 次迭代。EX 级的窄值域普通 `mul` 快速路径绕过该单元。除零与有符号 `INT_MIN/-1` 溢出采用专门结果路径。溢出快速路径只对 `div/rem` 生效，`divu/remu` 仍按无符号语义执行。
 
 ## Zicsr 与机器模式异常返回 {#sec-zicsr-trap}
 
-CSR 通路支持 `csrrw/csrrwi`、`csrrs/csrrsi`、`csrrc/csrrci`，CSR 文件实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`。`ecall` 写入 `mcause=11` 并跳转到 `mtvec`；处理程序可调整 `mepc` 后以 `mret` 返回。实现范围不包括中断、PMP、U/S 模式、非法指令异常和完整 CSR 权限检查。
+CSR 通路支持 `csrrw/csrrwi`、`csrrs/csrrsi`、`csrrc/csrrci`，CSR 文件实现 `mstatus`、`mtvec`、`mscratch`、`mepc` 和 `mcause`。`ecall` 写入 `mcause=11` 并跳转到 `mtvec`。处理程序可调整 `mepc` 后以 `mret` 返回。实现范围不包括中断、PMP、U/S 模式、非法指令异常和完整 CSR 权限检查。
 
 # 系统软件设计
 
 ## RT-Thread Nano 与 finsh/msh {#sec-rtthread-runtime}
 
-`rt-thread/` 集成 RT-Thread Nano 3.1.5、RISC-V common port 和 `bsp/mycpu`。当前 CPU 没有中断通路，BSP 在 idle hook 中轮询 50 MHz COUNTER，并按毫秒调用 `rt_tick_increase`；单次最多补偿 64 ms。上下文切换通过 `csrw mepc` 与 `mret` 完成。`.text` 位于 64 KiB IROM，`.rodata/.data/.bss` 位于 256 KiB BRAM，堆从 `__bss_end` 延伸到栈顶。
+`rt-thread/` 集成 RT-Thread Nano 3.1.5、RISC-V common port 和 `bsp/mycpu`。当前 CPU 没有中断通路，BSP 在 idle hook 中轮询 50 MHz COUNTER，并按毫秒调用 `rt_tick_increase`。单次最多补偿 64 ms。上下文切换通过 `csrw mepc` 与 `mret` 完成。`.text` 位于 64 KiB IROM，`.rodata/.data/.bss` 位于 256 KiB BRAM，堆从 `__bss_end` 延伸到栈顶。
 
-UART 控制台使用 9600 8N1。BSP 写 `UART_STATUS` 请求自动透传，finsh/msh 随后通过 `UART_DATA` 收发字符；无输入时 shell 延时 1 ms，让 idle hook 获得运行机会。板卡默认固件不创建仿真完成线程，避免 3 秒后写 LED 干扰 CoreMark 的计时标记。
+UART 控制台使用 9600 8N1。BSP 写 `UART_STATUS` 请求自动透传，finsh/msh 随后通过 `UART_DATA` 收发字符。无输入时 shell 延时 1 ms，让 idle hook 获得运行机会。板卡默认固件不创建仿真完成线程，避免 3 秒后写 LED 干扰 CoreMark 的计时标记。
 
 ## BME280 环境传感器
 
 FPGA 内的 `i2c_register_master` 提供 100 kHz 单事务寄存器访问。RT-Thread 驱动依次探测 `0x76` 和 `0x77`，校验芯片 ID `0x60`，读取校准参数，并以 forced mode 获取温度、气压和湿度。补偿算法使用定点整数，其中气压路径需要 RV32IM/ilp32 对应的 64 位 libgcc 辅助例程。
 
-`bme start` 开启每秒一次的周期采样，`bme stop` 停止并唤醒等待线程，`bme once` 在停止状态读取一次，`bme status` 显示运行状态和最近错误。BME 线程默认阻塞；运行 CoreMark 前应执行 `bme stop`，避免周期 I2C 和 UART 输出干扰基准。
+`bme start` 开启每秒一次的周期采样，`bme stop` 停止并唤醒等待线程，`bme once` 在停止状态读取一次，`bme status` 显示运行状态和最近错误。BME 线程默认阻塞。运行 CoreMark 前应执行 `bme stop`，避免周期 I2C 和 UART 输出干扰基准。
 
 ## EEMBC CoreMark 1.0 平台适配 {#sec-coremark}
 
@@ -566,7 +566,7 @@ Table: 开源指令测试结果
 | --- | --- | --- |
 | RT-Thread 启动与调度 | 通过 | 启动后进入 `msh >` |
 | UART 自动透传与 `msh >` | 通过 | 自动透传与命令提示符正常 |
-| `help` 与 twin 状态读回 | 通过 | `help` 输出正常；twin 状态读回正常 |
+| `help` 与 twin 状态读回 | 通过 | `help` 输出正常，twin 状态读回正常 |
 | LED / SEG / COUNTER | 通过 | 显示与计时接口正常 |
 | CoreMark LED 计时标记 | 通过 | 计时区间标记正常 |
 | BME280 探测 | 通过 | 探测地址为 `0x76` |
@@ -617,9 +617,9 @@ Table: CoreMark 正式成绩
 
 # 结论
 
-本系统实现 RV32IM 指令执行、双槽顺序流水、MEM1/MEM2 同步访存后端、分支预测、多级前递、L0 load cache 和 store bypass。RT-Thread BSP 提供 UART 命令行、CoreMark 和 BME280 采样；CRC16 硬件加速通过指令序列握手状态机启动，仅作用于预定义软件热点，不扩张处理器对标准 ISA 的承诺。
+本系统实现 RV32IM 指令执行、双槽顺序流水、MEM1/MEM2 同步访存后端、分支预测、多级前递、L0 load cache 和 store bypass。RT-Thread BSP 提供 UART 命令行、CoreMark 和 BME280 采样。CRC16 硬件加速通过指令序列握手状态机启动，仅作用于预定义软件热点，不扩张处理器对标准 ISA 的承诺。
 
-六组定向测试全部通过，RV32UI 和 RV32UM 指令测试分别实现 37/37 与 8/8 通过。系统能够启动 RT-Thread，提供 UART/msh 控制台、显示与计时接口、BME280 周期采样和 CoreMark 运行环境；CoreMark 在 10,000 次迭代下运行 14.714 s，输出 `Correct operation validated`，三项 CRC 为 `e714`、`1fd7` 和 `8e3a`。
+六组定向测试全部通过，RV32UI 和 RV32UM 指令测试分别实现 37/37 与 8/8 通过。系统能够启动 RT-Thread，提供 UART/msh 控制台、显示与计时接口、BME280 周期采样和 CoreMark 运行环境。CoreMark 在 10,000 次迭代下运行 14.714 s，输出 `Correct operation validated`，三项 CRC 为 `e714`、`1fd7` 和 `8e3a`。
 
 # 附录
 
@@ -641,7 +641,7 @@ Table: CoreMark 正式成绩
 | `sim_cpu_only/` | Verilator CPU-only 仿真环境 |
 | `tb/` | Vivado CPU、板级和 UART testbench |
 | `verification/` | 可信定向测试、开源白名单和回归工具 |
-| `vivado/tests/` | 历史分层汇编测试；不作为当前可信结果来源 |
+| `vivado/tests/` | 历史分层汇编测试，不作为当前可信结果来源 |
 
 Table: 关键源码与验证文件
 {widths=40,60}
@@ -679,4 +679,4 @@ riscv-cpu-remote/
 
 ## AI 工具声明
 
-本项目在代码检索、结构核对和技术文档校订中使用了生成式 AI 辅助。架构描述以当前源码为依据，实验结论以可复现的原始结果为依据；AI 生成内容不作为测试、综合或板级验收证据。
+本项目在代码检索、结构核对和技术文档校订中使用了生成式 AI 辅助。架构描述以当前源码为依据，实验结论以可复现的原始结果为依据。AI 生成内容不作为测试、综合或板级验收证据。
