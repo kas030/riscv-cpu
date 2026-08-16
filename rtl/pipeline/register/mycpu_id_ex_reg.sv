@@ -15,6 +15,7 @@ module mycpu_id_ex_reg #(
     input  logic [DATAWIDTH - 1:0]  ID_imm          ,
     input  logic [DATAWIDTH - 1:0]  ID_rR1_data     ,
     input  logic [DATAWIDTH - 1:0]  ID_rR2_data     ,
+    input  logic [DATAWIDTH - 1:0]  ID_mem_addr_early,
     input  logic [ADDR_WIDTH - 1:0] ID_rs1          ,
     input  logic [ADDR_WIDTH - 1:0] ID_rs2          ,
     input  logic [ADDR_WIDTH - 1:0] ID_rd           ,
@@ -31,6 +32,8 @@ module mycpu_id_ex_reg #(
     input  logic [11:0]             ID_csr_idx      ,
     input  logic [4:0]              ID_csr_zimm     ,
     input  logic [5:0]              ID_CSRControll  ,
+    input  logic [2:0]              ID_ForwardA     ,
+    input  logic [2:0]              ID_ForwardB     ,
     input  logic                    ID_pred_taken   ,
     input  logic [DATAWIDTH - 1:0]  ID_pred_target  ,
     input  logic                    clk             ,
@@ -42,6 +45,7 @@ module mycpu_id_ex_reg #(
     output logic [DATAWIDTH - 1:0]  EX_imm          ,
     output logic [DATAWIDTH - 1:0]  EX_rR1_data     ,
     output logic [DATAWIDTH - 1:0]  EX_rR2_data     ,
+    output logic [DATAWIDTH - 1:0]  EX_mem_addr_early,
     output logic [ADDR_WIDTH - 1:0] EX_rs1          ,
     output logic [ADDR_WIDTH - 1:0] EX_rs2          ,
     output logic [ADDR_WIDTH - 1:0] EX_rd           ,
@@ -58,6 +62,8 @@ module mycpu_id_ex_reg #(
     output logic [11:0]             EX_csr_idx      ,
     output logic [4:0]              EX_csr_zimm     ,
     output logic [5:0]              EX_CSRControll  ,
+    output logic [2:0]              EX_ForwardA     ,
+    output logic [2:0]              EX_ForwardB     ,
     output logic                    EX_pred_taken   ,
     output logic [DATAWIDTH - 1:0]  EX_pred_target
     ,output logic                   EX_pipe_valid
@@ -76,10 +82,13 @@ module mycpu_id_ex_reg #(
             EX_NpcOp        <= '0;
             EX_OffsetOrigin <= '0;
             EX_CSRControll  <= '0;
+            EX_ForwardA     <= '0;
+            EX_ForwardB     <= '0;
             EX_pc           <= '0;
             EX_imm          <= '0;
             EX_rR1_data     <= '0;
             EX_rR2_data     <= '0;
+            EX_mem_addr_early <= '0;
             EX_rs1          <= '0;
             EX_rs2          <= '0;
             EX_rd           <= '0;
@@ -88,59 +97,44 @@ module mycpu_id_ex_reg #(
             EX_pred_taken   <= 1'b0;
             EX_pred_target  <= '0;
             EX_pipe_valid   <= 1'b0;
-        end else if (Flush_ID_EX) begin
-            // 注气泡只清一个有效位；数据和控制字段照常推进，副作用由顶层
-            // 使用EX_pipe_valid统一屏蔽，缩短cache/hazard高扇出路径。
-            EX_pipe_valid   <= 1'b0;
-            EX_pc           <= ID_pc;
-            EX_imm          <= ID_imm;
-            EX_rR1_data     <= ID_rR1_data;
-            EX_rR2_data     <= ID_rR2_data;
-            EX_rs1          <= ID_rs1;
-            EX_rs2          <= ID_rs2;
-            EX_rd           <= ID_rd;
-            EX_csr_idx      <= ID_csr_idx;
-            EX_csr_zimm     <= ID_csr_zimm;
-            EX_pred_target  <= ID_pred_target;
-            EX_RegWrite     <= ID_RegWrite;
-            EX_MemWrite     <= ID_MemWrite;
-            EX_MemRead      <= ID_MemRead;
-            EX_MemToReg     <= ID_MemToReg;
-            EX_funct3       <= ID_funct3;
-            EX_ALUSrcA      <= ID_ALUSrcA;
-            EX_ALUSrcB      <= ID_ALUSrcB;
-            EX_ALUControl   <= ID_ALUControl;
-            EX_NpcOp        <= ID_NpcOp;
-            EX_OffsetOrigin <= ID_OffsetOrigin;
-            EX_CSRControll  <= ID_CSRControll;
-            EX_pred_taken   <= ID_pred_taken;
-        end else if (Stall_ID_EX) begin
-            // EX 级多周期指令执行期间保持当前内容，等待结果就绪后再向后推进。
         end else begin
-            EX_pipe_valid   <= 1'b1;
-            // 正常推进：把 ID 级所有信号锁存进 EX 级
-            EX_pc           <= ID_pc;
-            EX_imm          <= ID_imm;
-            EX_rR1_data     <= ID_rR1_data;
-            EX_rR2_data     <= ID_rR2_data;
-            EX_rs1          <= ID_rs1;
-            EX_rs2          <= ID_rs2;
-            EX_rd           <= ID_rd;
-            EX_RegWrite     <= ID_RegWrite;
-            EX_MemWrite     <= ID_MemWrite;
-            EX_MemRead      <= ID_MemRead;
-            EX_MemToReg     <= ID_MemToReg;
-            EX_funct3       <= ID_funct3;
-            EX_ALUSrcA      <= ID_ALUSrcA;
-            EX_ALUSrcB      <= ID_ALUSrcB;
-            EX_ALUControl   <= ID_ALUControl;
-            EX_NpcOp        <= ID_NpcOp;
-            EX_OffsetOrigin <= ID_OffsetOrigin;
-            EX_csr_idx      <= ID_csr_idx;
-            EX_csr_zimm     <= ID_csr_zimm;
-            EX_CSRControll  <= ID_CSRControll;
-            EX_pred_taken   <= ID_pred_taken;
-            EX_pred_target  <= ID_pred_target;
+            // flush 只清架构有效位，避免 hazard 高扇出网驱动所有
+            // ID/EX 字段的 R/D/CE。即使 EX busy，flush 也能立即杀死错路径指令。
+            if (Flush_ID_EX) begin
+                EX_pipe_valid <= 1'b0;
+            end else if (!Stall_ID_EX) begin
+                EX_pipe_valid <= 1'b1;
+            end
+
+            // 数据和控制字段只在 EX 非 busy 时推进；气泡的副作用由
+            // EX_pipe_valid 统一屏蔽，无需把 flush 接入这些寄存器。
+            if (!Stall_ID_EX) begin
+                EX_pc           <= ID_pc;
+                EX_imm          <= ID_imm;
+                EX_rR1_data     <= ID_rR1_data;
+                EX_rR2_data     <= ID_rR2_data;
+                EX_mem_addr_early <= ID_mem_addr_early;
+                EX_rs1          <= ID_rs1;
+                EX_rs2          <= ID_rs2;
+                EX_rd           <= ID_rd;
+                EX_RegWrite     <= ID_RegWrite;
+                EX_MemWrite     <= ID_MemWrite;
+                EX_MemRead      <= ID_MemRead;
+                EX_MemToReg     <= ID_MemToReg;
+                EX_funct3       <= ID_funct3;
+                EX_ALUSrcA      <= ID_ALUSrcA;
+                EX_ALUSrcB      <= ID_ALUSrcB;
+                EX_ALUControl   <= ID_ALUControl;
+                EX_NpcOp        <= ID_NpcOp;
+                EX_OffsetOrigin <= ID_OffsetOrigin;
+                EX_csr_idx      <= ID_csr_idx;
+                EX_csr_zimm     <= ID_csr_zimm;
+                EX_CSRControll  <= ID_CSRControll;
+                EX_ForwardA     <= ID_ForwardA;
+                EX_ForwardB     <= ID_ForwardB;
+                EX_pred_taken   <= ID_pred_taken;
+                EX_pred_target  <= ID_pred_target;
+            end
         end
     end
 endmodule

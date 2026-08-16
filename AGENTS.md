@@ -13,9 +13,10 @@
 - `rtl/memory/`：LSU、BRAM 驱动、load mask/扩展和 `load_l0_cache.sv`。
 - `rtl/bus/perip_bridge.sv`：BRAM/MMIO 地址译码及板级访存时序的权威来源。
 - `rtl/soc/student_top.sv`：实例化 CPU、双路 IROM 读口和外设桥。
-- `rtl/top/top.sv`：板级顶层，包含 PLL、UART、twin controller 和 `student_top`。
+- `rtl/top/top.sv`：板级顶层，包含 PLL、UART、BME280 I²C 引脚、twin controller 和 `student_top`。
 - `sim_cpu_only/`：不依赖 Vivado IP 的 CPU-only Verilator/Icarus 仿真环境。
-- `tb/`：Vivado CPU、板级和 UART testbench。
+- `rt-thread/`：RT-Thread Nano 3.1.5 移植（vendor 内核 + `bsp/mycpu`），演示经 LED 完成值在 Verilator 仿真中验收。
+- `tb/`：Vivado CPU、板级、UART 和 I²C testbench。
 - `vivado/tests/`：分层汇编测试、链接脚本和镜像生成工具。
 - `ip/`、`constraints/`：Vivado IP 配置和板级约束。
 
@@ -32,7 +33,7 @@
 ### 取指与控制流
 
 - CPU 复位入口为 `32'h8000_0000`。
-- `student_top.sv` 使用 `pc[13:2]` 和相邻字地址访问双路 IROM，高位 PC 被有意忽略。
+- `student_top.sv` 使用 `pc[15:2]` 和相邻字地址访问 64 KiB 双路 IROM，高位 PC 被有意忽略；IF 的双发射提示表与 BTB tag 必须覆盖 `pc[15:8]`，避免跨 16 KiB 地址别名。
 - IF 内含直接映射的双发射提示表。冷启动或 tag 未命中时先单发射，再根据同步 IROM 返回的两条指令训练对应表项。
 - 条件分支预测使用 64 项 2 位饱和计数 BHT；未训练条件分支采用 BTFNT。 `jal` 在 IF 预测跳转，`jalr`、异常入口和 `mret` 由 EX 解析。
 - EX 比较实际结果和预测结果。预测错误时重定向 PC，并冲刷 IF/ID 与 ID/EX；预测正确时不冲刷流水线。
@@ -63,6 +64,13 @@
 - SEG：`0x8020_0020`
 - LED：`0x8020_0040`
 - COUNTER：`0x8020_0050`
+- UART_DATA：`0x8020_0060`
+- UART_STATUS：`0x8020_0064`
+- FPU_A/B/CMD/STATUS/RESULT：`0x8020_0070`—`0x8020_0080`
+- I2C_DEV：`0x8020_0084`
+- I2C_REG：`0x8020_0088`
+- I2C_DATA：`0x8020_008C`
+- I2C_CTRL/STATUS：`0x8020_0090`
 
 COUNTER 写入 `0x8000_0000` 开始计数，写入 `0xFFFF_FFFF` 停止计数。链接脚本、汇编注释或旧测试若与 RTL 不一致，先按 `perip_bridge.sv` 核对实际行为。
 
@@ -127,6 +135,7 @@ make sim-verilator \
 - `tb/tb_myCPU.sv`：CPU 功能和性能仿真，等待 LED 写入 `32'hC0DEC0DE` 或 `32'hDEADBEEF` 后结束并打印统计。
 - `tb/tb_top.sv`：板级 UART/twin-controller 集成行为。
 - `tb/tb_uart.sv`：UART 独立行为。
+- `tb/tb_i2c_register_master.sv`：I²C 寄存器读写、重复 START 和 NACK 行为。
 - 综合和实现结果以当前 Vivado run 的 utilization、timing summary 和 route status 报告为准。不要把 `.runs` 内生成报告或 bitstream 直接当作 RTL 源文件编辑。
 
 ## 修改时的一致性检查
@@ -138,6 +147,27 @@ make sim-verilator \
 - 改 load/store：同步检查 LSU、L0、load mask、BRAM driver、MEM1/MEM2、 MMIO 时序和地址译码。
 - 改双发射判定：保持 IF 提示表训练、ID 第二槽有效性、包内依赖、单访存、单 RV32M 和顺序提交约束一致。
 - 改顶层或时钟复位：保持 `top.sv`、`student_top.sv`、约束、testbench 和 Vivado IP 的时钟、复位极性及 IROM/BRAM 延迟一致。
+
+### CPU 频率调整（PLL、IROM、BRAM）
+
+修改板级 CPU 时钟频率时，必须在同一变更中同步核对以下项目；外设时钟（当前为 50 MHz）若不变，不要误改：
+
+1. **PLL IP 与生成脚本**
+   - `ip/pll/pll.xci`：用户参数 `CLKOUT2_REQUESTED_OUT_FREQ`，以及对应的 `C_CLKOUT2_*`、`C_OUTCLK_SUM_ROW2`、`C_CLKOUT1_ACTUAL_FREQ` 和端口 `FREQ_HZ` 等生成字段。
+   - `scripts/create_project.tcl`、`scripts/recreate_pll_ip.tcl`、`scripts/recreate_irom_ip.tcl`、`scripts/recreate_bram_ip.tcl`：PLL 频率、IROM/BRAM 端口时钟和初始化 COE 路径必须与 XCI 一致。
+2. **IROM/BRAM IP 时钟**
+   - `ip/IROM/IROM.xci`：`Port_A_Clock`、`Port_B_Clock`。
+   - `ip/BRAM/BRAM.xci`：`Port_A_Clock`、`Port_B_Clock` 和关联端口 `FREQ_HZ`。
+   - `scripts/create_project.tcl`、`scripts/recreate_irom_ip.tcl`、`scripts/recreate_bram_ip.tcl`：IROM/BRAM 的 `CONFIG.Coe_File`、`CONFIG.Port_A_Clock`、`CONFIG.Port_B_Clock`；同时保持 IROM 深度与当前 `student_top.sv` 地址位宽、链接脚本和 COE 生成上限一致。
+3. **时钟消费者与验证配置**
+   - `rtl/top/top.sv`、`rtl/bus/perip_bridge.sv`、`rtl/peripheral/uart_bridge.sv`：时钟域注释和跨域说明。
+   - `tb/tb_myCPU.sv`：CPU 时钟统计参数 `CPU_CLK_MHZ`。
+   - `sim_cpu_only/Makefile`、`sim_cpu_only/config.mk`、`sim_cpu_only/sim_config_gen.py`、`verification/tools/run_competition.py`：CPU-only 频率与周期/MIPS 换算默认值。
+   - 当前设计频率变更后，更新 `docs/cpu_capability_boundaries.md`、`docs/tests/cpu_test_plan.md` 和 `rt-thread/README.md` 中的现行频率说明；历史测试报告中的实测值不得伪造改写。
+4. **检查与生成**
+   - 用搜索确认上述源文件不残留旧 CPU 频率字段；对三个 `.xci` 执行 JSON 解析检查。
+   - Vivado IP 变更后重新生成 output products，并以综合/实现时序报告确认目标频率；禁止直接编辑 `.runs`、`.cache`、`.gen` 或 `.sim` 生成物。
+   - 频率只改变时，IROM/BRAM 初始化 COE 内容通常无需改写；只有镜像内容变化时才重新生成对应 COE。
 
 ## Git 约定
 

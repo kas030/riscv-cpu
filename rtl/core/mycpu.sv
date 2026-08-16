@@ -45,8 +45,10 @@ module mycpu (
     // Hazard / Forwarding 控制信号
     // -------------------------------------------------------------------------
     logic        Stall, Flush_IF_ID, Flush_ID_EX;
-    logic        Stall_Hazard, EX_busy, EX_any_busy, Stall_Front, Flush_ID_EX_comb;
+    logic        Stall_Hazard, Stall_LateSubword, EX_busy, EX_any_busy;
+    logic        Stall_Front, Flush_ID_EX_comb;
     logic        Flush_EX_MEM;
+    logic [2:0]  ID_ForwardA, ID_ForwardB, ID_ForwardA_S1, ID_ForwardB_S1;
     logic [2:0]  ForwardA, ForwardB, ForwardA_S1, ForwardB_S1;
     logic [31:0] ForwardAData, ForwardBData, ForwardAData_S1, ForwardBData_S1;
     logic        BranchTaken, BranchTaken_raw;
@@ -56,19 +58,36 @@ module mycpu (
     logic        BranchMispredict, BranchMispredict_raw;
     logic [31:0] IF_npc_redirect_raw;
     logic        redirect_valid_q, redirect_taken_q, redirect_bp_update_q;
-    logic [31:0] redirect_target_q, redirect_bp_pc_q;
+    logic        redirect_bp_is_jal_q;
+    logic [31:0] redirect_target_q, redirect_bp_pc_q, redirect_bp_target_q;
     logic        BP_update_en, BP_update_taken;
     logic        MEM_bram_access, MEM_S1_bram_access, MEM_use_s1_bus;
     logic [31:0] MEM_bus_addr, MEM_bus_wdata;
     logic        MEM_bus_wen;
     logic [1:0]  MEM_bus_mask;
+    logic        MEM_store_valid, MEM_store_word;
+    logic [31:0] MEM_store_addr, MEM_store_data;
     logic        MEM_bram_load;
-    logic        EX_cache_probe_hit, EX_cache_ready0, EX_cache_ready1;
+    logic        EX_cache_probe_hit0, EX_cache_probe_hit1;
+    logic        EX_cache_ready0, EX_cache_ready1;
     logic [31:0] EX_cache_probe_addr, EX_cache_probe_addr0, EX_cache_probe_addr1;
+    logic [31:0] EX_cache_probe_data0, EX_cache_probe_data1;
     logic [31:0] EX_cache_probe_data, EX_cache_probe_raw, EX_cache_probe_load_data;
     logic        MEM_cache_fill_en;
     logic [31:0] MEM_cache_fill_addr;
-    logic        LoadUseEX, LoadUseMEM;
+    logic        MEM_cache_fill_q_en;
+    logic [31:0] MEM_cache_fill_q_addr, MEM_cache_fill_q_data;
+    logic [31:0] MEM_cache_lookup_addr;
+    logic        MEM_cache_hit_raw;
+    logic        EX_cache_probe_hit_raw0, EX_cache_probe_hit_raw1;
+    logic [31:0] MEM_cache_data_raw;
+    logic [31:0] EX_cache_probe_data_raw0, EX_cache_probe_data_raw1;
+    logic [3:0]  store_bypass_valid_q;
+    logic [13:0] store_bypass_tag_q [0:3];
+    logic [31:0] store_bypass_data_q [0:3];
+    logic        EX_store_bypass_hit0, EX_store_bypass_hit1;
+    logic [31:0] MEM_store_bypass_data;
+    logic        LoadUseEX, LoadUseMEM, LoadUseMEM_base;
 
     localparam logic [13:0] BRAM_ADDR_TAG = 14'h2004;       // 0x8010_0000..0x8013_FFFF
 
@@ -117,7 +136,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // ID 级信号
     // -------------------------------------------------------------------------
-    logic [31:0] ID_imm, ID_rR1_data, ID_rR2_data;
+    logic [31:0] ID_imm, ID_rR1_data, ID_rR2_data, ID_mem_addr_early;
     logic        ID_RegWrite, ID_MemWrite, ID_MemRead;
     logic        ID_ALUSrcA, ID_ALUSrcB;
     logic [2:0]  ID_MemToReg;
@@ -129,7 +148,7 @@ module mycpu (
     logic [2:0]  ID_funct3;
     logic [4:0]  ID_rs1, ID_rs2, ID_rd;
     logic        ID_uses_rs1, ID_uses_rs2;
-    logic [31:0] ID_S1_imm, ID_S1_rR1_data, ID_S1_rR2_data;
+    logic [31:0] ID_S1_imm, ID_S1_rR1_data, ID_S1_rR2_data, ID_S1_mem_addr_early;
     logic        ID_S1_RegWrite, ID_S1_MemWrite, ID_S1_MemRead;
     logic        ID_S1_ALUSrcA, ID_S1_ALUSrcB;
     logic [2:0]  ID_S1_MemToReg;
@@ -145,7 +164,7 @@ module mycpu (
     // -------------------------------------------------------------------------
     // ID/EX 寄存器输出（即 EX 级输入）
     // -------------------------------------------------------------------------
-    logic [31:0] EX_pc, EX_imm, EX_rR1_data, EX_rR2_data;
+    logic [31:0] EX_pc, EX_imm, EX_rR1_data, EX_rR2_data, EX_mem_addr_early;
     logic [4:0]  EX_rs1, EX_rs2, EX_rd;
     logic        EX_RegWrite, EX_MemWrite, EX_MemRead;
     logic [2:0]  EX_MemToReg, EX_funct3;
@@ -164,6 +183,7 @@ module mycpu (
     logic [5:0]  EX_CSRControll_eff;
     logic [31:0] EX_pred_target;
     logic [31:0] EX_S1_pc, EX_S1_imm, EX_S1_rR1_data, EX_S1_rR2_data;
+    logic [31:0] EX_S1_mem_addr_early;
     logic [4:0]  EX_S1_rs1, EX_S1_rs2, EX_S1_rd;
     logic        EX_S1_RegWrite, EX_S1_MemWrite, EX_S1_MemRead;
     logic [2:0]  EX_S1_MemToReg, EX_S1_funct3;
@@ -175,6 +195,10 @@ module mycpu (
     logic [5:0]  EX_S1_CSRControll;
     logic        EX_S1_pred_taken;
     logic [31:0] EX_S1_pred_target;
+    logic        ID_mul_narrow_a, ID_mul_narrow_b;
+    logic        ID_S1_mul_narrow_a, ID_S1_mul_narrow_b;
+    logic        EX_mul_narrow_a, EX_mul_narrow_b;
+    logic        EX_S1_mul_narrow_a, EX_S1_mul_narrow_b;
 
     assign EX_RegWrite_eff = EX_pipe_valid && EX_RegWrite;
     assign EX_MemWrite_eff = EX_pipe_valid && EX_MemWrite;
@@ -218,9 +242,13 @@ module mycpu (
     logic [31:0] MEM_forward_data;
     logic [31:0] MEM_S1_forward_data;
     logic [31:0] MEM_forward_data_effective, MEM_S1_forward_data_effective;
+    logic [31:0] MEM_resolved_forward_data0, MEM_resolved_forward_data1;
     logic        MEM_early_cache_hit0, MEM_early_cache_hit1;
     logic [31:0] MEM_early_cache_data0, MEM_early_cache_data1;
     logic        MEM_cache_hit, MEM_cache_hit0, MEM_cache_hit1;
+    logic        MEM_load_ready0, MEM_load_ready1, MEM_store_bypass_hit;
+    logic        MEM_lookup_ready0, MEM_lookup_ready1;
+    logic [31:0] MEM_load_ready_word;
     logic [31:0] MEM_cache_data;
 
     // -------------------------------------------------------------------------
@@ -267,6 +295,140 @@ module mycpu (
     // -------------------------------------------------------------------------
     logic [31:0] WB_wdata;
     logic [31:0] WB_S1_wdata;
+
+    // MUL 快路径的保守值域标签。标签为真表示值严格落在 18 位有符号范围；
+    // 未知值只会退回多周期单元，不影响架构结果。
+    logic [31:0] narrow18_rf;
+    logic EX_result_narrow18, EX_S1_result_narrow18;
+    logic MEM_result_narrow18, MEM_S1_result_narrow18;
+    logic MEM2_result_narrow18, MEM2_S1_result_narrow18;
+    logic WB_result_narrow18, WB_S1_result_narrow18;
+
+    // ID 已解析操作数：MEM/MEM2 和唯一晚到 load 在进入 ID/EX 时直接写入
+    // 原有操作数寄存器，EX 只需选择同拍从 EX 前进到 MEM1 的生产者。
+    logic        MEM2_load_slot1;
+    logic        MEM2_late_word0, MEM2_late_word1;
+    logic        MEM2_subword_miss0, MEM2_subword_miss1;
+    logic        ID_dep_mem2_0, ID_dep_mem2_1;
+    logic [31:0] ID_late_load_word;
+    logic [31:0] ID_resolved_data1, ID_resolved_data2;
+    logic [31:0] ID_S1_resolved_data1, ID_S1_resolved_data2;
+    logic [31:0] ID_probe_base0, ID_probe_base1;
+    logic [2:0]  ID_ForwardA_EX, ID_ForwardB_EX;
+    logic [2:0]  ID_ForwardA_S1_EX, ID_ForwardB_S1_EX;
+
+    // 当前 ID 消费者进入 EX 时，各生产者也恰好前进一级。前递来源选择在
+    // ID 提前完成并随消费者打拍，从 EX 数据路径移除 rd 比较和优先级链。
+    function automatic logic [2:0] select_id_forward(input logic [4:0] rs);
+        begin
+            if (rs == 5'd0) begin
+                select_id_forward = 3'd0;
+            end else if (EX_S1_RegWrite_eff && (EX_S1_rd == rs)) begin
+                select_id_forward = 3'd5;
+            end else if (EX_RegWrite_eff && (EX_rd == rs)) begin
+                select_id_forward = 3'd2;
+            end else if (MEM_S1_RegWrite && (MEM_S1_rd == rs)) begin
+                select_id_forward = 3'd6;
+            end else if (MEM_RegWrite && (MEM_rd == rs)) begin
+                select_id_forward = 3'd3;
+            end else if (MEM2_S1_RegWrite && (MEM2_S1_rd == rs)) begin
+                select_id_forward = MEM2_late_word1 ? 3'd7 : 3'd4;
+            end else if (MEM2_RegWrite && (MEM2_rd == rs)) begin
+                select_id_forward = MEM2_late_word0 ? 3'd7 : 3'd1;
+            end else begin
+                select_id_forward = 3'd0;
+            end
+        end
+    endfunction
+
+    function automatic logic select_id_narrow18(
+        input logic [4:0] rs,
+        input logic [2:0] sel
+    );
+        begin
+            case (sel)
+                3'd1: select_id_narrow18 = MEM2_result_narrow18;
+                3'd2: select_id_narrow18 = EX_result_narrow18;
+                3'd3: select_id_narrow18 = MEM_result_narrow18;
+                3'd4: select_id_narrow18 = MEM2_S1_result_narrow18;
+                3'd5: select_id_narrow18 = EX_S1_result_narrow18;
+                3'd6: select_id_narrow18 = MEM_S1_result_narrow18;
+                3'd7: select_id_narrow18 = 1'b0;
+                default: begin
+                    if (rs == 5'd0)
+                        select_id_narrow18 = 1'b1;
+                    else if (WB_S1_RegWrite && (WB_S1_rd == rs))
+                        select_id_narrow18 = WB_S1_result_narrow18;
+                    else if (WB_RegWrite && (WB_rd == rs))
+                        select_id_narrow18 = WB_result_narrow18;
+                    else
+                        select_id_narrow18 = narrow18_rf[rs];
+                end
+            endcase
+        end
+    endfunction
+
+    function automatic logic [31:0] resolve_id_operand(
+        input logic [2:0]  sel,
+        input logic [31:0] original,
+        input logic [31:0] mem_data0,
+        input logic [31:0] mem_data1,
+        input logic [31:0] mem2_data0,
+        input logic [31:0] mem2_data1,
+        input logic [31:0] late_load_word
+    );
+        begin
+            case (sel)
+                3'd1: resolve_id_operand = mem2_data0;
+                3'd3: resolve_id_operand = mem_data0;
+                3'd4: resolve_id_operand = mem2_data1;
+                3'd6: resolve_id_operand = mem_data1;
+                3'd7: resolve_id_operand = late_load_word;
+                default: resolve_id_operand = original;
+            endcase
+        end
+    endfunction
+
+    // 提前 L0 探测不接入同步 BRAM 的晚到数据，避免 BRAM 输出同拍再穿过
+    // 32 位地址加法器。sel=7 的架构操作数仍由 resolve_id_operand 解析。
+    function automatic logic [31:0] resolve_id_probe_base(
+        input logic [2:0]  sel,
+        input logic [31:0] original,
+        input logic [31:0] mem_data0,
+        input logic [31:0] mem_data1,
+        input logic [31:0] mem2_data0,
+        input logic [31:0] mem2_data1
+    );
+        begin
+            case (sel)
+                3'd1: resolve_id_probe_base = mem2_data0;
+                3'd3: resolve_id_probe_base = mem_data0;
+                3'd4: resolve_id_probe_base = mem2_data1;
+                3'd6: resolve_id_probe_base = mem_data1;
+                3'd7: resolve_id_probe_base = 32'b0;
+                default: resolve_id_probe_base = original;
+            endcase
+        end
+    endfunction
+
+    function automatic logic [2:0] select_ex_forward(input logic [2:0] sel);
+        select_ex_forward = ((sel == 3'd2) || (sel == 3'd5)) ? sel : 3'd0;
+    endfunction
+
+    assign MEM2_load_slot1 = MEM2_S1_RegWrite &&
+                             (MEM2_S1_MemToReg == 3'b010);
+    assign MEM2_late_word0 = MEM2_RegWrite &&
+                             (MEM2_MemToReg == 3'b010) && !MEM2_cache_hit &&
+                             (MEM2_funct3 == 3'b010);
+    assign MEM2_late_word1 = MEM2_S1_RegWrite &&
+                             (MEM2_S1_MemToReg == 3'b010) && !MEM2_S1_cache_hit &&
+                             (MEM2_S1_funct3 == 3'b010);
+
+    assign ID_late_load_word = MEM2_load_slot1 ? MEM2_S1_mdata : MEM2_mdata;
+
+    // MEM2_forward_data 已包含非 load 写回值和 L0 命中时的已格式化
+    // load 值；3'd7 对应唯一 miss lw 的原始字。把这些已就绪来源在
+    // ID/EX 边界合并到 rR 数据，避免下一拍再经过大前递 mux。
 
 `ifndef SYNTHESIS
     // 仿真性能统计使用的架构有效位。每一级严格复刻对应流水寄存器的
@@ -369,6 +531,25 @@ module mycpu (
                              (ID_instr1_effective[6:0] == `S_TYPE) ||
                              (ID_instr1_effective[6:0] == `B_TYPE));
 
+    // L0 miss 的 byte/half load 不走晚到数据快速路径。若当前 ID 包依赖
+    // MEM2 中的这类 load，多停一拍等它进入 WB；无依赖和 L0 命中均不停。
+    assign MEM2_subword_miss0 = MEM2_RegWrite && MEM2_MemRead &&
+                                !MEM2_cache_hit && (MEM2_rd != 5'd0) &&
+                                (MEM2_funct3 != 3'b010);
+    assign MEM2_subword_miss1 = MEM2_S1_RegWrite && MEM2_S1_MemRead &&
+                                !MEM2_S1_cache_hit && (MEM2_S1_rd != 5'd0) &&
+                                (MEM2_S1_funct3 != 3'b010);
+    assign ID_dep_mem2_0 = (ID_uses_rs1 && (ID_rs1 == MEM2_rd)) ||
+                           (ID_uses_rs2 && (ID_rs2 == MEM2_rd)) ||
+                           (ID_S1_uses_rs1 && (ID_S1_rs1 == MEM2_rd)) ||
+                           (ID_S1_uses_rs2 && (ID_S1_rs2 == MEM2_rd));
+    assign ID_dep_mem2_1 = (ID_uses_rs1 && (ID_rs1 == MEM2_S1_rd)) ||
+                           (ID_uses_rs2 && (ID_rs2 == MEM2_S1_rd)) ||
+                           (ID_S1_uses_rs1 && (ID_S1_rs1 == MEM2_S1_rd)) ||
+                           (ID_S1_uses_rs2 && (ID_S1_rs2 == MEM2_S1_rd));
+    assign Stall_LateSubword = (MEM2_subword_miss0 && ID_dep_mem2_0) ||
+                               (MEM2_subword_miss1 && ID_dep_mem2_1);
+
     // =========================================================================
     // 冒险检测 / 前递选择
     // =========================================================================
@@ -390,34 +571,62 @@ module mycpu (
         .ID_EX_LoadReady_1(EX_cache_ready1),
         .EX_MEM_rd     (MEM_rd         ),
         .EX_MEM_MemRead(MEM_MemRead    ),
-        .EX_MEM_LoadReady(MEM_cache_hit0),
+        .EX_MEM_LoadReady(MEM_load_ready0),
         .EX_MEM_rd_1   (MEM_S1_rd      ),
         .EX_MEM_MemRead_1(MEM_S1_MemRead),
-        .EX_MEM_LoadReady_1(MEM_cache_hit1),
+        .EX_MEM_LoadReady_1(MEM_load_ready1),
         .BranchMispredict (BranchMispredict),
         .Stall         (Stall_Hazard   ),
         .Flush_IF_ID   (Flush_IF_ID    ),
         .Flush_ID_EX   (Flush_ID_EX    ),
         .LoadUseEX     (LoadUseEX      ),
-        .LoadUseMEM    (LoadUseMEM     )
+        .LoadUseMEM    (LoadUseMEM_base)
     );
+
+    assign LoadUseMEM = LoadUseMEM_base | Stall_LateSubword;
 
     assign MEM_bram_access    = is_bram_addr(MEM_perip_addr);
     assign MEM_S1_bram_access = is_bram_addr(MEM_S1_perip_addr);
     assign MEM_use_s1_bus     = !(MEM_MemWrite || MEM_MemRead) &&
                                 (MEM_S1_MemWrite || MEM_S1_MemRead);
+    assign MEM_store_addr     = MEM_MemWrite ? MEM_perip_bus_addr :
+                                               MEM_S1_perip_bus_addr;
+    assign MEM_store_data     = MEM_MemWrite ? MEM_rR2_data : MEM_S1_rR2_data;
+    assign MEM_store_valid    = ((MEM_MemWrite && MEM_bram_access) ||
+                                 (MEM_S1_MemWrite && MEM_S1_bram_access));
+    assign MEM_store_word     = MEM_store_valid &&
+                                (MEM_MemWrite ? (MEM_funct3 == 3'b010) :
+                                                (MEM_S1_funct3 == 3'b010));
     assign MEM_cache_hit0 = MEM_MemRead && MEM_bram_access && MEM_cache_hit;
     assign MEM_cache_hit1 = MEM_S1_MemRead && MEM_S1_bram_access && MEM_cache_hit;
+    assign MEM_store_bypass_hit =
+        store_bypass_valid_q[MEM_cache_lookup_addr[3:2]] &&
+        (store_bypass_tag_q[MEM_cache_lookup_addr[3:2]] ==
+         MEM_cache_lookup_addr[17:4]);
+    assign MEM_store_bypass_data =
+        store_bypass_data_q[MEM_cache_lookup_addr[3:2]];
+    assign MEM_lookup_ready0 = MEM_MemRead && MEM_bram_access &&
+                               (MEM_cache_hit || MEM_store_bypass_hit);
+    assign MEM_lookup_ready1 = MEM_S1_MemRead && MEM_S1_bram_access &&
+                               (MEM_cache_hit || MEM_store_bypass_hit);
+    // hazard 已单独检查 MEM_MemRead；LoadReady 只需保留地址范围和命中，
+    // 避免同一 MemRead 控制重复串入 L0 返回路径。
+    assign MEM_load_ready0 = MEM_early_cache_hit0 ||
+                             (MEM_bram_access &&
+                              (MEM_cache_hit || MEM_store_bypass_hit));
+    assign MEM_load_ready1 = MEM_early_cache_hit1 ||
+                             (MEM_S1_bram_access &&
+                              (MEM_cache_hit || MEM_store_bypass_hit));
     assign Flush_EX_MEM       = redirect_valid_q;
 
     // redirect/flush 打拍提交：
     //   EX 级只组合计算 raw redirect；这里寄存后再驱动 IF 重定向和流水 flush，
     //   切断 ALU/branch compare -> Flush_ID_EX 的运行期长路径。
     //
-    // 优先级（从高到低）：
+    // redirect 优先级（从高到低）：
     //   1) redirect_valid_q 有效且前段不暂停 → 消费完毕，清 0
     //   2) BranchMispredict_raw 新来了分支误预测 → 直接设置 valid
-    //   3) 分支指令（NpcOp==01）且 EX 不忙 → 记录 bp_update（预测正确也要更新）
+    // 预测器更新与误预测结果解耦：branch/jal 在 EX 完成就训练。
     always_ff @(posedge clk) begin
         if (rst) begin
             redirect_valid_q     <= 1'b0;
@@ -425,11 +634,20 @@ module mycpu (
             redirect_taken_q     <= 1'b0;
             redirect_bp_update_q <= 1'b0;
             redirect_bp_pc_q     <= '0;
+            redirect_bp_target_q <= '0;
+            redirect_bp_is_jal_q <= 1'b0;
         end else begin
-            // bp_update 默认清 0（仅当有分支完成时在下方设为 1）
-            redirect_bp_update_q <= 1'b0;
+            // 预测器训练不依赖分支比较/误预测结果，避免操作数长路径进入
+            // update pulse。EX_NpcOp_eff 已包含 pipe_valid 屏蔽。
+            redirect_bp_update_q <= !redirect_valid_q &&
+                                    ((EX_NpcOp_eff == 2'b01) ||
+                                     (EX_NpcOp_eff == 2'b11));
             // 记录分支 PC，用于更新预测器历史表
             redirect_bp_pc_q     <= EX_pc;
+            // branch/jal 的预测目标始终是 PC+imm；分支本次不跳转时
+            // IF_npc_redirect_raw 是 PC+4，不能用来训练后续 taken 目标。
+            redirect_bp_target_q <= EX_pc + EX_imm;
+            redirect_bp_is_jal_q <= (EX_NpcOp_eff == 2'b11);
 
             // pending 重定向期间始终保持已锁存目标。消费重定向只需清 valid，
             // 无需让 load-use stall 进入 target/taken 寄存器的 CE 路径。
@@ -446,11 +664,6 @@ module mycpu (
             // [优先级 2] EX 刚检测到分支误预测，立即发起重定向
             end else if (BranchMispredict_raw) begin
                 redirect_valid_q  <= 1'b1;
-                // 只有分支（非 jal/jalr）才需要更新预测器历史
-                redirect_bp_update_q <= (EX_NpcOp_eff == 2'b01);
-            // [优先级 3] 普通分支（预测正确），只需更新预测器，不需要重定向
-            end else if (!EX_any_busy && (EX_NpcOp_eff == 2'b01)) begin
-                redirect_bp_update_q <= 1'b1;
             end
         end
     end
@@ -462,10 +675,10 @@ module mycpu (
     //   2) 任一 EX 槽正在执行多周期 RV32M，前面的指令不能继续往前推，否则会覆盖 EX
     //   BRAM load 通过 MEM1/MEM2 后端流水返回，不再冻结整条前段流水。
     assign EX_any_busy     = EX_busy | EX_busy_S1;
-    assign Stall_Front     = Stall_Hazard | EX_any_busy;
+    assign Stall_Front     = Stall_Hazard | Stall_LateSubword | EX_any_busy;
     // EX 忙时不能再往 ID/EX 注入 bubble，否则会把正在执行的 M 指令冲掉。
     assign Flush_ID_EX_comb = redirect_valid_q ? 1'b1 :
-                               (Flush_ID_EX & ~EX_any_busy);
+                               ((Flush_ID_EX | Stall_LateSubword) & ~EX_any_busy);
     assign Stall           = Stall_Front;
 `ifndef SYNTHESIS
     always_ff @(posedge clk) begin
@@ -494,64 +707,25 @@ module mycpu (
     assign BranchMispredict = redirect_valid_q;
     assign BP_update_en    = redirect_bp_update_q;
     assign BP_update_taken = redirect_taken_q;
+
     forwarding_unit u_forwarding_unit (
-        .ID_EX_rs1       (EX_rs1      ),
-        .ID_EX_rs2       (EX_rs2      ),
         .ID_EX_data1     (EX_rR1_data ),
         .ID_EX_data2     (EX_rR2_data ),
-        .EX_MEM_rd0      (MEM_rd      ),
-        .EX_MEM_valid0   (MEM_RegWrite && (MEM_rd != 5'd0)),
-        .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
-        .MEM2_rd0        (MEM2_rd     ),
-        .MEM2_valid0     (MEM2_RegWrite && (!MEM2_MemRead || MEM2_cache_hit) &&
-                          (MEM2_rd != 5'd0)),
-        .MEM2_rd1        (MEM2_S1_rd  ),
-        .MEM2_valid1     (MEM2_S1_RegWrite && (!MEM2_S1_MemRead || MEM2_S1_cache_hit) &&
-                          (MEM2_S1_rd != 5'd0)),
-        .MEM_WB_rd0      (WB_rd       ),
-        .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
-        .MEM_WB_rd1      (WB_S1_rd    ),
-        .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
         .EX_MEM_data0    (MEM_forward_data_effective),
         .EX_MEM_data1    (MEM_S1_forward_data_effective),
-        .MEM2_data0      (MEM2_forward_data),
-        .MEM2_data1      (MEM2_S1_forward_data),
-        .MEM_WB_data0    (WB_wdata),
-        .MEM_WB_data1    (WB_S1_wdata),
-        .ForwardA        (ForwardA    ),
-        .ForwardB        (ForwardB    ),
+        .ForwardA_sel    (ForwardA    ),
+        .ForwardB_sel    (ForwardB    ),
         .ForwardAData    (ForwardAData),
         .ForwardBData    (ForwardBData)
     );
 
     forwarding_unit u_forwarding_unit_s1 (
-        .ID_EX_rs1       (EX_S1_rs1   ),
-        .ID_EX_rs2       (EX_S1_rs2   ),
         .ID_EX_data1     (EX_S1_rR1_data),
         .ID_EX_data2     (EX_S1_rR2_data),
-        .EX_MEM_rd0      (MEM_rd      ),
-        .EX_MEM_valid0   (MEM_RegWrite && (MEM_rd != 5'd0)),
-        .EX_MEM_rd1      (MEM_S1_rd   ),
-        .EX_MEM_valid1   (MEM_S1_RegWrite && (MEM_S1_rd != 5'd0)),
-        .MEM2_rd0        (MEM2_rd     ),
-        .MEM2_valid0     (MEM2_RegWrite && (!MEM2_MemRead || MEM2_cache_hit) &&
-                          (MEM2_rd != 5'd0)),
-        .MEM2_rd1        (MEM2_S1_rd  ),
-        .MEM2_valid1     (MEM2_S1_RegWrite && (!MEM2_S1_MemRead || MEM2_S1_cache_hit) &&
-                          (MEM2_S1_rd != 5'd0)),
-        .MEM_WB_rd0      (WB_rd       ),
-        .MEM_WB_valid0   (WB_RegWrite && (WB_rd != 5'd0)),
-        .MEM_WB_rd1      (WB_S1_rd    ),
-        .MEM_WB_valid1   (WB_S1_RegWrite && (WB_S1_rd != 5'd0)),
         .EX_MEM_data0    (MEM_forward_data_effective),
         .EX_MEM_data1    (MEM_S1_forward_data_effective),
-        .MEM2_data0      (MEM2_forward_data),
-        .MEM2_data1      (MEM2_S1_forward_data),
-        .MEM_WB_data0    (WB_wdata),
-        .MEM_WB_data1    (WB_S1_wdata),
-        .ForwardA        (ForwardA_S1 ),
-        .ForwardB        (ForwardB_S1 ),
+        .ForwardA_sel    (ForwardA_S1 ),
+        .ForwardB_sel    (ForwardB_S1 ),
         .ForwardAData    (ForwardAData_S1),
         .ForwardBData    (ForwardBData_S1)
     );
@@ -569,6 +743,8 @@ module mycpu (
         .BranchRedirect  (BranchMispredict),
         .BP_update_en    (BP_update_en   ),
         .BP_update_pc    (redirect_bp_pc_q),
+        .BP_update_target(redirect_bp_target_q),
+        .BP_update_is_jal(redirect_bp_is_jal_q),
         .BP_update_taken (BP_update_taken),
         .irom_addr       (irom_addr      ),
         .irom_addr1      (irom_addr1     ),
@@ -670,12 +846,125 @@ module mycpu (
         .rR4_data (ID_S1_rR2_data)
     );
 
+    assign ID_ForwardA    = select_id_forward(ID_rs1);
+    assign ID_ForwardB    = select_id_forward(ID_rs2);
+    assign ID_ForwardA_S1 = select_id_forward(ID_S1_rs1);
+    assign ID_ForwardB_S1 = select_id_forward(ID_S1_rs2);
+    assign ID_resolved_data1 = resolve_id_operand(
+        ID_ForwardA, ID_rR1_data, MEM_resolved_forward_data0,
+        MEM_resolved_forward_data1, MEM2_forward_data,
+        MEM2_S1_forward_data, ID_late_load_word
+    );
+    assign ID_resolved_data2 = resolve_id_operand(
+        ID_ForwardB, ID_rR2_data, MEM_resolved_forward_data0,
+        MEM_resolved_forward_data1, MEM2_forward_data,
+        MEM2_S1_forward_data, ID_late_load_word
+    );
+    assign ID_S1_resolved_data1 = resolve_id_operand(
+        ID_ForwardA_S1, ID_S1_rR1_data, MEM_resolved_forward_data0,
+        MEM_resolved_forward_data1, MEM2_forward_data,
+        MEM2_S1_forward_data, ID_late_load_word
+    );
+    assign ID_S1_resolved_data2 = resolve_id_operand(
+        ID_ForwardB_S1, ID_S1_rR2_data, MEM_resolved_forward_data0,
+        MEM_resolved_forward_data1, MEM2_forward_data,
+        MEM2_S1_forward_data, ID_late_load_word
+    );
+    assign ID_ForwardA_EX    = select_ex_forward(ID_ForwardA);
+    assign ID_ForwardB_EX    = select_ex_forward(ID_ForwardB);
+    assign ID_ForwardA_S1_EX = select_ex_forward(ID_ForwardA_S1);
+    assign ID_ForwardB_S1_EX = select_ex_forward(ID_ForwardB_S1);
+    assign ID_mul_narrow_a = select_id_narrow18(ID_rs1, ID_ForwardA);
+    assign ID_mul_narrow_b = select_id_narrow18(ID_rs2, ID_ForwardB);
+    assign ID_S1_mul_narrow_a = select_id_narrow18(ID_S1_rs1, ID_ForwardA_S1);
+    assign ID_S1_mul_narrow_b = select_id_narrow18(ID_S1_rs2, ID_ForwardB_S1);
+
+    // 可证明的窄结果才传播标签；无法静态证明时保守清零。半字/字节 load、
+    // 小掩码 AND、比较，以及窄输入间的位运算不会越出 signed 18-bit。
+    assign EX_result_narrow18 =
+        (EX_MemRead_eff && (EX_funct3 != 3'b010)) ||
+        ((EX_MemToReg == 3'b011) &&
+         ((&EX_imm[31:17]) || (~|EX_imm[31:17]))) ||
+        ((|EX_ALUControl_eff[4:2]) && EX_mul_narrow_a && EX_mul_narrow_b) ||
+        (EX_ALUControl_eff[2] && EX_ALUSrcB && (~|EX_imm[31:17])) ||
+        (EX_ALUControl_eff[7] && EX_mul_narrow_a) ||
+        EX_ALUControl_eff[10] || EX_ALUControl_eff[13];
+    assign EX_S1_result_narrow18 =
+        (EX_S1_MemRead_eff && (EX_S1_funct3 != 3'b010)) ||
+        ((EX_S1_MemToReg == 3'b011) &&
+         ((&EX_S1_imm[31:17]) || (~|EX_S1_imm[31:17]))) ||
+        ((|EX_S1_ALUControl_eff[4:2]) &&
+         EX_S1_mul_narrow_a && EX_S1_mul_narrow_b) ||
+        (EX_S1_ALUControl_eff[2] && EX_S1_ALUSrcB && (~|EX_S1_imm[31:17])) ||
+        (EX_S1_ALUControl_eff[7] && EX_S1_mul_narrow_a) ||
+        EX_S1_ALUControl_eff[10] || EX_S1_ALUControl_eff[13];
+
+    always_ff @(posedge clk) begin
+        if (rst || Flush_ID_EX_comb) begin
+            EX_mul_narrow_a    <= 1'b0;
+            EX_mul_narrow_b    <= 1'b0;
+            EX_S1_mul_narrow_a <= 1'b0;
+            EX_S1_mul_narrow_b <= 1'b0;
+        end else if (!EX_any_busy) begin
+            EX_mul_narrow_a    <= ID_mul_narrow_a;
+            EX_mul_narrow_b    <= ID_mul_narrow_b;
+            EX_S1_mul_narrow_a <= ID_S1_mul_narrow_a;
+            EX_S1_mul_narrow_b <= ID_S1_mul_narrow_b;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            narrow18_rf <= 32'b1;
+            MEM_result_narrow18     <= 1'b0;
+            MEM_S1_result_narrow18  <= 1'b0;
+            MEM2_result_narrow18    <= 1'b0;
+            MEM2_S1_result_narrow18 <= 1'b0;
+            WB_result_narrow18      <= 1'b0;
+            WB_S1_result_narrow18   <= 1'b0;
+        end else begin
+            if (Flush_EX_MEM) begin
+                MEM_result_narrow18    <= 1'b0;
+                MEM_S1_result_narrow18 <= 1'b0;
+            end else if (!EX_any_busy) begin
+                MEM_result_narrow18    <= EX_result_narrow18;
+                MEM_S1_result_narrow18 <= EX_S1_result_narrow18;
+            end
+            MEM2_result_narrow18    <= MEM_result_narrow18;
+            MEM2_S1_result_narrow18 <= MEM_S1_result_narrow18;
+            WB_result_narrow18      <= MEM2_result_narrow18;
+            WB_S1_result_narrow18   <= MEM2_S1_result_narrow18;
+            if (WB_RegWrite && (WB_rd != 5'd0))
+                narrow18_rf[WB_rd] <= WB_result_narrow18;
+            if (WB_S1_RegWrite && (WB_S1_rd != 5'd0))
+                narrow18_rf[WB_S1_rd] <= WB_S1_result_narrow18;
+            narrow18_rf[0] <= 1'b1;
+        end
+    end
+
+    // 零气泡 L0 探测只允许未使用 EX 前递的 load。此时 ID 读出的基址就是
+    // EX 的实际基址，可把地址加法提前一拍并锁存，缩短 L0 hit 到 hazard 的路径。
+    // 真正的访存地址仍由 EX ALU 计算，外部总线语义不变。
+    // miss load 的原始字可直接解析为普通 EX 操作数，但不再同拍穿过第二个
+    // 地址加法器。此类后继 load 保守放弃 EX 提前探测，仍走标准 MEM lookup。
+    assign ID_probe_base0 = resolve_id_probe_base(
+        ID_ForwardA, ID_rR1_data, MEM_resolved_forward_data0,
+        MEM_resolved_forward_data1, MEM2_forward_data, MEM2_S1_forward_data
+    );
+    assign ID_probe_base1 = resolve_id_probe_base(
+        ID_ForwardA_S1, ID_S1_rR1_data, MEM_resolved_forward_data0,
+        MEM_resolved_forward_data1, MEM2_forward_data, MEM2_S1_forward_data
+    );
+    assign ID_mem_addr_early    = ID_probe_base0 + ID_imm;
+    assign ID_S1_mem_addr_early = ID_probe_base1 + ID_S1_imm;
+
     // ---- ID/EX 流水寄存器 ----
     mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg (
         .ID_pc           (ID_pc          ),
         .ID_imm          (ID_imm         ),
-        .ID_rR1_data     (ID_rR1_data    ),
-        .ID_rR2_data     (ID_rR2_data    ),
+        .ID_rR1_data     (ID_resolved_data1),
+        .ID_rR2_data     (ID_resolved_data2),
+        .ID_mem_addr_early(ID_mem_addr_early),
         .ID_rs1          (ID_rs1         ),
         .ID_rs2          (ID_rs2         ),
         .ID_rd           (ID_rd          ),
@@ -692,6 +981,8 @@ module mycpu (
         .ID_csr_idx      (ID_csr_idx     ),
         .ID_csr_zimm     (ID_csr_zimm    ),
         .ID_CSRControll  (ID_CSRControll ),
+        .ID_ForwardA     (ID_ForwardA_EX ),
+        .ID_ForwardB     (ID_ForwardB_EX ),
         .ID_pred_taken   (ID_pred_taken  ),
         .ID_pred_target  (ID_pred_target ),
         .clk             (clk            ),
@@ -702,6 +993,7 @@ module mycpu (
         .EX_imm          (EX_imm         ),
         .EX_rR1_data     (EX_rR1_data    ),
         .EX_rR2_data     (EX_rR2_data    ),
+        .EX_mem_addr_early(EX_mem_addr_early),
         .EX_rs1          (EX_rs1         ),
         .EX_rs2          (EX_rs2         ),
         .EX_rd           (EX_rd          ),
@@ -718,6 +1010,8 @@ module mycpu (
         .EX_csr_idx      (EX_csr_idx     ),
         .EX_csr_zimm     (EX_csr_zimm    ),
         .EX_CSRControll  (EX_CSRControll ),
+        .EX_ForwardA     (ForwardA       ),
+        .EX_ForwardB     (ForwardB       ),
         .EX_pred_taken   (EX_pred_taken  ),
         .EX_pred_target  (EX_pred_target ),
         .EX_pipe_valid   (EX_pipe_valid  )
@@ -726,8 +1020,9 @@ module mycpu (
     mycpu_id_ex_reg #(DATAWIDTH, ADDR_WIDTH) u_id_ex_reg_s1 (
         .ID_pc           (ID_pc1         ),
         .ID_imm          (ID_S1_imm      ),
-        .ID_rR1_data     (ID_S1_rR1_data ),
-        .ID_rR2_data     (ID_S1_rR2_data ),
+        .ID_rR1_data     (ID_S1_resolved_data1),
+        .ID_rR2_data     (ID_S1_resolved_data2),
+        .ID_mem_addr_early(ID_S1_mem_addr_early),
         .ID_rs1          (ID_S1_rs1      ),
         .ID_rs2          (ID_S1_rs2      ),
         .ID_rd           (ID_S1_rd       ),
@@ -744,6 +1039,8 @@ module mycpu (
         .ID_csr_idx      (ID_S1_csr_idx  ),
         .ID_csr_zimm     (ID_S1_csr_zimm ),
         .ID_CSRControll  (ID_S1_CSRControll),
+        .ID_ForwardA     (ID_ForwardA_S1_EX),
+        .ID_ForwardB     (ID_ForwardB_S1_EX),
         .ID_pred_taken   (1'b0           ),
         .ID_pred_target  ('0             ),
         .clk             (clk            ),
@@ -754,6 +1051,7 @@ module mycpu (
         .EX_imm          (EX_S1_imm      ),
         .EX_rR1_data     (EX_S1_rR1_data ),
         .EX_rR2_data     (EX_S1_rR2_data ),
+        .EX_mem_addr_early(EX_S1_mem_addr_early),
         .EX_rs1          (EX_S1_rs1      ),
         .EX_rs2          (EX_S1_rs2      ),
         .EX_rd           (EX_S1_rd       ),
@@ -770,6 +1068,8 @@ module mycpu (
         .EX_csr_idx      (EX_S1_csr_idx  ),
         .EX_csr_zimm     (EX_S1_csr_zimm ),
         .EX_CSRControll  (EX_S1_CSRControll),
+        .EX_ForwardA     (ForwardA_S1    ),
+        .EX_ForwardB     (ForwardB_S1    ),
         .EX_pred_taken   (EX_S1_pred_taken),
         .EX_pred_target  (EX_S1_pred_target),
         .EX_pipe_valid   (EX_S1_pipe_valid)
@@ -777,7 +1077,7 @@ module mycpu (
 
     // =========================================================================
     // STAGE 3：EX（执行）
-    //   双路前递选择 → RV32I 轻量 alu / RV32M 多周期单元 + csr_file + npc_calc
+    //   双路前递选择 → RV32I 轻量 alu / RV32M 多周期单元 + csr_file + 重定向控制
     //   其中 RV32M 执行期间会拉高 EX_busy/EX_busy_S1，冻结前半段流水并阻止 EX/MEM 更新
     // =========================================================================
     mycpu_ex_stage #(DATAWIDTH) u_ex_stage (
@@ -801,11 +1101,13 @@ module mycpu (
         .ForwardB         (ForwardB        ),
         .ForwardAData     (ForwardAData    ),
         .ForwardBData     (ForwardBData    ),
+        .EX_mul_narrow_a  (EX_mul_narrow_a ),
+        .EX_mul_narrow_b  (EX_mul_narrow_b ),
         .EX_ALUSrcA       (EX_ALUSrcA      ),
         .EX_ALUSrcB       (EX_ALUSrcB      ),
         .EX_pred_taken    (EX_pred_taken   ),
         .EX_pred_target   (EX_pred_target  ),
-        .EX_stall         (1'b0            ),
+        .EX_stall         (EX_any_busy     ),
         .EX_kill          (redirect_valid_q),
         .clk              (clk             ),
         .rst              (rst             ),
@@ -819,7 +1121,12 @@ module mycpu (
         .EX_busy          (EX_busy         )
     );
 
-    mycpu_ex_stage #(DATAWIDTH) u_ex_stage_s1 (
+    // 第二槽 MUL 数量较少，统一走一等待周期的 RV32M 单元；仅第一槽保留
+    // 窄操作数 DSP 快路径，以降低并行乘法器对布局布线的压力。
+    mycpu_ex_stage #(
+        .DATAWIDTH          (DATAWIDTH),
+        .ENABLE_NARROW_MUL (1'b0)
+    ) u_ex_stage_s1 (
         .MEM_forward_data (MEM_forward_data_effective),
         .MEM_S1_forward_data(MEM_S1_forward_data_effective),
         .MEM2_forward_data(MEM2_forward_data),
@@ -842,11 +1149,13 @@ module mycpu (
         .ForwardB         (ForwardB_S1     ),
         .ForwardAData     (ForwardAData_S1 ),
         .ForwardBData     (ForwardBData_S1 ),
+        .EX_mul_narrow_a  (EX_S1_mul_narrow_a),
+        .EX_mul_narrow_b  (EX_S1_mul_narrow_b),
         .EX_ALUSrcA       (EX_S1_ALUSrcA   ),
         .EX_ALUSrcB       (EX_S1_ALUSrcB   ),
         .EX_pred_taken    (1'b0            ),
         .EX_pred_target   ('0              ),
-        .EX_stall         (1'b0            ),
+        .EX_stall         (EX_any_busy     ),
         .EX_kill          (redirect_valid_q),
         .clk              (clk             ),
         .rst              (rst             ),
@@ -966,18 +1275,25 @@ module mycpu (
 
     // 64 项 BRAM load 结果缓存。外部访问保持不变；EX 提前探测命中时允许
     // 下一拍从 MEM1 前递，miss 仍沿原 BRAM→WB 路径返回。
+    // L0 lookup 只服务 load；无需经过包含 store 的通用总线 lane 选择。
+    assign MEM_cache_lookup_addr = MEM_S1_MemRead ? MEM_S1_perip_bus_addr :
+                                                    MEM_perip_bus_addr;
+
     load_l0_cache #(.INDEX_WIDTH(6)) u_load_l0_cache (
         .clk          (clk),
         .rst          (rst),
-        .lookup_addr  (MEM_use_s1_bus ? MEM_S1_perip_bus_addr : MEM_perip_bus_addr),
-        .lookup_hit   (MEM_cache_hit),
-        .lookup_data  (MEM_cache_data),
-        .probe_addr   (EX_cache_probe_addr),
-        .probe_hit    (EX_cache_probe_hit),
-        .probe_data   (EX_cache_probe_data),
-        .fill_en      (MEM_cache_fill_en),
-        .fill_addr    (MEM_cache_fill_addr),
-        .fill_data    (perip_rdata),
+        .lookup_addr  (MEM_cache_lookup_addr),
+        .lookup_hit   (MEM_cache_hit_raw),
+        .lookup_data  (MEM_cache_data_raw),
+        .probe_addr0  (EX_cache_probe_addr0),
+        .probe_hit0   (EX_cache_probe_hit_raw0),
+        .probe_data0  (EX_cache_probe_data_raw0),
+        .probe_addr1  (EX_cache_probe_addr1),
+        .probe_hit1   (EX_cache_probe_hit_raw1),
+        .probe_data1  (EX_cache_probe_data_raw1),
+        .fill_en      (MEM_cache_fill_q_en),
+        .fill_addr    (MEM_cache_fill_q_addr),
+        .fill_data    (MEM_cache_fill_q_data),
         .store_en     (MEM_bus_wen && is_bram_addr(MEM_bus_addr)),
         .store_addr   (MEM_bus_addr)
     );
@@ -987,14 +1303,131 @@ module mycpu (
     assign MEM_cache_fill_addr = MEM2_MemRead ? MEM2_alu_result :
                                                    MEM2_S1_alu_result;
 
+    // BRAM 返回先进入窄寄存器，再在下一拍写 L0，切断 BRAM 大读 mux 到
+    // 64 项分布式 RAM 写口的组合路径。q 项在写入前作为虚拟最新缓存行
+    // 参与 lookup/probe，因此命中时序和原实现保持一致。
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            MEM_cache_fill_q_en   <= 1'b0;
+            MEM_cache_fill_q_addr <= 32'b0;
+            MEM_cache_fill_q_data <= 32'b0;
+        end else begin
+            MEM_cache_fill_q_en <= MEM_cache_fill_en &&
+                                   !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
+                                     (MEM_bus_addr[17:2] == MEM_cache_fill_addr[17:2]));
+            MEM_cache_fill_q_addr <= MEM_cache_fill_addr;
+            MEM_cache_fill_q_data <= perip_rdata;
+        end
+    end
+
+    // 四项直接映射 store buffer 覆盖 O0 代码最常见的四个相邻栈槽。
+    // 完整字 store 可被后续 load 直接读取；部分 store 失效对应项。
+    integer store_bypass_i;
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            store_bypass_valid_q <= 4'b0;
+            for (store_bypass_i = 0; store_bypass_i < 4;
+                 store_bypass_i = store_bypass_i + 1) begin
+                store_bypass_tag_q[store_bypass_i] = '0;
+                store_bypass_data_q[store_bypass_i] = '0;
+            end
+        end else if (MEM_store_valid) begin
+            if (MEM_store_word) begin
+                store_bypass_valid_q[MEM_store_addr[3:2]] <= 1'b1;
+                store_bypass_tag_q[MEM_store_addr[3:2]] <= MEM_store_addr[17:4];
+                store_bypass_data_q[MEM_store_addr[3:2]] <= MEM_store_data;
+            end else if (store_bypass_valid_q[MEM_store_addr[3:2]] &&
+                         (store_bypass_tag_q[MEM_store_addr[3:2]] ==
+                          MEM_store_addr[17:4])) begin
+                store_bypass_valid_q[MEM_store_addr[3:2]] <= 1'b0;
+            end
+        end
+    end
+
+    always_comb begin
+        EX_store_bypass_hit0 =
+            store_bypass_valid_q[EX_cache_probe_addr0[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr0[3:2]] ==
+             EX_cache_probe_addr0[17:4]);
+        EX_store_bypass_hit1 =
+            store_bypass_valid_q[EX_cache_probe_addr1[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr1[3:2]] ==
+             EX_cache_probe_addr1[17:4]);
+        // 当前 MEM store 比寄存的上一项更新。完整字可直接旁路；同字的
+        // byte/half store 必须屏蔽旧完整字。
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr0[17:2])) begin
+            EX_store_bypass_hit0 = MEM_store_word;
+        end
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr1[17:2])) begin
+            EX_store_bypass_hit1 = MEM_store_word;
+        end
+    end
+
+    always_comb begin
+        MEM_cache_hit  = MEM_cache_hit_raw;
+        MEM_cache_data = MEM_cache_data_raw;
+        if (MEM_cache_fill_q_en &&
+            (MEM_cache_fill_q_addr[7:2] == MEM_cache_lookup_addr[7:2])) begin
+            MEM_cache_hit  = (MEM_cache_fill_q_addr[17:2] ==
+                              MEM_cache_lookup_addr[17:2]);
+            MEM_cache_data = MEM_cache_fill_q_data;
+        end
+        EX_cache_probe_hit0  = EX_cache_probe_hit_raw0;
+        EX_cache_probe_data0 = EX_cache_probe_data_raw0;
+        EX_cache_probe_hit1  = EX_cache_probe_hit_raw1;
+        EX_cache_probe_data1 = EX_cache_probe_data_raw1;
+        if (MEM_cache_fill_q_en &&
+            (MEM_cache_fill_q_addr[7:2] == EX_cache_probe_addr0[7:2])) begin
+            EX_cache_probe_hit0  = (MEM_cache_fill_q_addr[17:2] ==
+                                    EX_cache_probe_addr0[17:2]);
+            EX_cache_probe_data0 = MEM_cache_fill_q_data;
+        end
+        if (MEM_cache_fill_q_en &&
+            (MEM_cache_fill_q_addr[7:2] == EX_cache_probe_addr1[7:2])) begin
+            EX_cache_probe_hit1  = (MEM_cache_fill_q_addr[17:2] ==
+                                    EX_cache_probe_addr1[17:2]);
+            EX_cache_probe_data1 = MEM_cache_fill_q_data;
+        end
+        if (store_bypass_valid_q[EX_cache_probe_addr0[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr0[3:2]] ==
+             EX_cache_probe_addr0[17:4])) begin
+            EX_cache_probe_hit0  = 1'b1;
+            EX_cache_probe_data0 =
+                store_bypass_data_q[EX_cache_probe_addr0[3:2]];
+        end
+        if (store_bypass_valid_q[EX_cache_probe_addr1[3:2]] &&
+            (store_bypass_tag_q[EX_cache_probe_addr1[3:2]] ==
+             EX_cache_probe_addr1[17:4])) begin
+            EX_cache_probe_hit1  = 1'b1;
+            EX_cache_probe_data1 =
+                store_bypass_data_q[EX_cache_probe_addr1[3:2]];
+        end
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr0[17:2])) begin
+            EX_cache_probe_hit0  = MEM_store_word;
+            EX_cache_probe_data0 = MEM_store_data;
+        end
+        if (MEM_store_valid &&
+            (MEM_store_addr[17:2] == EX_cache_probe_addr1[17:2])) begin
+            EX_cache_probe_hit1  = MEM_store_word;
+            EX_cache_probe_data1 = MEM_store_data;
+        end
+    end
+
     // EX 提前读取完整缓存字，并随 load 一起打入 EX/MEM。下一拍消费者仅
     // 前递寄存后的数据，避免 MEM 异步 L0 读取直接串入 EX ALU。
     // 提前探测只使用 ID/EX 已寄存的基址。需要任意 EX 前递的 load 不能走
     // 零气泡路径，否则会形成 MEM2/WB -> ALU -> L0 -> hazard 的长组合链。
-    assign EX_cache_probe_addr0 = EX_rR1_data + EX_imm;
-    assign EX_cache_probe_addr1 = EX_S1_rR1_data + EX_S1_imm;
+    assign EX_cache_probe_addr0 = EX_mem_addr_early;
+    assign EX_cache_probe_addr1 = EX_S1_mem_addr_early;
+    // 两槽并行读取 L0，把 MemRead 槽选择移到 RAM/tag 比较之后，缩短
+    // EX load-ready 经 hazard 返回 IF 地址口的组合路径。
     assign EX_cache_probe_addr = EX_MemRead_eff ? EX_cache_probe_addr0 :
                                  EX_S1_MemRead_eff ? EX_cache_probe_addr1 : 32'b0;
+    assign EX_cache_probe_data = EX_MemRead_eff ? EX_cache_probe_data0 :
+                                 EX_S1_MemRead_eff ? EX_cache_probe_data1 : 32'b0;
     assign EX_cache_probe_raw = select_load_raw(
         EX_cache_probe_data,
         EX_MemRead_eff ? EX_funct3 : EX_S1_funct3,
@@ -1010,20 +1443,18 @@ module mycpu (
     // 避免消费者前递到 store 之前的旧缓存数据。
     assign EX_cache_ready0 = EX_MemRead_eff && (ForwardA == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr0) &&
-                             EX_cache_probe_hit &&
-                             !(MEM_cache_fill_en &&
-                               (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr0[7:2]) &&
-                               (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2])) &&
-                             !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
-                               (MEM_bus_addr[17:2] == EX_cache_probe_addr0[17:2]));
+                             (EX_store_bypass_hit0 ||
+                              (EX_cache_probe_hit0 &&
+                               !(MEM_cache_fill_en &&
+                                 (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr0[7:2]) &&
+                                 (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr0[17:2]))));
     assign EX_cache_ready1 = EX_S1_MemRead_eff && (ForwardA_S1 == 3'd0) &&
                              is_bram_addr(EX_cache_probe_addr1) &&
-                             EX_cache_probe_hit &&
-                             !(MEM_cache_fill_en &&
-                               (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr1[7:2]) &&
-                               (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr1[17:2])) &&
-                             !(MEM_bus_wen && is_bram_addr(MEM_bus_addr) &&
-                               (MEM_bus_addr[17:2] == EX_cache_probe_addr1[17:2]));
+                             (EX_store_bypass_hit1 ||
+                              (EX_cache_probe_hit1 &&
+                               !(MEM_cache_fill_en &&
+                                 (MEM_cache_fill_addr[7:2] == EX_cache_probe_addr1[7:2]) &&
+                                 (MEM_cache_fill_addr[17:2] != EX_cache_probe_addr1[17:2]))));
 
     // 零气泡 load 的前递值来自 EX/MEM 中的寄存副本。
     assign MEM_forward_data_effective = MEM_forward_data;
@@ -1031,9 +1462,11 @@ module mycpu (
 
     logic [31:0] MEM_cache_raw0, MEM_cache_raw1;
     logic [31:0] MEM_cache_load_data0, MEM_cache_load_data1;
-    assign MEM_cache_raw0 = select_load_raw(MEM_cache_data, MEM_funct3,
+    assign MEM_load_ready_word = MEM_store_bypass_hit ? MEM_store_bypass_data :
+                                                        MEM_cache_data;
+    assign MEM_cache_raw0 = select_load_raw(MEM_load_ready_word, MEM_funct3,
                                              MEM_perip_bus_addr[1:0]);
-    assign MEM_cache_raw1 = select_load_raw(MEM_cache_data, MEM_S1_funct3,
+    assign MEM_cache_raw1 = select_load_raw(MEM_load_ready_word, MEM_S1_funct3,
                                              MEM_S1_perip_bus_addr[1:0]);
     load_mask #(DATAWIDTH) u_mem_cache_load_mask (
         .mask(MEM_funct3), .dout(MEM_cache_raw0), .mdata(MEM_cache_load_data0)
@@ -1041,6 +1474,10 @@ module mycpu (
     load_mask #(DATAWIDTH) u_mem_cache_load_mask_s1 (
         .mask(MEM_S1_funct3), .dout(MEM_cache_raw1), .mdata(MEM_cache_load_data1)
     );
+    assign MEM_resolved_forward_data0 = MEM_lookup_ready0 ?
+                                        MEM_cache_load_data0 : MEM_forward_data;
+    assign MEM_resolved_forward_data1 = MEM_lookup_ready1 ?
+                                        MEM_cache_load_data1 : MEM_S1_forward_data;
 
     // cache hit 与最终前递值在 MEM1/MEM2 边界锁存，避免下一拍的
     // MemToReg/cache/load-mask 选择继续串入 EX ALU。
@@ -1051,12 +1488,10 @@ module mycpu (
             MEM2_forward_data    <= 32'b0;
             MEM2_S1_forward_data <= 32'b0;
         end else begin
-            MEM2_cache_hit       <= MEM_cache_hit0;
-            MEM2_S1_cache_hit    <= MEM_cache_hit1;
-            MEM2_forward_data    <= MEM_cache_hit0 ? MEM_cache_load_data0 :
-                                                        MEM_forward_data;
-            MEM2_S1_forward_data <= MEM_cache_hit1 ? MEM_cache_load_data1 :
-                                                        MEM_S1_forward_data;
+            MEM2_cache_hit       <= MEM_load_ready0;
+            MEM2_S1_cache_hit    <= MEM_load_ready1;
+            MEM2_forward_data    <= MEM_resolved_forward_data0;
+            MEM2_S1_forward_data <= MEM_resolved_forward_data1;
         end
     end
 

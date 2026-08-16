@@ -14,9 +14,12 @@ module load_l0_cache #(
     input  logic [31:0] lookup_addr,
     output logic        lookup_hit,
     output logic [31:0] lookup_data,
-    input  logic [31:0] probe_addr,
-    output logic        probe_hit,
-    output logic [31:0] probe_data,
+    input  logic [31:0] probe_addr0,
+    output logic        probe_hit0,
+    output logic [31:0] probe_data0,
+    input  logic [31:0] probe_addr1,
+    output logic        probe_hit1,
+    output logic [31:0] probe_data1,
     input  logic        fill_en,
     input  logic [31:0] fill_addr,
     input  logic [31:0] fill_data,
@@ -31,24 +34,29 @@ module load_l0_cache #(
     logic [TAG_WIDTH-1:0] tag_array [0:ENTRIES-1];
     logic valid_array [0:ENTRIES-1];
     logic [INDEX_WIDTH-1:0] lookup_index, fill_index, store_index;
-    logic [INDEX_WIDTH-1:0] probe_index;
-    logic [TAG_WIDTH-1:0] lookup_tag, probe_tag, fill_tag, store_tag;
+    logic [INDEX_WIDTH-1:0] probe_index0, probe_index1;
+    logic [TAG_WIDTH-1:0] lookup_tag, probe_tag0, probe_tag1, fill_tag, store_tag;
 
     assign lookup_index = lookup_addr[INDEX_WIDTH+1:2];
-    assign probe_index  = probe_addr[INDEX_WIDTH+1:2];
+    assign probe_index0 = probe_addr0[INDEX_WIDTH+1:2];
+    assign probe_index1 = probe_addr1[INDEX_WIDTH+1:2];
     assign fill_index   = fill_addr[INDEX_WIDTH+1:2];
     assign store_index  = store_addr[INDEX_WIDTH+1:2];
     assign lookup_tag   = lookup_addr[17:INDEX_WIDTH+2];
-    assign probe_tag    = probe_addr[17:INDEX_WIDTH+2];
+    assign probe_tag0   = probe_addr0[17:INDEX_WIDTH+2];
+    assign probe_tag1   = probe_addr1[17:INDEX_WIDTH+2];
     assign fill_tag     = fill_addr[17:INDEX_WIDTH+2];
     assign store_tag    = store_addr[17:INDEX_WIDTH+2];
     assign lookup_hit = valid_array[lookup_index] &&
                         (tag_array[lookup_index] == lookup_tag);
     assign lookup_data = data_array[lookup_index];
     // EX 级只用该端口提前判断下一拍能否完成 load-to-use 前递。
-    assign probe_hit = valid_array[probe_index] &&
-                       (tag_array[probe_index] == probe_tag);
-    assign probe_data = data_array[probe_index];
+    assign probe_hit0 = valid_array[probe_index0] &&
+                        (tag_array[probe_index0] == probe_tag0);
+    assign probe_data0 = data_array[probe_index0];
+    assign probe_hit1 = valid_array[probe_index1] &&
+                        (tag_array[probe_index1] == probe_tag1);
+    assign probe_data1 = data_array[probe_index1];
 
     integer i;
     always_ff @(posedge clk) begin

@@ -50,7 +50,7 @@ BRAM signature；失败编号也写入 SEG，保证日志可直接定位。
 ### 竞赛端到端测试
 
 必须原样使用 `sim/coe/mext/irom-v2.coe` 和 `dram.coe`，SW0/SW1/KEY 为零，
-CPU-only 时钟配置为 240 MHz，超时为 4,000,000,000 ns。退休的 LED store 写入
+CPU-only 时钟配置为 200 MHz，超时为 4,000,000,000 ns。退休的 LED store 写入
 `0x078B7323` 为正确完成，`0x24181824`、超时或未知态为失败。
 
 SEG、COUNTER 和性能值只记录，不参与正确性门禁。实测值统一写入独立的
@@ -72,7 +72,7 @@ SEG、COUNTER 和性能值只记录，不参与正确性门禁。实测值统一
 EX/MEM 停顿、RV32M busy、条件分支及预测错误、BRAM load、L0 命中率、宿主
 wall time 和仿真速度。Vivado 报告另外记录 LUT/FF/DSP/BRAM、WNS 和可达频率。
 
-CPU-only 配置的 240 MHz 用于匹配当前板级 CPU 时钟，并进行仿真时间与 MIPS 换算；
+CPU-only 配置的 200 MHz 用于匹配当前板级 CPU 时钟，并进行仿真时间与 MIPS 换算；
 它本身不能证明板上时序收敛。性能表可给出历史差值，但不因改善或退化使正确性
 测试通过或失败。
 

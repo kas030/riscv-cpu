@@ -4,6 +4,12 @@
 *.v      text eol=lf
 *.vh     text eol=lf
 
+# C / assembly sources (CoreMark upstream MD5 is defined over LF content)
+*.c      text eol=lf
+*.h      text eol=lf
+*.S      text eol=lf
+*.md5    text eol=lf
+
 # Scripts
 *.tcl    text eol=lf
 *.sh     text eol=lf

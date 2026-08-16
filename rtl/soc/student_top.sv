@@ -33,14 +33,26 @@ module student_top#(
     input  [P_SW_CNT  - 1:0]                    virtual_sw    ,
 
     output [P_LED_CNT - 1:0]                    virtual_led   ,
-    output [P_SEG_CNT - 1:0]                    virtual_seg   
+    output [P_SEG_CNT - 1:0]                    virtual_seg   ,
+
+    inout  wire                                bme_scl       ,
+    inout  wire                                bme_sda       ,
+
+    /* CPU 串口透传（50MHz 域，接 twin_controller） */
+    input                                       uart_tx_busy  ,
+    input                                       uart_rx_valid ,
+    input  [7:0]                                uart_rx_data  ,
+    output                                      uart_tx_start ,
+    output [7:0]                                uart_tx_data  ,
+    input                                       uart_passthrough,
+    output                                      uart_passthrough_req
 );
 
     // IROM
     logic [31:0] pc;
     logic [31:0] pc1;
-    logic [11:0] inst_addr;
-    logic [11:0] inst_addr1;
+    logic [13:0] inst_addr;
+    logic [13:0] inst_addr1;
     logic [31:0] instruction;
     logic [31:0] instruction1;
 
@@ -49,9 +61,9 @@ module student_top#(
     logic perip_wen;
     logic [1:0] perip_mask;
 
-    // 16KB = 2^12 * 32bit
-    assign inst_addr  = pc[13:2];
-    assign inst_addr1 = pc1[13:2];
+    // 64KB = 2^14 * 32bit
+    assign inst_addr  = pc[15:2];
+    assign inst_addr1 = pc1[15:2];
 
     mycpu Core_cpu (
         .cpu_rst            (w_clk_rst),
@@ -72,13 +84,14 @@ module student_top#(
     );
 
     IROM Mem_IROM (
-        .a          (inst_addr),
-        .spo        (instruction)
-    );
-
-    IROM Mem_IROM1 (
-        .a          (inst_addr1),
-        .spo        (instruction1)
+        .clka       (w_cpu_clk),
+        .ena        (1'b1),
+        .addra      (inst_addr),
+        .douta      (instruction),
+        .clkb       (w_cpu_clk),
+        .enb        (1'b1),
+        .addrb      (inst_addr1),
+        .doutb      (instruction1)
     );
     
     perip_bridge bridge_inst (
@@ -93,7 +106,16 @@ module student_top#(
         .virtual_sw_input	(virtual_sw),
         .virtual_key_input	(virtual_key),	
         .virtual_seg_output	(virtual_seg),
-        .virtual_led_output (virtual_led)
+        .virtual_led_output (virtual_led),
+        .uart_tx_data       (uart_tx_data),
+        .uart_tx_start      (uart_tx_start),
+        .uart_tx_busy       (uart_tx_busy),
+        .uart_rx_data       (uart_rx_data),
+        .uart_rx_ready      (uart_rx_valid),
+        .uart_passthrough   (uart_passthrough),
+        .uart_passthrough_req(uart_passthrough_req),
+        .bme_scl            (bme_scl),
+        .bme_sda            (bme_sda)
     );
 
 endmodule

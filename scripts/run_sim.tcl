@@ -3,6 +3,7 @@
 # Usage:
 #   vivado -mode batch -source scripts/run_sim.tcl
 #   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_top
+#   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_i2c_register_master all
 #   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU all
 #   vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU 500ms
 
@@ -77,6 +78,28 @@ proc run_logged {argv} {
     if {$output ne ""} {
         puts $output
     }
+}
+
+proc configure_memory_init {ip_name coe_path} {
+    set normalized_coe [string map {\\ /} [file normalize $coe_path]]
+    if {![file exists $normalized_coe]} {
+        error "$ip_name initialization file not found: $normalized_coe"
+    }
+
+    set memory_ip [get_ips -quiet $ip_name]
+    if {[llength $memory_ip] != 1} {
+        error "expected exactly one $ip_name IP, found [llength $memory_ip]"
+    }
+
+    set_property CONFIG.Load_Init_File true $memory_ip
+    set_property CONFIG.Coe_File $normalized_coe $memory_ip
+    set memory_xci [get_files -quiet -all *${ip_name}.xci]
+    if {[llength $memory_xci] != 0} {
+        set_property GENERATE_SYNTH_CHECKPOINT false $memory_xci
+    }
+    reset_target all $memory_ip
+    generate_target all $memory_ip
+    puts "INFO: $ip_name initialization refreshed from $normalized_coe"
 }
 
 proc run_manual_xsim {repo_root sim_top runtime} {
@@ -187,12 +210,14 @@ set sim_runtime [lindex $argv 1]
 if {$sim_runtime eq ""} {
     if {[info exists ::env(VIVADO_SIM_RUNTIME)] && $::env(VIVADO_SIM_RUNTIME) ne ""} {
         set sim_runtime $::env(VIVADO_SIM_RUNTIME)
+    } elseif {$sim_top eq "tb_i2c_register_master"} {
+        set sim_runtime all
     } else {
         set sim_runtime 10ms
     }
 }
 
-set valid_tops {tb_myCPU tb_top tb_uart}
+set valid_tops {tb_myCPU tb_top tb_uart tb_i2c_register_master}
 if {[lsearch -exact $valid_tops $sim_top] < 0} {
     puts "ERROR: invalid simulation top '$sim_top'. Expected one of: $valid_tops"
     exit 1
@@ -205,6 +230,23 @@ if {![file exists $project_path]} {
 } elseif {[llength [get_projects -quiet]] == 0} {
     open_project $project_path
 }
+
+# 兼容尚未重建的旧工程：补入本分支新增加的 I2C RTL 和独立 testbench。
+set i2c_source [string map {\\ /} [file join $repo_root rtl peripheral i2c_register_master.sv]]
+if {[file exists $i2c_source] && [llength [get_files -quiet -all $i2c_source]] == 0} {
+    add_files -norecurse -fileset sources_1 $i2c_source
+}
+set i2c_tb [string map {\\ /} [file join $repo_root tb tb_i2c_register_master.sv]]
+if {[file exists $i2c_tb] && [llength [get_files -quiet -all $i2c_tb]] == 0} {
+    add_files -norecurse -fileset sim_1 $i2c_tb
+}
+
+configure_memory_init IROM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]
+configure_memory_init BRAM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]
+set memory_ips [concat [get_ips -quiet IROM] [get_ips -quiet BRAM]]
+export_ip_user_files -of_objects $memory_ips -no_script -sync -force -quiet
 
 set_property top $sim_top [get_filesets sim_1]
 set_property top_lib xil_defaultlib [get_filesets sim_1]

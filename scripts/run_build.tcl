@@ -4,10 +4,20 @@
 #   vivado -mode batch -source scripts/run_build.tcl
 #   vivado -mode batch -source scripts/run_build.tcl -tclargs synth
 #   vivado -mode batch -source scripts/run_build.tcl -tclargs impl
+#   vivado -mode batch -source scripts/run_build.tcl -tclargs impl Performance_NetDelay_high
 #   vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file dirname $script_dir]
+
+if {[info exists ::env(CODEX_REPO_ROOT)] &&
+    [file exists [file join $::env(CODEX_REPO_ROOT) AGENTS.md]]} {
+    set repo_root [string map {\\ /} $::env(CODEX_REPO_ROOT)]
+    set script_dir [file join $repo_root scripts]
+} elseif {[file exists [file join [pwd] AGENTS.md]]} {
+    set repo_root [file normalize [pwd]]
+    set script_dir [file join $repo_root scripts]
+}
 
 if {![file exists [file join $repo_root AGENTS.md]]} {
     set fallback_root "C:/Users/ASUS/Desktop/riscv-cpu-main/riscv-cpu-main"
@@ -36,8 +46,13 @@ foreach tclstore_root {
 }
 
 set build_mode [lindex $argv 0]
+set impl_strategy [lindex $argv 1]
 if {$build_mode eq ""} {
     set build_mode bitstream
+}
+if {$impl_strategy eq ""} {
+    # 日常迭代优先缩短实现时间；高强度布局策略由第二参数显式开启。
+    set impl_strategy "Vivado Implementation Defaults"
 }
 
 set valid_modes {synth impl bitstream}
@@ -80,6 +95,30 @@ proc run_and_wait {run_name args} {
     fail_if_run_failed $run_name
 }
 
+proc configure_memory_init {ip_name coe_path} {
+    set normalized_coe [string map {\\ /} [file normalize $coe_path]]
+    if {![file exists $normalized_coe]} {
+        puts "ERROR: $ip_name initialization file not found: $normalized_coe"
+        exit 1
+    }
+
+    set memory_ip [get_ips -quiet $ip_name]
+    if {[llength $memory_ip] != 1} {
+        puts "ERROR: expected exactly one $ip_name IP, found [llength $memory_ip]"
+        exit 1
+    }
+
+    set_property CONFIG.Load_Init_File true $memory_ip
+    set_property CONFIG.Coe_File $normalized_coe $memory_ip
+    set memory_xci [get_files -quiet -all *${ip_name}.xci]
+    if {[llength $memory_xci] != 0} {
+        set_property GENERATE_SYNTH_CHECKPOINT false $memory_xci
+    }
+    reset_target all $memory_ip
+    generate_target all $memory_ip
+    puts "INFO: $ip_name initialization refreshed from $normalized_coe"
+}
+
 if {![file exists $project_path]} {
     puts "INFO: project not found; recreating it first"
     source [file join $script_dir create_project.tcl]
@@ -88,9 +127,28 @@ if {![file exists $project_path]} {
     open_project $project_path
 }
 
+# 旧工程文件不会自动发现新加入仓库的 RTL；在构建前补入 I2C 主机源文件。
+set i2c_source [string map {\\ /} [file join $repo_root rtl peripheral i2c_register_master.sv]]
+if {[llength [get_files -quiet -all $i2c_source]] == 0} {
+    puts "INFO: adding new source: $i2c_source"
+    add_files -norecurse -fileset sources_1 $i2c_source
+}
+
+configure_memory_init IROM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]
+configure_memory_init BRAM \
+    [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]
+set memory_ips [concat [get_ips -quiet IROM] [get_ips -quiet BRAM]]
+export_ip_user_files -of_objects $memory_ips -no_script -sync -force -quiet
+
 update_compile_order -fileset sources_1
 
 if {$build_mode in {synth impl bitstream}} {
+    set synth_run [get_runs synth_1]
+    # 关闭自动选择后还必须清空已有参考 DCP，否则 run 仍会走手动增量流程。
+    set_property AUTO_INCREMENTAL_CHECKPOINT 0 $synth_run
+    reset_property INCREMENTAL_CHECKPOINT $synth_run
+    puts "INFO: synth_1 auto_incremental='[get_property AUTO_INCREMENTAL_CHECKPOINT $synth_run]' incremental_checkpoint='[get_property INCREMENTAL_CHECKPOINT $synth_run]'"
     reset_run synth_1
     run_and_wait synth_1 -jobs 8
     set synth_dcp [file join $repo_root vivado digital_twin.runs synth_1 top.dcp]
@@ -98,6 +156,11 @@ if {$build_mode in {synth impl bitstream}} {
 }
 
 if {$build_mode in {impl bitstream}} {
+    set impl_run [get_runs impl_1]
+    set_property strategy $impl_strategy $impl_run
+    set_property AUTO_INCREMENTAL_CHECKPOINT 0 $impl_run
+    reset_property INCREMENTAL_CHECKPOINT $impl_run
+    puts "INFO: impl_1 strategy=$impl_strategy auto_incremental='[get_property AUTO_INCREMENTAL_CHECKPOINT $impl_run]' incremental_checkpoint='[get_property INCREMENTAL_CHECKPOINT $impl_run]'"
     reset_run impl_1
     if {$build_mode eq "bitstream"} {
         run_and_wait impl_1 -to_step write_bitstream -jobs 8

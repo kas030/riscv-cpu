@@ -10,8 +10,6 @@ module mycpu_redirect_ctrl #(
     input  logic                   ex_busy_i,
     input  logic [1:0]             ex_npc_op_i,
     input  logic                   alu_branch_true_i,
-    input  logic [DATAWIDTH-1:0]   branch_target_i,
-    input  logic [DATAWIDTH-1:0]   jal_target_i,
     input  logic [DATAWIDTH-1:0]   jalr_csr_target_i,
     input  logic                   pred_taken_i,
     input  logic [DATAWIDTH-1:0]   pred_target_i,
@@ -35,11 +33,12 @@ module mycpu_redirect_ctrl #(
                              is_jalr_csr ||
                              is_jal);
 
+    // BTB tag 覆盖项目 IROM 的完整字地址，且 branch/jal 的 PC-relative
+    // 目标在只读 IROM 中恒定。命中后的目标必然正确，只需检查方向；
+    // jalr/CSR 目标可变，仍保留完整目标比较。
     assign branch_mispredict = is_branch &&
-                               ((pred_taken_i != alu_branch_true_i) ||
-                                (alu_branch_true_i && (pred_target_i != branch_target_i)));
-    assign jal_mispredict = is_jal &&
-                            (!pred_taken_i || (pred_target_i != jal_target_i));
+                               (pred_taken_i != alu_branch_true_i);
+    assign jal_mispredict = is_jal && !pred_taken_i;
     assign jalr_csr_mispredict = is_jalr_csr &&
                                  (!pred_taken_i || (pred_target_i != jalr_csr_target_i));
 

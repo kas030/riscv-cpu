@@ -7,11 +7,12 @@ toc-depth: 3
 number-sections: true
 section-divs: true
 figure-caption-position: below
-table-caption-position: below
+table-caption-position: above
 resource-path:
   - .
   - assets
 filters:
+  - pandoc/table-widths.lua
   - pandoc/report.lua
 csl: pandoc/gb-t-7714-2015-numeric.csl
 include-in-header:

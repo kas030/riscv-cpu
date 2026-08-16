@@ -38,6 +38,7 @@ vivado/tests/build/visualizer_isa_coverage.coe
 vivado/tests/build/visualizer_lane1_memory.coe
 vivado/tests/build/visualizer_microarchitecture.*
 vivado/tests/build/t18_m_ext_basic.coe
+rt-thread/bsp/mycpu/build/
 
 # OS
 *.swp

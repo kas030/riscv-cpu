@@ -48,6 +48,7 @@ module rv32m_unit #(
     logic        div_by_zero, div_overflow;
     logic [DATAWIDTH-1:0] quot_signed, rem_signed;
     logic [DATAWIDTH-1:0] special_result_start;
+    logic                 mul_low_finish;
 
     assign op_mul    = alu_control[14];
     assign op_mulh   = alu_control[15];
@@ -82,6 +83,10 @@ module rv32m_unit #(
     assign special_result_start = div_by_zero ?
                                   ((op_div || op_divu) ? {DATAWIDTH{1'b1}} : operand_a) :
                                   (div_overflow ? (op_div ? operand_a : '0) : '0);
+    // 普通 MUL 在寄存后的 DSP 乘积有效时即可由 EX/MEM 采样，无需再为
+    // done_q 多等待一拍。高位乘法仍使用结果寄存器隔离符号修正长路径。
+    assign mul_low_finish = busy_q && mode_mul_q &&
+                            (cycles_left_q == 6'd1) && (op_sel_q == OP_MUL);
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -156,7 +161,7 @@ module rv32m_unit #(
                     cycles_left_q   <= 6'd1;
                 end else if (cycles_left_q == 6'd1) begin
                     busy_q <= 1'b0;
-                    done_q <= 1'b1;
+                    done_q <= (op_sel_q == OP_MUL) ? 1'b0 : 1'b1;
                     case (op_sel_q)
                         OP_MUL:    result_q <= product_uu_fast[31:0];
                         OP_MULH:   result_q <= product_hi_ss_q;
@@ -191,6 +196,6 @@ module rv32m_unit #(
     end
 
     assign busy   = busy_q;
-    assign done   = done_q;
-    assign result = result_q;
+    assign done   = done_q || mul_low_finish;
+    assign result = mul_low_finish ? product_uu_fast[31:0] : result_q;
 endmodule

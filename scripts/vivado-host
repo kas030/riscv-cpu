@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_file="${VIVADO_HOST_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/riscv-cpu/vivado-host.conf}"
+if [[ -f "$config_file" ]]; then
+    # shellcheck disable=SC1090
+    source "$config_file"
+fi
+
+usage() {
+    cat <<'EOF'
+从 Ubuntu 通过 SSH 调用 Windows 宿主机上的 Vivado。
+
+用法：
+  ./scripts/vivado-host check
+  ./scripts/vivado-host create
+  ./scripts/vivado-host build [synth|impl|bitstream] [实现策略]
+  ./scripts/vivado-host sim [tb_myCPU|tb_top|tb_uart] [运行时间]
+  ./scripts/vivado-host refresh-ips
+  ./scripts/vivado-host recreate-bram
+  ./scripts/vivado-host recreate-irom
+  ./scripts/vivado-host recreate-pll
+
+配置文件（默认 ~/.config/riscv-cpu/vivado-host.conf）：
+  VIVADO_HOST=192.168.1.10
+  VIVADO_USER=windows_user
+  VIVADO_REMOTE_PS1=D:/ic/riscv_cpu/scripts/run_vivado_host.ps1
+
+也可用环境变量 VIVADO_HOST、VIVADO_USER、VIVADO_REMOTE_PS1、
+VIVADO_SSH_PORT 和 VIVADO_SSH_IDENTITY 覆盖配置。
+EOF
+}
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ -z ${VIVADO_HOST:-} ]]; then
+    printf '错误：未配置 VIVADO_HOST。请创建 %s\n\n' "$config_file" >&2
+    usage >&2
+    exit 2
+fi
+
+vivado_user="${VIVADO_USER:-$USER}"
+vivado_port="${VIVADO_SSH_PORT:-22}"
+remote_ps1="${VIVADO_REMOTE_PS1:-D:/ic/riscv_cpu/scripts/run_vivado_host.ps1}"
+action="${1:-build}"
+if (($# > 0)); then
+    shift
+fi
+if (($# > 2)); then
+    printf '错误：Vivado 子命令最多接受两个参数。\n' >&2
+    exit 2
+fi
+
+case "$action" in
+    check|create|build|sim|refresh-ips|recreate-bram|recreate-irom|recreate-pll) ;;
+    *)
+        printf '错误：未知操作 %s\n\n' "$action" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
+# 命令最终会经过 Windows OpenSSH 的默认 shell。拒绝 shell 元字符，防止配置值
+# 或 Tcl 参数意外改变远端命令结构。
+for value in "$remote_ps1" "$action" "$@"; do
+    if [[ "$value" == *['"&|<>^%']* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        printf '错误：参数包含 Windows shell 元字符：%s\n' "$value" >&2
+        exit 2
+    fi
+done
+
+ssh_args=(-p "$vivado_port")
+if [[ -n ${VIVADO_SSH_IDENTITY:-} ]]; then
+    ssh_args+=(-i "$VIVADO_SSH_IDENTITY")
+fi
+
+remote_command="powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"$remote_ps1\" -Action \"$action\""
+if (($# >= 1)); then
+    remote_command+=" -Arg1 \"$1\""
+fi
+if (($# >= 2)); then
+    remote_command+=" -Arg2 \"$2\""
+fi
+
+printf '连接 %s@%s，在 Windows 上执行 Vivado %s...\n' "$vivado_user" "$VIVADO_HOST" "$action"
+exec ssh "${ssh_args[@]}" "${vivado_user}@${VIVADO_HOST}" "$remote_command"

@@ -34,7 +34,20 @@ module perip_bridge(
     input  logic [7:0]   virtual_key_input	,	
 
 	output logic [39:0]  virtual_seg_output	,
-    output logic [31:0]  virtual_led_output
+    output logic [31:0]  virtual_led_output,
+
+    /* UART 透传（50MHz 域，接 twin_controller 与 uart） */
+    output logic [7:0]   uart_tx_data       ,
+    output logic         uart_tx_start      ,
+    input  logic         uart_tx_busy       ,
+    input  logic [7:0]   uart_rx_data       ,
+    input  logic         uart_rx_ready      ,
+    input  logic         uart_passthrough   ,
+    output logic         uart_passthrough_req, // 透传请求脉冲（50MHz，接 twin_controller）
+
+    /* J7 上的 BME280 I2C 总线；只允许开漏拉低，外部 10k 电阻负责上拉 */
+    inout  wire          bme_scl,
+    inout  wire          bme_sda
 );
     localparam BRAM_ADDR_TAG = 14'h2004;  // 0x8010_0000..0x8013_FFFF
     localparam SW0_ADDR  = 32'h8020_0000;  // sw[31:0]
@@ -45,16 +58,33 @@ module perip_bridge(
     localparam CNT_ADDR  = 32'h8020_0050;  // counter
     localparam CNT_START_CMD = 32'h8000_0000;
     localparam CNT_STOP_CMD  = 32'hFFFF_FFFF;
+    localparam UART_DATA_ADDR   = 32'h8020_0060;  // 写=发送，读=接收并清 valid
+    localparam UART_STATUS_ADDR = 32'h8020_0064;  // bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写=请求透传
+    // CoreMark 报告换算用单精度 MMIO FPU：A/B/CMD/STATUS/RESULT
+    localparam FPU_BASE_ADDR    = 32'h8020_0070;
+    localparam FPU_END_ADDR     = 32'h8020_0080;
+    localparam I2C_DEV_ADDR     = 32'h8020_0084;  // 低 7 位：从机地址，复位值 0x76
+    localparam I2C_REG_ADDR     = 32'h8020_0088;  // 低 8 位：从机寄存器地址
+    localparam I2C_DATA_ADDR    = 32'h8020_008C;  // 写数据/最近一次读数据
+    localparam I2C_CTRL_ADDR    = 32'h8020_0090;  // 写 bit0=START bit1=READ；读 bit0=BUSY bit1=DONE bit2=NACK
 
     logic [31:0] LED;
     logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
+    logic [31:0] uart_rdata;
+    logic [31:0] fpu_rdata;
     logic [39:0] seg_output;
     logic cnt_enable_cfg;
     logic bram_hit, bram_ren, bram_wen, bram_resp_valid;
+    logic fpu_hit;
+    logic [6:0] i2c_device_addr;
+    logic [7:0] i2c_register_addr, i2c_write_data, i2c_read_data;
+    logic i2c_start, i2c_busy, i2c_done, i2c_ack_error;
 
     assign bram_hit = (perip_addr[31:18] == BRAM_ADDR_TAG);
     assign bram_ren = ~perip_wen & bram_hit;
     assign bram_wen = perip_wen & bram_hit;
+    assign fpu_hit = (perip_addr >= FPU_BASE_ADDR)
+                  && (perip_addr <= FPU_END_ADDR);
 
     // we don't care perip_mask in LED, SEG, SW & KEY, only care in BRAM
     // write process
@@ -63,10 +93,16 @@ module perip_bridge(
             LED            <= 32'd0;
             seg_wdata      <= 32'd0;
             cnt_enable_cfg <= 1'b0;
+            i2c_device_addr   <= 7'h76;
+            i2c_register_addr <= 8'd0;
+            i2c_write_data    <= 8'd0;
         end else if (perip_wen) begin
             case (perip_addr)
                 LED_ADDR:   LED <= perip_wdata;
                 SEG_ADDR:   seg_wdata <= perip_wdata;
+                I2C_DEV_ADDR:  i2c_device_addr   <= perip_wdata[6:0];
+                I2C_REG_ADDR:  i2c_register_addr <= perip_wdata[7:0];
+                I2C_DATA_ADDR: i2c_write_data    <= perip_wdata[7:0];
                 CNT_ADDR: begin
                     if (perip_wdata == CNT_START_CMD) begin
                         cnt_enable_cfg <= 1'b1;
@@ -74,6 +110,7 @@ module perip_bridge(
                         cnt_enable_cfg <= 1'b0;
                     end
                 end
+                default: ;
             endcase
         end
     end
@@ -86,6 +123,12 @@ module perip_bridge(
                 SW1_ADDR:  mmio_rdata = virtual_sw_input[63:32];
                 KEY_ADDR:  mmio_rdata = {24'd0, virtual_key_input};
                 SEG_ADDR:  mmio_rdata = seg_wdata;
+                UART_DATA_ADDR:   mmio_rdata = uart_rdata;  // uart_addr=00
+                UART_STATUS_ADDR: mmio_rdata = uart_rdata;  // uart_addr=01
+                I2C_DEV_ADDR:     mmio_rdata = {25'd0, i2c_device_addr};
+                I2C_REG_ADDR:     mmio_rdata = {24'd0, i2c_register_addr};
+                I2C_DATA_ADDR:    mmio_rdata = {24'd0, i2c_read_data};
+                I2C_CTRL_ADDR:    mmio_rdata = {29'd0, i2c_ack_error, i2c_done, i2c_busy};
                 default:   mmio_rdata = 32'hDEAD_BEEF;
             endcase
         end else begin
@@ -144,9 +187,67 @@ module perip_bridge(
                          {32{~bram_resp_valid && perip_addr == SW1_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == KEY_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == SEG_ADDR}} & mmio_rdata |
-                         {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata;
+                         {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata |
+                         {32{~bram_resp_valid && perip_addr == UART_DATA_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == UART_STATUS_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && fpu_hit}} & fpu_rdata |
+                         {32{~bram_resp_valid && perip_addr == I2C_DEV_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == I2C_REG_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == I2C_DATA_ADDR}} & mmio_rdata |
+                         {32{~bram_resp_valid && perip_addr == I2C_CTRL_ADDR}} & mmio_rdata;
     
     assign virtual_led_output = LED;
     assign virtual_seg_output = seg_output;
+
+    // uart 跨时钟域桥（200MHz 侧接 perip 总线子集，50MHz 侧接 twin/uart）
+    uart_bridge uart_bridge_inst (
+        .clk             (clk),
+        .cnt_clk         (cnt_clk),
+        .rst             (rst),
+        .uart_addr       (perip_addr[3:2]),
+        .uart_wdata      (perip_wdata[7:0]),
+        .uart_wen        (perip_wen && perip_addr == UART_DATA_ADDR),
+        .uart_ren        (~perip_wen && perip_addr == UART_DATA_ADDR),
+        .uart_rdata      (uart_rdata),
+        .uart_tx_data    (uart_tx_data),
+        .uart_tx_start   (uart_tx_start),
+        .uart_tx_busy    (uart_tx_busy),
+        .uart_rx_data    (uart_rx_data),
+        .uart_rx_ready   (uart_rx_ready),
+        .passthrough     (uart_passthrough),
+        .ps_wen          (perip_wen && perip_addr == UART_STATUS_ADDR),
+        .passthrough_req (uart_passthrough_req)
+    );
+
+    fpu_mmio fpu_mmio_inst (
+        .clk   (clk),
+        .rst   (rst),
+        .addr  (perip_addr),
+        .wdata (perip_wdata),
+        .wen   (perip_wen && fpu_hit),
+        .rdata (fpu_rdata)
+    );
+
+    assign i2c_start = perip_wen && perip_addr == I2C_CTRL_ADDR &&
+                       perip_wdata[0] && !i2c_busy;
+
+    i2c_register_master #(
+        .CLK_FREQ_HZ (200_000_000),
+        .I2C_FREQ_HZ (100_000)
+    ) i2c_master_inst (
+        .clk            (clk),
+        .rst            (rst),
+        .start          (i2c_start),
+        .read_not_write (perip_wdata[1]),
+        .device_addr    (i2c_device_addr),
+        .register_addr  (i2c_register_addr),
+        .write_data     (i2c_write_data),
+        .read_data      (i2c_read_data),
+        .busy           (i2c_busy),
+        .done           (i2c_done),
+        .ack_error      (i2c_ack_error),
+        .i2c_scl        (bme_scl),
+        .i2c_sda        (bme_sda)
+    );
 
 endmodule

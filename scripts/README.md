@@ -7,39 +7,106 @@
 
 ```sh
 vivado -mode batch -source scripts/create_project.tcl
+vivado -mode batch -source scripts/recreate_irom_ip.tcl
 vivado -mode batch -source scripts/recreate_bram_ip.tcl
 vivado -mode batch -source scripts/run_sim.tcl -tclargs tb_myCPU
 vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 ```
 
+## 从 Ubuntu 调用 Windows 宿主机 Vivado
+
+仓库位于 VMware 共享目录、Vivado 安装在 Windows 宿主机时，可在 Ubuntu
+中通过 SSH 一条命令启动宿主机上的 Vivado。Windows 端首次使用时，在
+**管理员 PowerShell** 中运行以下一次性配置脚本：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+& D:\ic\riscv_cpu\scripts\setup_windows_vivado_ssh.ps1
+```
+
+脚本安装并启动 Windows OpenSSH Server，将其设为自动启动，并把入站 TCP 22
+限制为直接连接的本地子网。若虚拟机使用特殊的路由或桥接网络，需按实际网段
+调整 Windows 防火墙规则。
+
+在 Ubuntu 中创建个人配置（不要提交用户名、地址或私钥）：
+
+```sh
+mkdir -p ~/.config/riscv-cpu
+cat > ~/.config/riscv-cpu/vivado-host.conf <<'EOF'
+VIVADO_HOST=192.168.1.10
+VIVADO_USER=windows_user
+VIVADO_REMOTE_PS1=D:/ic/riscv_cpu/scripts/run_vivado_host.ps1
+EOF
+chmod 600 ~/.config/riscv-cpu/vivado-host.conf
+```
+
+先验证 SSH、共享目录和 Vivado 自动探测：
+
+```sh
+./scripts/vivado-host check
+```
+
+之后可直接创建工程、生成 bitstream 或运行 XSim：
+
+```sh
+./scripts/vivado-host create
+./scripts/vivado-host build bitstream
+./scripts/vivado-host sim tb_myCPU
+```
+
+`scripts/run_vivado_host.ps1` 会优先使用 Windows 用户环境变量
+`VIVADO_BIN`，其值可以是 `vivado.bat` 或所在目录；未设置时会探测常见的
+AMD/Xilinx 安装目录。Ubuntu 端还支持 `VIVADO_SSH_PORT` 和
+`VIVADO_SSH_IDENTITY`，分别用于非默认 SSH 端口和指定私钥。
+
 ## 脚本列表
 
 - `create_project.tcl`
   - 从仓库源码重新创建 `vivado/digital_twin.xpr`。
-  - 导入 RTL、约束、COE/MIF 文件，以及 `ip/IROM`、`ip/BRAM`、`ip/pll`
-    下已有的 XCI IP 文件。
+  - 导入 RTL、约束和 COE/MIF 文件，并显式创建 `IROM`、`BRAM` 和 `pll`
+    三个 IP。
+  - IROM 创建为双端口 `blk_mem_gen` ROM，不再使用旧 `dist_mem_gen` 配置。
   - 创建后会对所有 XCI 执行 `generate_target all`。
 
 - `recreate_bram_ip.tcl`
   - 专门用于把 Vivado 工程内的 `BRAM` IP 重建为 `blk_mem_gen`
     True Dual Port BRAM。
   - 关闭 BRAM 的 OOC 综合 DCP，使 `clka/clkb` 在全局综合时直接继承
-    CPU 的 4.167 ns 时钟约束，避免默认 20 ns `BRAM_ooc.xdc` 导致
+    CPU 的 5 ns 时钟约束，避免默认 20 ns `BRAM_ooc.xdc` 导致
     `[Timing 38-316]` 警告和不一致网表。
   - 适用于综合报旧 `BRAM_stub.v` 端口不匹配，例如 RTL 连接了
     `clka/ena/wea/addra/douta/clkb/enb/web/addrb/dinb`，但 Vivado 仍看到
     旧 `clk/a/d/we/spo` 端口。
 
+- `recreate_irom_ip.tcl`
+  - 删除工程中的旧 `dist_mem_gen` IROM，并用同名 `blk_mem_gen 8.4`
+    重建为 16384×32 双端口 ROM。
+  - A/B 端口均为一拍同步读，分别服务 `PC` 和 `PC+4`。
+  - 使用 `rt-thread/bsp/mycpu/build/rtthread.irom.coe` 初始化并生成新的 output products。
+  - 适用于已经由旧脚本创建的工程，无需再次完整重建工程。
+
 - `run_sim.tcl`
   - 运行 XSim 行为仿真。
   - 支持 `tb_myCPU`、`tb_top`、`tb_uart`，默认是 `tb_myCPU`。
+  - 启动仿真前会用 `rt-thread/bsp/mycpu/build/rtthread.*.coe`
+    刷新 IROM/BRAM output products，不沿用工程中残留的旧测试镜像。
 
 - `run_build.tcl`
   - 运行综合、实现或生成 bitstream。
   - 支持 `synth`、`impl`、`bitstream`，默认是 `bitstream`。
+  - 每次构建前把 IROM/BRAM 固定到 `rt-thread/bsp/mycpu/build/`
+    下的 `rtthread.irom.coe` 和 `rtthread.bram.coe`，并重新生成两个
+    存储 IP 的 output products，避免现有工程继续使用旧测试镜像。
+  - 默认使用 `Vivado Implementation Defaults`，并显式禁用综合和实现的
+    自动增量 checkpoint，避免旧网表状态影响资源映射与时序结果。
+  - 阶段性候选版可显式使用高强度策略：
+    `-tclargs impl Performance_NetDelay_high`。
 
 - `report_high_fanout.tcl`
   - 对打开的工程或设计输出高扇出网络报告，用于时序优化分析。
+
+`refresh_ips.tcl` 也会在生成 output products 前把 IROM/BRAM 初始化
+文件重置为上述 RT-Thread COE。
 
 ## BRAM IP 重建脚本
 
@@ -47,7 +114,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs bitstream
 
 数据存储器统一命名为 `BRAM`，对应 RTL 中 `BRAM Mem_BRAM (...)` 的 IP
 例化、Vivado 工程内的 `BRAM` IP、`ip/BRAM/BRAM.xci` 配置文件，以及
-`sim/coe/mext/dram.coe` 初始化文件。脚本会按这一套命名重建 IP output products。
+`rt-thread/bsp/mycpu/build/rtthread.bram.coe` 初始化文件。脚本会按这一套命名重建 IP output products。
 
 ### 何时需要运行
 
@@ -79,7 +146,7 @@ vivado -mode batch -source scripts/create_project.tcl
 ```
 
 - Vivado 版本需提供 `xilinx.com:ip:blk_mem_gen:8.4`。
-- `sim/coe/mext/dram.coe` 存在，用作 BRAM 初始化文件。
+- `rt-thread/bsp/mycpu/build/rtthread.bram.coe` 存在，用作 BRAM 初始化文件。
 
 ### 执行方式
 
@@ -115,10 +182,10 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs synth
    - Port A：同步读，32 位宽，深度 65536 word。
    - Port B：同步写，32 位宽，支持 4-bit byte write enable。
    - 关闭输出寄存器，保持读延迟为 BRAM 原生同步读一拍。
-   - 使用 `sim/coe/mext/dram.coe` 初始化。
+   - 使用 `rt-thread/bsp/mycpu/build/rtthread.bram.coe` 初始化。
 6. 执行 `generate_target all` 生成新的 output products。
 7. 设置 `GENERATE_SYNTH_CHECKPOINT=false`，让 BRAM 随顶层按实际
-   240 MHz 时钟全局综合。
+   200 MHz 时钟全局综合。
 8. 更新 `sources_1` 编译顺序并关闭工程。
 
 ### 与 `create_project.tcl` 的关系
@@ -141,7 +208,7 @@ vivado -mode batch -source scripts/run_build.tcl -tclargs synth
 5. A/B 口宽度设为 32，深度设为 65536。
 6. 开启 byte write enable，byte size 设为 8。
 7. Port A/Port B 使用 enable pin。
-8. 加载 `sim/coe/mext/dram.coe`。
+8. 加载 `rt-thread/bsp/mycpu/build/rtthread.bram.coe`。
 9. 生成 output products。
 10. 重新运行综合。
 

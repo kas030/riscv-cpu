@@ -24,7 +24,7 @@
 | 异常 | 仅 `ecall` | 无非法指令、断点、地址未对齐和访问故障异常 |
 | 中断 | 不支持 | 无 `mie`、`mip` 等完整中断通路 |
 | 流水线 | 双槽顺序发射 | 最多每拍发射/提交两条，控制流、CSR 和资源冲突时退化为单发射 |
-| 板级时钟 | CPU 240 MHz，外设 50 MHz | PLL 输入为 200 MHz 差分时钟；240 MHz 是当前目标约束，仍须以实现后的时序报告判定是否收敛 |
+| 板级时钟 | CPU 200 MHz，外设 50 MHz | PLL 输入为 200 MHz 差分时钟；200 MHz 是当前目标约束，仍须以实现后的时序报告判定是否收敛 |
 | 数据存储 | 256 KiB BRAM + 固定 MMIO | 对外只有一组数据访问接口；无总线握手和访问故障反馈 |
 
 结论：当前 CPU 覆盖 RV32I、RV32M、Zicsr 和最小 M-mode trap 功能，但不能描述为“完整实现 RV32IM 特权架构”。更准确的表述是：**RV32IM + 最小 Zicsr/M-mode trap 子集**。
@@ -173,9 +173,9 @@ CPU 最多每拍顺序发射两条指令，第一槽先于第二槽提交。当�
 ### 6.1 取指空间
 
 - CPU 复位入口：`0x80000000`。
-- SoC 使用 `pc[13:2]` 访问 4096×32 bit IROM，可用镜像容量为 16 KiB。
+- SoC 使用 `pc[15:2]` 访问 16384×32 bit IROM，可用镜像容量为 64 KiB。
 - 链接脚本把镜像链接到偏移 `0x00000000`，CPU 运行时从 `0x80000000` 取对应内容。
-- IROM 高位地址被忽略，超出 16 KiB 会发生地址别名，不会触发取指访问故障。
+- IROM 高位地址被忽略，超出 64 KiB 会发生地址别名，不会触发取指访问故障。
 - 对外有 `pc` 和 `pc+4` 两路只读取指口，用于双槽取指。
 
 ### 6.2 数据 BRAM
@@ -209,8 +209,25 @@ L0 是内部性能结构，不提供软件可见的缓存控制或一致性指�
 | `0x80200020` | SEG | 是 | 是 | 数码管写数据回读 |
 | `0x80200040` | LED | 否 | 是 | 32 位 LED 输出 |
 | `0x80200050` | COUNTER | 是 | 是 | 计数值/控制命令 |
+| `0x80200060` | UART_DATA | 是 | 是 | 串口数据：写=发送，读=接收并清除 RX_VALID |
+| `0x80200064` | UART_STATUS | 是 | 是 | 串口状态：bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写任意值=请求进入透传 |
+| `0x80200070` | FPU_A | 是 | 是 | CoreMark 报告换算用单精度 FPU 操作数 A |
+| `0x80200074` | FPU_B | 是 | 是 | CoreMark 报告换算用单精度 FPU 操作数 B |
+| `0x80200078` | FPU_CMD | 否 | 是 | FPU 命令：1=u32 转 binary32，2=binary32 除法 |
+| `0x8020007C` | FPU_STATUS | 是 | 否 | bit0=BUSY，bit1=DONE |
+| `0x80200080` | FPU_RESULT | 是 | 否 | FPU 单精度结果 |
+| `0x80200084` | I2C_DEV | 是 | 是 | BME280 7 位从机地址，复位值 `0x76` |
+| `0x80200088` | I2C_REG | 是 | 是 | BME280 寄存器地址 |
+| `0x8020008C` | I2C_DATA | 是 | 是 | I²C 写数据/最近一次读数据 |
+| `0x80200090` | I2C_CTRL/STATUS | 是 | 是 | 写 bit0=START、bit1=READ；读 bit0=BUSY、bit1=DONE、bit2=NACK |
 
 COUNTER 写入 `0x80000000` 开始计数，写入 `0xFFFFFFFF` 停止计数。
+
+UART 为 9600 8N1，经 `twin_controller` 透传协议接入板级串口：
+RT-Thread 启动时主动写 UART_STATUS 请求透传（串口终端即连即用）；
+也可发送 0xC9 进入透传、0xCA 退出；透传中 0x80 保留用于状态回读，
+其余字节在透传态由 CPU 读写。竞赛裸机镜像不请求则 twin 保持 IDLE。
+详见 `rt-thread/README.md` 与 `rtl/peripheral/uart_bridge.sv`。
 
 MMIO 外设不统一处理 byte-enable，且仅在精确地址命中时有定义。软件应使用上述地址上的对齐 `lw/sw`；不要假定 `lb/lh/sb/sh`、LED 回读、未列出地址或地址别名具有标准外设语义。
 
@@ -224,7 +241,7 @@ CPU 对外只有一组数据访问端口：`perip_addr`、`perip_wen`、`perip_m
 
 - 32 位小端 RV32IM 基础执行语义；
 - 本文列出的 5 个 CSR、6 条 Zicsr 指令、M 模式 `ecall/mret`；
-- 16 KiB IROM 镜像、256 KiB BRAM 和固定 MMIO 地址；
+- 64 KiB IROM 镜像、256 KiB BRAM 和固定 MMIO 地址；
 - CPU 自身写 BRAM 后再读取同一地址时的 L0 失效处理；
 - 双槽实现维持顺序可见的寄存器和存储副作用。
 
@@ -236,7 +253,7 @@ CPU 对外只有一组数据访问端口：`perip_addr`、`perip_wen`、`perip_m
 - `fence`/`fence.i` 的排序或指令同步效果；
 - 未实现 CSR 的异常或保留位语义；
 - 固定双发射率、固定 CPI、固定 load-use 气泡数或固定 RV32M 总周期数；
-- IROM 超过 16 KiB、MMIO 子字访问、未映射地址返回值；
+- IROM 超过 64 KiB、MMIO 子字访问、未映射地址返回值；
 - Linux、标准 SBI 或需要完整 RISC-V privileged architecture 的运行环境。
 
 ## 8. 实现依据

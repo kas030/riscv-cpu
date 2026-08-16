@@ -30,6 +30,38 @@ xelatex --version
 
 默认目标为 `report`，会构建统一的技术文档。PDF 输出为 `docs/build/technical-report.pdf`。
 
+## CPU 架构图手动渲染
+
+CPU SoC 架构图和核心微架构图的源文件位于 `docs/diagrams/`。渲染前需确保
+`latexmk`、XeLaTeX、`pdfunite` 和 `pdftoppm` 可用。在仓库根目录运行：
+
+```powershell
+.\docs\diagrams\build-cpu-architecture.ps1
+```
+
+脚本会分别编译 `cpu-soc-arch.tex` 和 `cpu-micro-arch.tex`，合并 PDF，并以
+300 DPI 生成用于文档引用的 PNG。可通过 `-Dpi` 调整 PNG 分辨率，例如：
+
+```powershell
+.\docs\diagrams\build-cpu-architecture.ps1 -Dpi 400
+```
+
+最终文件为：
+
+- `docs/assets/cpu-architecture.pdf`
+- `docs/assets/cpu-soc-overview.png`
+- `docs/assets/cpu-core-microarchitecture.png`
+
+若只需检查 SoC 架构图，可单独运行：
+
+```powershell
+latexmk -xelatex -interaction=nonstopmode -halt-on-error -file-line-error `
+  -outdir=docs/build/cpu-architecture/soc `
+  docs/diagrams/cpu-soc-arch.tex
+```
+
+单图 PDF 输出为 `docs/build/cpu-architecture/soc/cpu-soc-arch.pdf`。
+
 报告 YAML 元数据可用 `cover` 指定相对于 `docs/` 的封面：
 
 ```yaml
@@ -70,6 +102,16 @@ Pandoc 会自动生成 `1`、`1.1`、`1.1.1` 编号并加入目录。
 
 Table: 主要控制信号
 ```
+
+需要手动调整列宽时，在表格标题后紧跟一行简洁的宽度标记：
+
+```markdown
+Table: 主要控制信号
+{widths=20,30,50}
+```
+
+宽度值按列顺序填写，可使用百分比或任意正数比例；构建时会自动归一化。
+标记中的数值数量必须与表格列数相同。省略标记时继续使用 Pandoc 自动列宽。
 
 生成的图、表分别独立编号，标题格式为“图1-标题”和“表1-标题”，并置于对象下方居中。
 

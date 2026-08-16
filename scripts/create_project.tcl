@@ -96,7 +96,7 @@ proc create_pll_ip {project_dir project_name} {
         CONFIG.PRIM_IN_FREQ {200.000} \
         CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {50.000} \
         CONFIG.CLKOUT2_USED {true} \
-        CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {240.000} \
+        CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {200.000} \
         CONFIG.NUM_OUT_CLKS {2} \
         CONFIG.USE_RESET {false} \
         CONFIG.USE_LOCKED {true} \
@@ -105,31 +105,51 @@ proc create_pll_ip {project_dir project_name} {
 
 proc create_irom_ip {project_dir project_name repo_root} {
     set irom_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip IROM]
-    set irom_coe [string map {\\ /} [file join $repo_root sim coe mext irom-v2.coe]]
+    set irom_coe [string map {\\ /} [file join $repo_root rt-thread bsp mycpu build rtthread.irom.coe]]
     file delete -force $irom_ip_dir
     file mkdir $irom_ip_dir
 
-    create_ip -name dist_mem_gen -vendor xilinx.com -library ip -version 8.0 \
+    create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 \
         -module_name IROM -dir $irom_ip_dir
 
     set irom_ip [get_ips IROM]
     set_property -dict [list \
         CONFIG.Component_Name {IROM} \
-        CONFIG.depth {4096} \
-        CONFIG.data_width {32} \
-        CONFIG.memory_type {rom} \
-        CONFIG.input_options {non_registered} \
-        CONFIG.output_options {non_registered} \
-        CONFIG.Pipeline_Stages {0} \
-        CONFIG.coefficient_file $irom_coe \
-        CONFIG.default_data_radix {16} \
-        CONFIG.default_data {0} \
+        CONFIG.Interface_Type {Native} \
+        CONFIG.Memory_Type {Dual_Port_ROM} \
+        CONFIG.PRIM_type_to_Implement {BRAM} \
+        CONFIG.Assume_Synchronous_Clk {true} \
+        CONFIG.Write_Width_A {32} \
+        CONFIG.Write_Depth_A {16384} \
+        CONFIG.Read_Width_A {32} \
+        CONFIG.Read_Width_B {32} \
+        CONFIG.Enable_A {Use_ENA_Pin} \
+        CONFIG.Enable_B {Use_ENB_Pin} \
+        CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
+        CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
+        CONFIG.Register_PortA_Output_of_Memory_Core {false} \
+        CONFIG.Register_PortB_Output_of_Memory_Core {false} \
+        CONFIG.Load_Init_File {true} \
+        CONFIG.Coe_File $irom_coe \
+        CONFIG.Port_A_Clock {200} \
+        CONFIG.Port_B_Clock {200} \
+        CONFIG.Fill_Remaining_Memory_Locations {true} \
+        CONFIG.Remaining_Memory_Locations {0} \
+        CONFIG.Use_RSTA_Pin {false} \
+        CONFIG.Use_RSTB_Pin {false} \
     ] $irom_ip
+
+    set irom_xci_path [string map {\\ /} [file join $irom_ip_dir IROM IROM.xci]]
+    set irom_xci [get_files -quiet -all $irom_xci_path]
+    if {[llength $irom_xci] == 0} {
+        error "IROM XCI not found after create_ip"
+    }
+    set_property GENERATE_SYNTH_CHECKPOINT false $irom_xci
 }
 
 proc create_bram_ip {project_dir project_name repo_root} {
     set bram_ip_dir [file join $project_dir ${project_name}.srcs sources_1 ip BRAM]
-    set bram_coe [string map {\\ /} [file join $repo_root sim coe mext dram.coe]]
+    set bram_coe [string map {\\ /} [file join $repo_root rt-thread bsp mycpu build rtthread.bram.coe]]
     file delete -force $bram_ip_dir
     file mkdir $bram_ip_dir
 
@@ -158,8 +178,8 @@ proc create_bram_ip {project_dir project_name repo_root} {
         CONFIG.Register_PortB_Output_of_Memory_Core {false} \
         CONFIG.Load_Init_File {true} \
         CONFIG.Coe_File $bram_coe \
-        CONFIG.Port_A_Clock {240} \
-        CONFIG.Port_B_Clock {240} \
+        CONFIG.Port_A_Clock {200} \
+        CONFIG.Port_B_Clock {200} \
         CONFIG.Fill_Remaining_Memory_Locations {true} \
         CONFIG.Remaining_Memory_Locations {0} \
         CONFIG.Use_RSTA_Pin {false} \
@@ -168,8 +188,8 @@ proc create_bram_ip {project_dir project_name repo_root} {
 
     # blk_mem_gen 8.4 does not expose a reliable native-port OOC clock-period
     # property: its generated BRAM_ooc.xdc can remain at the 20 ns default even
-    # when Port_A/B_Clock are set to 240 MHz. Synthesize BRAM with the top level
-    # so clka/clkb inherit the real 4.167 ns cpu clock and no stale 50 MHz DCP is used.
+    # when Port_A/B_Clock are set to 200 MHz. Synthesize BRAM with the top level
+    # so clka/clkb inherit the real 5 ns cpu clock and no stale 50 MHz DCP is used.
     set bram_xci_path [string map {\\ /} [file join $bram_ip_dir BRAM BRAM.xci]]
     set bram_xci [get_files -quiet -all $bram_xci_path]
     if {[llength $bram_xci] == 0} {
@@ -249,6 +269,7 @@ set sim_files [list \
     [file join $repo_root tb tb_myCPU.sv] \
     [file join $repo_root tb tb_top.sv] \
     [file join $repo_root tb tb_uart.sv] \
+    [file join $repo_root tb tb_i2c_register_master.sv] \
 ]
 set wcfg_files [glob_existing_files [list [file join $repo_root sim wcfg *.wcfg]]]
 add_existing_files sim_1 [concat $sim_files $wcfg_files]
@@ -265,6 +286,20 @@ if {[llength $xci_files] != 0} {
     generate_target all $xci_files
     export_ip_user_files -of_objects $xci_files -no_script -sync -force -quiet
 }
+
+set irom_ip [get_ips -quiet IROM]
+set irom_memory_type [get_property CONFIG.Memory_Type $irom_ip]
+set irom_depth       [get_property CONFIG.Write_Depth_A $irom_ip]
+set irom_width_a     [get_property CONFIG.Read_Width_A $irom_ip]
+set irom_width_b     [get_property CONFIG.Read_Width_B $irom_ip]
+set irom_addra_width [get_property CONFIG.C_ADDRA_WIDTH $irom_ip]
+set irom_addrb_width [get_property CONFIG.C_ADDRB_WIDTH $irom_ip]
+if {$irom_memory_type ne "Dual_Port_ROM" || $irom_depth ne "16384" ||
+    $irom_width_a ne "32" || $irom_width_b ne "32" ||
+    $irom_addra_width ne "14" || $irom_addrb_width ne "14"} {
+    error "IROM generation failed: Memory_Type=$irom_memory_type Depth=$irom_depth ReadWidthA=$irom_width_a ReadWidthB=$irom_width_b AddraWidth=$irom_addra_width AddrbWidth=$irom_addrb_width"
+}
+puts "INFO: verified IROM: 16384x32, addra/addrb are 14 bits"
 
 set coe_files [get_files -quiet *.coe]
 if {[llength $coe_files] != 0} {

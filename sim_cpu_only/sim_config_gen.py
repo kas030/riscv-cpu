@@ -2,6 +2,7 @@
 import os
 import sys
 import re
+from pathlib import Path
 
 
 def q(v: str) -> str:
@@ -37,16 +38,37 @@ def hex32_literal(v: str, name: str) -> str:
     return f"32'h{digits.zfill(8)}"
 
 
+def uint_literal(v: str, name: str) -> str:
+    digits = v.strip().replace("_", "")
+    if not digits or not digits.isdecimal():
+        raise ValueError(f"{name} must be a non-negative decimal value, got {v!r}")
+    value = int(digits)
+    if value > 0xFFFF_FFFF:
+        raise ValueError(f"{name} must fit in 32 bits, got {v!r}")
+    return f"32'd{value}"
+
+
 def main() -> int:
     out = sys.argv[1]
     expected_led = os.environ.get("EXPECTED_LED", "").strip()
     pass_led = os.environ.get("PASS_LED", "078B7323").strip()
     fail_led = os.environ.get("FAIL_LED", "24181824").strip()
     trace = os.environ.get("TRACE", "0").strip()
-    cpu_freq_mhz = os.environ.get("CPU_FREQ_MHZ", "240.0").strip()
+    cpu_freq_mhz = os.environ.get("CPU_FREQ_MHZ", "200.0").strip()
     stop_ns = os.environ.get("STOP_NS", "400000000").strip()
     progress_ns = os.environ.get("PROGRESS_NS", "10000000").strip()
     trace_file = os.environ.get("TRACE_FILE", "build/wave.fst").strip()
+    coremark_iterations = os.environ.get("COREMARK_ITERATIONS", "24").strip()
+    coremark_snapshot_low = os.environ.get("COREMARK_SNAPSHOT_LOW", "8").strip()
+    coremark_snapshot_high = os.environ.get("COREMARK_SNAPSHOT_HIGH", "16").strip()
+    coremark_entry_pc = os.environ.get("COREMARK_ENTRY_PC", "0").strip()
+    coremark_require_valid = os.environ.get("COREMARK_REQUIRE_VALID", "0").strip()
+
+    if coremark_require_valid not in {"0", "1"}:
+        raise ValueError(
+            "COREMARK_REQUIRE_VALID must be 0 or 1, "
+            f"got {coremark_require_valid!r}"
+        )
 
     has_expected = "1" if expected_led else "0"
     expected_value = hex32_literal(expected_led, "EXPECTED_LED") if expected_led else "32'h0"
@@ -61,9 +83,16 @@ def main() -> int:
 `define SIM_STOP_NS {u64_literal(stop_ns, "STOP_NS")}
 `define SIM_PROGRESS_NS {u64_literal(progress_ns, "PROGRESS_NS")}
 `define SIM_TRACE_FILE "{q(trace_file)}"
+`define SIM_COREMARK_ITERATIONS {uint_literal(coremark_iterations, "COREMARK_ITERATIONS")}
+`define SIM_COREMARK_SNAPSHOT_LOW {uint_literal(coremark_snapshot_low, "COREMARK_SNAPSHOT_LOW")}
+`define SIM_COREMARK_SNAPSHOT_HIGH {uint_literal(coremark_snapshot_high, "COREMARK_SNAPSHOT_HIGH")}
+`define SIM_COREMARK_ENTRY_PC {hex32_literal(coremark_entry_pc, "COREMARK_ENTRY_PC")}
+`define SIM_COREMARK_REQUIRE_VALID {coremark_require_valid}
 """
-    with open(out, "w", encoding="ascii") as f:
-        f.write(text)
+    out_path = Path(out)
+    if out_path.exists() and out_path.read_text(encoding="ascii") == text:
+        return 0
+    out_path.write_text(text, encoding="ascii")
     return 0
 
 

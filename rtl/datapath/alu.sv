@@ -22,13 +22,13 @@ module alu #(
     output logic                           isTrue
 );
     logic m_add , m_sub , m_and , m_or  , m_xor , m_sll , m_srl;
-    logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu;
+    logic m_sra , m_beq , m_bne , m_blt , m_bge , m_bgeu, m_bltu, m_crc8;
     logic [DATAWIDTH-1:0] add_lhs, add_rhs;
     logic                 cin, cout;
     logic [DATAWIDTH-1:0] r_addsub, r_and, r_or, r_xor;
-    logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra;
-    logic [DATAWIDTH-1:0] r_slt, r_sltu;
-    logic                 cmp_eq, cmp_lt, cmp_ltu;
+    logic [DATAWIDTH-1:0] r_sll, r_srl, r_sra, r_crc8;
+    logic [DATAWIDTH-1:0] r_logic_shift, r_non_arith;
+    logic                 cmp_eq, cmp_lt, cmp_ltu, cmp_result_selected;
 
     assign m_add  = ALUControl[ 0];
     assign m_sub  = ALUControl[ 1];
@@ -44,6 +44,19 @@ module alu #(
     assign m_bge  = ALUControl[11];
     assign m_bgeu = ALUControl[12];
     assign m_bltu = ALUControl[13];
+    assign m_crc8 = ALUControl[23];
+
+    function automatic logic [15:0] crc16_advance_byte(input logic [15:0] value);
+        logic [15:0] crc;
+        integer i;
+        begin
+            crc = value;
+            for (i = 0; i < 8; i = i + 1) begin
+                crc = crc[0] ? ((crc >> 1) ^ 16'ha001) : (crc >> 1);
+            end
+            crc16_advance_byte = crc;
+        end
+    endfunction
 
     assign add_lhs = A;
     assign add_rhs = (m_sub | m_blt | m_bge | m_bgeu | m_bltu) ? ~B : B;
@@ -59,12 +72,12 @@ module alu #(
     assign r_sll  = A << B[4:0];
     assign r_srl  = A >> B[4:0];
     assign r_sra  = ($signed(A)) >>> B[4:0];
+    assign r_crc8 = {{DATAWIDTH - 16{1'b0}},
+                     crc16_advance_byte(A[15:0] ^ B[15:0])};
 
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
     assign cmp_ltu = ~cout;
-    assign r_slt   = {{DATAWIDTH - 1{1'b0}},  cmp_lt };
-    assign r_sltu  = {{DATAWIDTH - 1{1'b0}},  cmp_ltu};
 
     assign isTrue = (m_beq  &  cmp_eq ) |
                     (m_bne  & ~cmp_eq ) |
@@ -73,13 +86,21 @@ module alu #(
                     (m_bgeu & ~cmp_ltu) |
                     (m_bltu &  cmp_ltu);
 
-    assign Result = {DATAWIDTH{m_add | m_sub}} & r_addsub |
-                    {DATAWIDTH{m_and        }} & r_and    |
-                    {DATAWIDTH{m_or         }} & r_or     |
-                    {DATAWIDTH{m_xor        }} & r_xor    |
-                    {DATAWIDTH{m_sll        }} & r_sll    |
-                    {DATAWIDTH{m_srl        }} & r_srl    |
-                    {DATAWIDTH{m_sra        }} & r_sra    |
-                    {DATAWIDTH{m_blt        }} & r_slt    |
-                    {DATAWIDTH{m_bltu       }} & r_sltu;
+    // ADD/SUB 是最常见且会串接 32 位 carry chain 的结果。将它从大型
+    // 独热 OR 树中单独旁路，使算术数据在 carry 后只经过一级结果 mux；
+    // 分支比较继续使用上面的独立 isTrue 通路。
+    assign r_logic_shift = {DATAWIDTH{m_and}} & r_and |
+                           {DATAWIDTH{m_or }} & r_or  |
+                           {DATAWIDTH{m_xor}} & r_xor |
+                           {DATAWIDTH{m_sll}} & r_sll |
+                           {DATAWIDTH{m_srl}} & r_srl |
+                           {DATAWIDTH{m_sra}} & r_sra |
+                           {DATAWIDTH{m_crc8}} & r_crc8;
+
+    assign cmp_result_selected = (m_blt & cmp_lt) | (m_bltu & cmp_ltu);
+    assign r_non_arith = (m_blt | m_bltu) ?
+                         {{DATAWIDTH - 1{1'b0}}, cmp_result_selected} :
+                         r_logic_shift;
+
+    assign Result = (m_add | m_sub) ? r_addsub : r_non_arith;
 endmodule

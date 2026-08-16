@@ -32,13 +32,15 @@ module bram_driver(
 );
     logic [15:0] bram_addr;
     logic [ 1:0] offset;
-    logic [ 1:0] rmask_q, roffset_q;
-    logic [31:0] bram_wdata, bram_rdata_raw, dout;
+    logic [31:0] bram_wdata, bram_rdata_raw;
     logic [3:0]  bram_we;
 
     assign bram_addr = perip_addr[17:2];
     assign offset = perip_addr[1:0];
-    assign perip_rdata = dout;
+    // CPU 会将所有 BRAM load 请求强制为完整字读取，byte/half
+    // 选择及符号扩展在 CPU 后端完成。这里直接返回 BRAM 原始字，
+    // 避免在同步 BRAM 输出后串联一组不会被使用的读 mask 网络。
+    assign perip_rdata = bram_rdata_raw;
 
     BRAM Mem_BRAM (
         .clka       (clk),
@@ -54,34 +56,6 @@ module bram_driver(
         .dinb       (bram_wdata),
         .doutb      ()
     );
-
-    always_ff @(posedge clk) begin
-        if (bram_ren) begin
-            rmask_q   <= perip_mask;
-            roffset_q <= offset;
-        end
-    end
-
-    // BRAM 同步读返回上一拍请求的数据，这里用上一拍锁存的 mask/offset 选字节。
-    always_comb begin
-        dout = 0;
-        case (rmask_q)
-            2'b00: // lb/lbu
-                case (roffset_q)
-                    2'b00:  dout = {24'b0, bram_rdata_raw[7:0]};
-                    2'b01:  dout = {24'b0, bram_rdata_raw[15:8]};
-                    2'b10:  dout = {24'b0, bram_rdata_raw[23:16]};
-                    2'b11:  dout = {24'b0, bram_rdata_raw[31:24]};
-                endcase
-            2'b01: // lh/lhu
-                case (roffset_q[1])
-                    1'b0:  dout = {16'b0, bram_rdata_raw[15:0]};
-                    1'b1:  dout = {16'b0, bram_rdata_raw[31:16]};
-                endcase
-            2'b10: dout = bram_rdata_raw;
-            default: dout = 0;
-        endcase
-    end
 
     // BRAM byte write enable 直接完成 sb/sh/sw，避免异步读改写组合路径。
     always_comb begin

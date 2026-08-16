@@ -9,7 +9,8 @@
 //   - 计算 raw redirect target、BranchTaken 和 BranchMispredict 反馈给前级打拍提交
 // =============================================================================
 module mycpu_ex_stage #(
-    parameter DATAWIDTH = 32
+    parameter DATAWIDTH = 32,
+    parameter ENABLE_NARROW_MUL = 1'b1
 ) (
     input  logic [DATAWIDTH - 1:0] MEM_forward_data,
     input  logic [DATAWIDTH - 1:0] MEM_S1_forward_data,
@@ -31,6 +32,8 @@ module mycpu_ex_stage #(
     input  logic [2:0]             ForwardB,
     input  logic [DATAWIDTH - 1:0] ForwardAData,
     input  logic [DATAWIDTH - 1:0] ForwardBData,
+    input  logic                   EX_mul_narrow_a,
+    input  logic                   EX_mul_narrow_b,
     input  logic                   EX_ALUSrcA,
     input  logic                   EX_ALUSrcB,
     input  logic                   EX_pred_taken,
@@ -64,6 +67,9 @@ module mycpu_ex_stage #(
     logic [5:0]             csr_control_effective;
     logic [DATAWIDTH - 1:0] alu_result_i;
     logic [DATAWIDTH - 1:0] m_result;
+    logic signed [17:0]     mul_narrow_a, mul_narrow_b;
+    logic signed [35:0]     mul_narrow_product;
+    logic                   mul_narrow_fast;
     logic                   alu_isTrue;
     logic                   is_m_op;
     logic                   m_busy, m_done, m_start;
@@ -89,6 +95,22 @@ module mycpu_ex_stage #(
     assign alu_in_a = EX_ALUSrcA ? EX_pc  : EX_forward_A_out;
     assign alu_in_b = EX_ALUSrcB ? EX_imm : EX_forward_B_out;
     assign is_m_op  = |EX_ALUControl[21:14];
+    // 值域标签由 ID 根据寄存器和前递生产者保守生成。标签为真时完整操作数
+    // 已保证可表示为 18 位有符号数，单个 DSP 的结果与 MUL 低 32 位等价。
+    generate
+        if (ENABLE_NARROW_MUL) begin : gen_narrow_mul
+            assign mul_narrow_a       = {alu_in_a[31], alu_in_a[16:0]};
+            assign mul_narrow_b       = {alu_in_b[31], alu_in_b[16:0]};
+            assign mul_narrow_product = mul_narrow_a * mul_narrow_b;
+            assign mul_narrow_fast    = EX_ALUControl[14] &&
+                                        EX_mul_narrow_a && EX_mul_narrow_b;
+        end else begin : gen_no_narrow_mul
+            assign mul_narrow_a       = '0;
+            assign mul_narrow_b       = '0;
+            assign mul_narrow_product = '0;
+            assign mul_narrow_fast    = 1'b0;
+        end
+    endgenerate
 
     alu #(DATAWIDTH) u_alu (
         .A          (alu_in_a     ),
@@ -99,7 +121,7 @@ module mycpu_ex_stage #(
     );
 
     // start 只在该条 M 指令刚进入 EX 时打一拍。
-    assign m_start = !EX_kill && is_m_op && !m_busy && !m_done;
+    assign m_start = !EX_kill && is_m_op && !mul_narrow_fast && !m_busy && !m_done;
 
     rv32m_unit #(DATAWIDTH) u_rv32m_unit (
         .clk         (clk          ),
@@ -113,8 +135,9 @@ module mycpu_ex_stage #(
         .result      (m_result     )
     );
 
-    assign EX_busy       = !EX_kill && is_m_op && !m_done;
-    assign EX_alu_result = is_m_op ? m_result : alu_result_i;
+    assign EX_busy       = !EX_kill && is_m_op && !mul_narrow_fast && !m_done;
+    assign EX_alu_result = mul_narrow_fast ? mul_narrow_product[31:0] :
+                           (is_m_op ? m_result : alu_result_i);
     // load/store 只需要 base+imm，独立加法器避免访存地址穿过通用 ALU
     // 的移位/逻辑/比较结果汇总网络。
     assign EX_mem_addr   = EX_forward_A_out + EX_imm;
@@ -149,8 +172,6 @@ module mycpu_ex_stage #(
         .ex_busy_i           (EX_busy            ),
         .ex_npc_op_i         (EX_NpcOp           ),
         .alu_branch_true_i   (alu_isTrue         ),
-        .branch_target_i     (branch_target      ),
-        .jal_target_i        (jal_target         ),
         .jalr_csr_target_i   (jalr_csr_target    ),
         .pred_taken_i        (EX_pred_taken      ),
         .pred_target_i       (EX_pred_target     ),
