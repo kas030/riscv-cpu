@@ -609,7 +609,6 @@ CoreMark 在 finsh/msh 环境中运行，命令为 `coremark 0 0 0x66 10000`。�
 | CoreMark 分数（iter/s） | 679.624878 |
 | CoreMark/MHz | 3.398124 |
 | 三项 CRC | `e714` / `1fd7` / `8e3a` |
-| 最短运行时间检查 | PASS，14.714 s ≥ 10 s |
 | `Correct operation validated` | PASS |
 
 Table: CoreMark 正式成绩
