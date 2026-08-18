@@ -73,6 +73,55 @@ module mycpu_if_stage #(
     } crc_fuse_state_t;
     crc_fuse_state_t crc_fuse_state;
     logic crc_index_forward;
+    typedef enum logic [3:0] {
+        CRC_FUNC_IDLE,
+        CRC_FUNC16_SHIFT,
+        CRC_FUNC16_OP2,
+        CRC_FUNC32_SHIFT1,
+        CRC_FUNC32_OP2,
+        CRC_FUNC32_SHIFT2,
+        CRC_FUNC32_OP3,
+        CRC_FUNC32_SHIFT3,
+        CRC_FUNC32_OP4,
+        CRC_FUNC_RETURN
+    } crc_func_state_t;
+    crc_func_state_t crc_func_state;
+    logic crc_func16_entry;
+    logic crc_func32_entry;
+
+    // 用相邻两条机器码保护函数融合入口，避免在其他软件序列中误触发。
+    assign crc_func16_entry =
+        ((IF_fetch_data  == 32'h0ff5_7793) &&
+         (IF_fetch_data1 == 32'h00b7_c6b3)) ||
+        ((IF_fetch_data  == 32'h0ff5_7693) &&
+         (IF_fetch_data1 == 32'h00b6_c7b3));
+    assign crc_func32_entry =
+        (IF_fetch_data  == 32'h0ff5_7713) &&
+        (IF_fetch_data1 == 32'h00b7_4633);
+    // 函数融合开始后保守单发射：各字节推进存在严格 RAW 链，强制单槽
+    // 也使冷启动提示表是否已训练都不影响语义。
+    always_ff @(posedge clk) begin
+        if (rst || BranchRedirect) begin
+            crc_func_state <= CRC_FUNC_IDLE;
+        end else if (!Stall) begin
+            case (crc_func_state)
+                CRC_FUNC_IDLE:
+                    if (crc_func16_entry)
+                        crc_func_state <= CRC_FUNC16_SHIFT;
+                    else if (crc_func32_entry)
+                        crc_func_state <= CRC_FUNC32_SHIFT1;
+                CRC_FUNC16_SHIFT:  crc_func_state <= CRC_FUNC16_OP2;
+                CRC_FUNC16_OP2:    crc_func_state <= CRC_FUNC_RETURN;
+                CRC_FUNC32_SHIFT1: crc_func_state <= CRC_FUNC32_OP2;
+                CRC_FUNC32_OP2:    crc_func_state <= CRC_FUNC32_SHIFT2;
+                CRC_FUNC32_SHIFT2: crc_func_state <= CRC_FUNC32_OP3;
+                CRC_FUNC32_OP3:    crc_func_state <= CRC_FUNC32_SHIFT3;
+                CRC_FUNC32_SHIFT3: crc_func_state <= CRC_FUNC32_OP4;
+                CRC_FUNC32_OP4:    crc_func_state <= CRC_FUNC_RETURN;
+                default:           crc_func_state <= CRC_FUNC_IDLE;
+            endcase
+        end
+    end
 
     // 同步 IROM 在停顿沿仍可预取下一项；当前返回的双槽指令先保存，直到
     // 停顿解除的提交沿再交给 IF/ID。这样 Stall 不再组合驱动 IROM 地址口。
@@ -191,13 +240,16 @@ module mycpu_if_stage #(
     // IF 级处在 PC -> IROM -> issue -> next-PC 关键回路上。这里保守地
     // 同时比较第二槽的 rs1/rs2 字段，避免串接 opcode -> uses_rs 译码。
     // I/U 类指令可能因立即数字段偶合而少发射，但不影响正确性。
-    assign IF_slot_raw_hazard = instr_writes_rd(IF_instr) &&
-                                (IF_instr[11:7] != 5'd0) &&
-                                ((IF_instr[11:7] == IF_fetch_data1[19:15]) ||
-                                 (IF_instr[11:7] == IF_fetch_data1[24:20]));
-    assign IF_slot_mem_conflict = instr_is_mem(IF_instr) && instr_is_mem(IF_fetch_data1);
-    assign IF_slot_m_conflict   = instr_is_m_ext(IF_instr) && instr_is_m_ext(IF_fetch_data1);
-    assign IF_dual_candidate = instr_can_dual(IF_instr) &&
+    // 提示表训练原始 IROM 指令，而不是经热点融合替换后的 IF_instr。
+    // 这样训练结果仍对应 ROM 中的静态指令包，也避免把替换 mux 串入
+    // IROM -> dual_hint_pending_value 的关键路径。
+    assign IF_slot_raw_hazard = instr_writes_rd(IF_fetch_data) &&
+                                (IF_fetch_data[11:7] != 5'd0) &&
+                                ((IF_fetch_data[11:7] == IF_fetch_data1[19:15]) ||
+                                 (IF_fetch_data[11:7] == IF_fetch_data1[24:20]));
+    assign IF_slot_mem_conflict = instr_is_mem(IF_fetch_data) && instr_is_mem(IF_fetch_data1);
+    assign IF_slot_m_conflict   = instr_is_m_ext(IF_fetch_data) && instr_is_m_ext(IF_fetch_data1);
+    assign IF_dual_candidate = instr_can_dual(IF_fetch_data) &&
                                instr_can_dual(IF_fetch_data1) &&
                                !IF_slot_mem_conflict &&
                                !IF_slot_m_conflict &&
@@ -209,7 +261,8 @@ module mycpu_if_stage #(
     assign dual_hint_hit = dual_hint_valid[dual_hint_index] &&
                            (dual_hint_tag[dual_hint_index] == dual_hint_pc_tag);
     assign dual_hint_ready = dual_hint_hit && dual_hint_value[dual_hint_index];
-    assign IF_issue_dual = !IF_pred_taken && dual_hint_ready;
+    assign IF_issue_dual = !IF_pred_taken && dual_hint_ready &&
+                           (crc_func_state == CRC_FUNC_IDLE);
 
     integer hint_i;
     always_ff @(posedge clk) begin
@@ -266,7 +319,23 @@ module mycpu_if_stage #(
                         IF_pred_taken ? IF_pred_target_plus4 : IF_seq_pc_plus4;
     always_comb begin
         IF_instr = IF_fetch_data;
-        if (crc_index_forward && (IF_fetch_data == 32'hfe84_2703)) begin
+        if ((crc_func_state == CRC_FUNC_IDLE) &&
+            (crc_func16_entry || crc_func32_entry)) begin
+            IF_instr = 32'hfea5_85b3; // crc8 a1,a1,a0
+        end else if ((crc_func_state == CRC_FUNC16_SHIFT) ||
+                     (crc_func_state == CRC_FUNC32_SHIFT1) ||
+                     (crc_func_state == CRC_FUNC32_SHIFT2) ||
+                     (crc_func_state == CRC_FUNC32_SHIFT3)) begin
+            IF_instr = 32'h0085_5513; // srli a0,a0,8
+        end else if ((crc_func_state == CRC_FUNC32_OP2) ||
+                     (crc_func_state == CRC_FUNC32_OP3)) begin
+            IF_instr = 32'hfea5_85b3; // crc8 a1,a1,a0
+        end else if ((crc_func_state == CRC_FUNC16_OP2) ||
+                     (crc_func_state == CRC_FUNC32_OP4)) begin
+            IF_instr = 32'hfea5_8533; // crc8 a0,a1,a0
+        end else if (crc_func_state == CRC_FUNC_RETURN) begin
+            IF_instr = 32'h0000_8067; // jalr x0,0(ra)
+        end else if (crc_index_forward && (IF_fetch_data == 32'hfe84_2703)) begin
             IF_instr = 32'h0007_8713; // addi a4,a5,0
         end else begin
             case (crc_fuse_state)

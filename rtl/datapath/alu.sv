@@ -72,8 +72,10 @@ module alu #(
     assign r_sll  = A << B[4:0];
     assign r_srl  = A >> B[4:0];
     assign r_sra  = ($signed(A)) >>> B[4:0];
+    // CRC 融合指令约定 rs1 为当前 16-bit CRC、rs2 的低字节为输入数据。
+    // 显式屏蔽 rs2[15:8]，使调用者无需为 lbu/srli 结果另插 zext。
     assign r_crc8 = {{DATAWIDTH - 16{1'b0}},
-                     crc16_advance_byte(A[15:0] ^ B[15:0])};
+                     crc16_advance_byte(A[15:0] ^ {8'b0, B[7:0]})};
 
     assign cmp_eq  = A == B;
     assign cmp_lt  = (A[31] &  ~B[31]) | ((~A[31] ^ B[31]) & r_addsub[31]);
