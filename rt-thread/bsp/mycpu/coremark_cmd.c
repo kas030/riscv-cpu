@@ -1,11 +1,11 @@
 /*
- * coremark_cmd.c —— 官方 EEMBC CoreMark 1.0 的 msh 命令导出
+ * coremark_cmd.c —— 提供版本兼容的 CoreMark msh 命令导出
  *
- * 编译参数 -Dmain=coremark_main 把官方 main() 重命名为内部入口；
- * 本文件导出 msh 命令并补齐缺省参数，CLI 语义为：
+ * 编译参数 -Dmain=coremark_main 把上游 main() 重命名为内部入口；
+ * 本文件在运行前采集 Team ID，并保持既有 CLI：
  *     coremark [seed1] [seed2] [seed3] [iterations]
- * 缺省（裸 coremark）：种子 0,0,0x66，迭代 10000（短测外推约 13.98 s @200 MHz）。
- * 只有显式传入 iterations=0 时才进入官方自动校准。
+ * 缺省参数为 0,0,0x66,18000；显式传入 iterations=0 时才进入官方自动校准。
+ * 性能 autorun 没有交互终端，因此跳过采集并使用固定标识。
  */
 #include <rtthread.h>
 #include <finsh_config.h>
@@ -13,10 +13,68 @@
 #include "core_portme.h"
 
 int coremark_main(int argc, char **argv);
+extern char rt_hw_console_getchar(void);
+
+static char coremark_team_id[32];
+
+static void coremark_set_team_id(const char *team_id)
+{
+    rt_size_t index = 0;
+
+    while (team_id[index] != '\0' && index < sizeof(coremark_team_id) - 1)
+    {
+        coremark_team_id[index] = team_id[index];
+        ++index;
+    }
+    coremark_team_id[index] = '\0';
+}
+
+static void coremark_read_team_id(void)
+{
+    int character;
+    rt_size_t index = 0;
+
+    rt_kprintf("\r\n========================================\r\n");
+    rt_kprintf("Please enter your Team ID and press Enter:\r\nteam id: ");
+    while (index < sizeof(coremark_team_id) - 1)
+    {
+        character = (unsigned char)rt_hw_console_getchar();
+        if (character == 0xff)
+        {
+            rt_thread_mdelay(1);
+            continue;
+        }
+        if (character == '\r' || character == '\n')
+            break;
+        if ((character == '\b' || character == 127) && index != 0)
+        {
+            --index;
+            rt_kprintf("\b \b");
+            continue;
+        }
+        if (character >= 32 && character <= 126)
+        {
+            coremark_team_id[index++] = (char)character;
+            rt_kprintf("%c", character);
+        }
+    }
+    coremark_team_id[index] = '\0';
+    if (index == 0)
+        coremark_set_team_id("NO_ID");
+    rt_kprintf("\r\nTeam ID locked: %s\r\n", coremark_team_id);
+    rt_kprintf("Starting CoreMark, please wait...\r\n");
+    rt_kprintf("========================================\r\n\r\n");
+}
 
 int coremark(int argc, char **argv)
 {
     char *run_argv[5];
+
+#ifdef COREMARK_PERF_AUTORUN
+    coremark_set_team_id("PERF_AUTORUN");
+#else
+    coremark_read_team_id();
+#endif
 
     if (argc >= 5)
         return coremark_main(argc, argv);

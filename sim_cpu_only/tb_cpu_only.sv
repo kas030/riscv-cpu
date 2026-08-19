@@ -671,7 +671,7 @@ module tb_cpu_only;
 `else
         /* TOTAL_DATA_SIZE=2000 由三个算法均分为 666 bytes：官方 2K 档。
          * 24 次仅用于 RTL smoke test，必然触发官方“至少 10 秒”提示；
-         * 正式跑分使用裸 coremark 的 5000 次默认值。 */
+         * 正式交互命令默认运行 18000 次。 */
         coremark_output_start = uart_cap_qlen;
         $display("[UART-VERIFY] inject 'coremark 0 0 0x66 24\\r'");
         uart_tx_byte("c");
@@ -695,6 +695,14 @@ module tb_cpu_only;
         uart_tx_byte("2");
         uart_tx_byte("4");
         uart_tx_byte(8'h0D);
+        /* 提供版命令在进入基准前要求 Team ID；模拟交互终端输入。 */
+        #(30_000_000);
+        uart_tx_byte("N");
+        uart_tx_byte("O");
+        uart_tx_byte("_");
+        uart_tx_byte("I");
+        uart_tx_byte("D");
+        uart_tx_byte(8'h0D);
         #(180_000_000);
         if (uart_queue_has_str_from("2K performance run parameters", coremark_output_start) &&
             uart_queue_has_str_from("[0]crclist       : 0xe714", coremark_output_start) &&
@@ -703,6 +711,7 @@ module tb_cpu_only;
             uart_queue_has_str_from("Total time (secs): 0.", coremark_output_start) &&
             uart_queue_has_str_from("Iterations/Sec   : ", coremark_output_start) &&
             uart_queue_has_str_from("ERROR! Must execute for at least 10 secs", coremark_output_start) &&
+            uart_queue_has_str_from("Team ID locked: NO_ID", coremark_output_start) &&
             uart_queue_has_str_from("msh >", coremark_output_start) &&
             !uart_queue_has_str_from("ERROR! list crc", coremark_output_start) &&
             !uart_queue_has_str_from("ERROR! matrix crc", coremark_output_start) &&

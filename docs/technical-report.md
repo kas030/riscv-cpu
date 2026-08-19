@@ -488,7 +488,7 @@ FPGA 内的 `i2c_register_master` 提供 100 kHz 单事务寄存器访问。RT-T
 
 ## EEMBC CoreMark 1.0 平台适配 {#sec-coremark}
 
-基准算法主体来自 EEMBC CoreMark 1.0。`core_list_join.c`、`core_matrix.c`、`core_state.c` 和 `core_util.c` 保持上游内容；`core_main.c` 与 `coremark.h` 为本平台的单精度计时换算、无 libc 输出和迭代次数处理做了适配，计时区内的 `iterate` 调用及三类工作负载算法未改动。平台层负责计时、参数传递和输出。
+基准算法主体来自 EEMBC CoreMark 1.0。`core_list_join.c`、`core_matrix.c`、`core_state.c` 和 `core_util.c` 保持上游内容；`core_main.c` 与 `coremark.h` 为本平台的单精度计时换算、无 libc 输出和迭代次数处理做了适配，计时区内的 `iterate` 调用及三类工作负载算法未改动。平台层负责计时、参数传递、输出和 Team ID 交互。交互命令默认运行 18000 次；性能脚本明确传入 10000 次以维持固定实验口径。
 
 # 实验环境与方法
 

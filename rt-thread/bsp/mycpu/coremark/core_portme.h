@@ -124,10 +124,9 @@ typedef ee_u32 CORE_TICKS;
 */
 #define MAIN_HAS_NORETURN 0
 
-/* 基准默认参数：官方标准性能跑分。200 MHz 下 10000 次短测外推约 13.98 秒，
- * 满足官方至少 10 秒规则；仍可用命令行第 4 个参数覆盖迭代数。 */
+/* 交互命令默认运行 18000 次；调用者仍可用第 4 个参数覆盖。 */
 #ifndef ITERATIONS
-#define ITERATIONS 10000
+#define ITERATIONS 18000
 #endif
 #ifndef TOTAL_DATA_SIZE
 #define TOTAL_DATA_SIZE 2000
