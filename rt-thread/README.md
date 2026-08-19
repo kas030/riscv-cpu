@@ -30,6 +30,8 @@ CPU 能力边界（详见 `docs/cpu_capability_boundaries.md` 与 `AGENTS.md`）
 
 对应移植决策：
 
+- **线程栈按 16 字节对齐**：`RT_ALIGN_SIZE=16`，使 small-memory heap 分配的
+  动态线程栈满足 RV32 psABI；否则材料 `ee_printf` 的 `%f` 可变参数会读错 double。
 - **tick 由软件产生**：无中断，`rt_thread_idle_sethook` 钩子在 idle 循环中轮询
   COUNTER（`0x80200050`，50 MHz 毫秒计数），每毫秒调用一次 `rt_tick_increase`
   （追赶上限 64 ms，防止长时间停滞后的连锁补偿）。

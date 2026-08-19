@@ -11,9 +11,9 @@
 
 int coremark_main(void);
 
-/* Soft-float varargs follow the RV32 psABI stack alignment requirement.  The
- * BSP heap is only 4-byte aligned, so a dynamically allocated thread stack can
- * corrupt the material ee_printf %f path even though integer CoreMark is done. */
+/* Soft-float varargs follow the RV32 psABI stack alignment requirement.  Keep
+ * the performance-only stack explicitly aligned even if allocator settings
+ * change independently from this wrapper. */
 static struct rt_thread coremark_perf_thread;
 static rt_uint8_t coremark_perf_stack[8192] __attribute__((aligned(16)));
 

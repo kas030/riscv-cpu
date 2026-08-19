@@ -7,7 +7,9 @@
 #define RT_THREAD_PRIORITY_MAX  32
 /* COUNTER 外设按毫秒递增，1 tick = 1 ms */
 #define RT_TICK_PER_SECOND      1000
-#define RT_ALIGN_SIZE           4
+/* RV32 psABI 要求函数调用边界的栈指针保持 16 字节对齐；动态线程栈由
+ * small-memory heap 分配，因此堆对齐也必须满足该约束。 */
+#define RT_ALIGN_SIZE           16
 #define RT_NAME_MAX             8
 // </h>
 
