@@ -639,9 +639,9 @@ module tb_cpu_only;
 `endif
 `ifdef COREMARK_VERIFY
 `ifdef COREMARK_PERF
-        /* 开发外推和正式 10000 次回归共用同一路径。短测必须得到三项
+        /* 开发外推和正式 18000 次回归共用同一路径。短测必须得到三项
          * 官方 CRC 和迭代数回显；正式回归还必须满足十秒规则。 */
-        coremark_command = $sformatf("coremark 0 0 0x66 %0d", COREMARK_ITERATIONS);
+        coremark_command = $sformatf("handouts CoreMark autorun %0d", COREMARK_ITERATIONS);
         $display("[COREMARK-VERIFY] wait for autorun '%s'", coremark_command);
         wait (coremark_prompt_seen || sim_done);
 
@@ -670,10 +670,9 @@ module tb_cpu_only;
         end
 `else
         /* TOTAL_DATA_SIZE=2000 由三个算法均分为 666 bytes：官方 2K 档。
-         * 24 次仅用于 RTL smoke test，必然触发官方“至少 10 秒”提示；
-         * 正式跑分使用裸 coremark 的 5000 次默认值。 */
+         * smoke 固件单独编译为 24 次；板级正式固件固定为 18000 次。 */
         coremark_output_start = uart_cap_qlen;
-        $display("[UART-VERIFY] inject 'coremark 0 0 0x66 24\\r'");
+        $display("[UART-VERIFY] inject handouts command and Team ID");
         uart_tx_byte("c");
         uart_tx_byte("o");
         uart_tx_byte("r");
@@ -682,21 +681,23 @@ module tb_cpu_only;
         uart_tx_byte("a");
         uart_tx_byte("r");
         uart_tx_byte("k");
-        uart_tx_byte(" ");
-        uart_tx_byte("0");
-        uart_tx_byte(" ");
-        uart_tx_byte("0");
-        uart_tx_byte(" ");
-        uart_tx_byte("0");
-        uart_tx_byte("x");
-        uart_tx_byte("6");
-        uart_tx_byte("6");
-        uart_tx_byte(" ");
-        uart_tx_byte("2");
-        uart_tx_byte("4");
         uart_tx_byte(8'h0D);
-        #(180_000_000);
+        #(35_000_000);
+        uart_tx_byte("C");
+        uart_tx_byte("O");
+        uart_tx_byte("D");
+        uart_tx_byte("E");
+        uart_tx_byte("X");
+        uart_tx_byte("_");
+        uart_tx_byte("T");
+        uart_tx_byte("E");
+        uart_tx_byte("S");
+        uart_tx_byte("T");
+        uart_tx_byte(8'h0D);
+        #(150_000_000);
         if (uart_queue_has_str_from("2K performance run parameters", coremark_output_start) &&
+            uart_queue_has_str_from("CoreMark Team ID: CODEX_TEST", coremark_output_start) &&
+            uart_queue_has_str_from("Iterations       : 24", coremark_output_start) &&
             uart_queue_has_str_from("[0]crclist       : 0xe714", coremark_output_start) &&
             uart_queue_has_str_from("[0]crcmatrix     : 0x1fd7", coremark_output_start) &&
             uart_queue_has_str_from("[0]crcstate      : 0x8e3a", coremark_output_start) &&

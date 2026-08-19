@@ -5,7 +5,7 @@
 - 系统：仓库当前 RT-Thread Nano 3.1.5 移植；
 - 负载：EEMBC CoreMark 1.0，`TOTAL_DATA_SIZE=2000`，单 context；
 - 参数：`seed1=0`、`seed2=0`、`seed3=0x66`；
-- 目标：10000 iterations；
+- 目标：18000 iterations；
 - 验收 CRC：`e714 / 1fd7 / 8e3a`；
 - 默认仿真 CPU 频率：200 MHz。
 
@@ -49,8 +49,8 @@ coremark-perf/results/baseline-estimate/
 │   ├── rtthread.bram.coe
 │   └── rtthread.disasm
 ├── verilator_i16.log
-├── estimate_10000.json
-├── estimate_10000.md
+├── estimate_18000.json
+├── estimate_18000.md
 ├── top_timing_summary_routed.rpt
 ├── protected_sources.sha256
 ├── port.sha256
@@ -59,17 +59,17 @@ coremark-perf/results/baseline-estimate/
 └── run.meta
 ```
 
-其中 `run.meta` 记录模式、采样点、自动解析出的 `core_bench_list` 地址、工具链和仿真覆盖参数。`estimate_10000.md/json` 必须包含基线的 Vivado 时序数据。不要混用不同目录中的固件、RTL 哈希、日志和 timing summary。
+其中 `run.meta` 记录模式、采样点、自动解析出的 `core_bench_list` 地址、工具链和仿真覆盖参数。`estimate_18000.md/json` 必须包含基线的 Vivado 时序数据。不要混用不同目录中的固件、RTL 哈希、日志和 timing summary。
 
 ## 3. 外推解释
 
-第 N 个观察点位于第 N 次迭代的第二次 `core_bench_list` 调用入口。入口按 WB 退休事件识别，避免流水线停顿使 EX valid/PC 保持时重复计数。虽然观察点不是循环末尾，但第 8 与第 16 个同相位观察点之间恰好包含 8 个完整迭代。分析器按差值计算每次迭代增量，再从 16 次运行的最终累计统计增加 9984 个增量。
+第 N 个观察点位于第 N 次迭代的第二次 `core_bench_list` 调用入口。入口按 WB 退休事件识别，避免流水线停顿使 EX valid/PC 保持时重复计数。虽然观察点不是循环末尾，但第 8 与第 16 个同相位观察点之间恰好包含 8 个完整迭代。分析器按差值计算每次迭代增量，再从 16 次运行的最终累计统计增加 17984 个增量。
 
 分析器还把观察点得到的 `cycles/iteration × 运行次数` 与 CoreMark 自身的 `Total ticks` 对照。考虑 COUNTER 的 1 ms 分辨率和 timed section 边界上的少量指令后仍不一致时，报告会失败，防止错误观察点产生看似合理的外推结果。
 
 报告中的两个时间含义不同：
 
-- `10000 次稳态时间`：只按稳态 `cycles/iteration × 10000` 换算，最接近 CoreMark timed section；
+- `18000 次稳态时间`：只按稳态 `cycles/iteration × 18000` 换算，最接近 CoreMark timed section；
 - `外推端到端时间`：保留 RT-Thread 启动、autorun 线程调度、初始化、输出和返回 shell 的固定开销，适合估算整次 CPU-only 仿真。
 
 外推假设每次迭代进入稳定的确定性路径。新增优化若包含预热、自适应状态、周期性行为或饱和计数器，先检查 8/16 两个观察点的增量是否稳定。日常与最终验收都不运行 `full`；只在斜率不稳定、优化状态无法在 16 次内收敛，或分析器无法证明外推一致时，才例外运行一次 `stage` 定位问题。若仍不能建立可靠的短测外推，应放弃或重设该优化，不用长时间仿真掩盖不稳定行为。
@@ -81,8 +81,8 @@ coremark-perf/results/baseline-estimate/
 1. 修改移植接口或 CPU RTL；
 2. 运行 `estimate --tag optNN`；
 3. 运行 `./scripts/vivado-host build impl`，完成该轮综合、布局布线和时序分析；
-4. 将 `top_timing_summary_routed.rpt` 复制到该轮结果目录，并用 `--timing-report` 重新生成 `estimate_10000.md/json`；
-5. 比较 CRC、`cycles/iteration`、稳态 CPI、load-use、EX busy、L0 命中率、10000 次外推时间、WNS、TNS、时序约束是否满足和近似 Fmax；
+4. 将 `top_timing_summary_routed.rpt` 复制到该轮结果目录，并用 `--timing-report` 重新生成 `estimate_18000.md/json`；
+5. 比较 CRC、`cycles/iteration`、稳态 CPI、load-use、EX busy、L0 命中率、18000 次外推时间、WNS、TNS、时序约束是否满足和近似 Fmax；
 6. 确认 `protected_sources.sha256` 未变化；
 7. 确认两个观察点的增量稳定且该轮时序已经留档；
 8. 如果该轮有明显提升，立即做阶段性提交，再进入下一轮。
@@ -101,7 +101,7 @@ python3 coremark-perf/tools/analyze_coremark_run.py \
 
 Vivado 的 `impl_1` 报告会被下一轮构建覆盖，因此必须在开始下一轮前复制到本轮结果目录。即使某轮性能退化、时序失败或最终不保留，也必须记录该轮 timing summary；不得沿用上一轮报告。
 
-阶段性提交使用 Conventional Commits，commit body 简洁记录该轮实际使用的编译参数，以及报告中的 10000 次外推预估时间、WNS 和 TNS。例如：
+阶段性提交使用 Conventional Commits，commit body 简洁记录该轮实际使用的编译参数，以及报告中的 18000 次外推预估时间、WNS 和 TNS。例如：
 
 ```text
 perf(coremark): 优化示例路径
@@ -130,19 +130,19 @@ python3 coremark-perf/tools/analyze_coremark_run.py \
   --timing-report coremark-perf/results/final-estimate/top_timing_summary_routed.rpt
 ```
 
-最终验收仍使用 16 次短测和 10000 次外推，不运行 `full`。只有同时满足以下条件才通过：
+最终验收仍使用 16 次短测和 18000 次外推，不运行 `full`。只有同时满足以下条件才通过：
 
 - 日志包含第 8 和第 16 次观察点；
 - 三项 CRC 完全匹配 `e714 / 1fd7 / 8e3a`；
 - 出现 `iterations=16 validity=short-run` 和 `[PASS]`；
 - 观察点周期与 CoreMark `Total ticks` 的一致性检查通过；
-- 已对 `final` 对应 RTL 重新执行 `build impl`，并将该次 timing summary 保存到 `final-estimate` 目录、合并进 `estimate_10000.md/json`；
+- 已对 `final` 对应 RTL 重新执行 `build impl`，并将该次 timing summary 保存到 `final-estimate` 目录、合并进 `estimate_18000.md/json`；
 - Vivado 时序报告中的约束检查结果、WNS、TNS 和近似 Fmax 均已明确记录；
 - `protected_sources.sha256` 未变化，固件和 RTL 哈希与本次日志属于同一结果目录；
 - 不出现算法 CRC error、未知 seeds 或仿真超时；短测固定会触发的十秒规则错误及其
   `Errors detected` 汇总不作为失败。
 
-`estimate_10000.md/json` 保存最终外推结果。报告必须明确标记为短测外推，不宣称为 10000 次实跑或官方完整 CoreMark 成绩。
+`estimate_18000.md/json` 保存最终外推结果。报告必须明确标记为短测外推，不宣称为 18000 次实跑或官方完整 CoreMark 成绩。
 
 ## 6. Vivado 时序
 

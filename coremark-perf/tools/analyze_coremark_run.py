@@ -9,8 +9,8 @@ import re
 from pathlib import Path
 
 
-TARGET_ITERATIONS = 10_000
-FIXED_TEST = "rt-thread/coremark-2k-performance"
+TARGET_ITERATIONS = 18_000
+FIXED_TEST = "rt-thread/handouts-coremark-2k-performance"
 COREMARK_TICKS_PER_SECOND = 1_000
 INTEGER_METRICS = {
     "cnt_ms": "cnt_ms",
@@ -244,12 +244,12 @@ def main() -> int:
         "crc_validated": bool(final["crc_validated"]),
         "source_validity": final["validity"],
         "per_iteration": per_iteration,
-        "derived_10000": derived,
+        "derived_18000": derived,
     }
 
     if mode == "full":
         if source_iterations != TARGET_ITERATIONS:
-            raise ValueError("full mode must execute exactly 10000 iterations")
+            raise ValueError("full mode must execute exactly 18000 iterations")
         if final["validity"] != "official-valid":
             raise ValueError("full mode did not satisfy the official validity gate")
         actual = {key: int(final[key]) for key in INTEGER_METRICS}
@@ -257,9 +257,9 @@ def main() -> int:
         actual["mips"] = freq_mhz * actual["retired_inst"] / actual["cycles"]
         actual["end_to_end_ms"] = actual["cycles"] / (freq_mhz * 1000.0)
         actual["coremark_reported_time_ms"] = coremark_counter_time_ms
-        output["actual_10000"] = actual
-        report_stem = "actual_10000"
-        title = "CoreMark 10000 次正式回归"
+        output["actual_18000"] = actual
+        report_stem = "actual_18000"
+        title = "CoreMark 18000 次正式回归"
     else:
         estimated: dict[str, float] = {}
         for key in INTEGER_METRICS:
@@ -273,9 +273,9 @@ def main() -> int:
         estimated["l0_hit_rate_pct"] = (
             100.0 * estimated["l0_load_hits"] / estimated["bram_loads"]
         )
-        output["estimated_10000"] = estimated
-        report_stem = "estimate_10000"
-        title = "CoreMark 10000 次外推"
+        output["estimated_18000"] = estimated
+        report_stem = "estimate_18000"
+        title = "CoreMark 18000 次外推"
 
     if args.timing_report:
         timing = parse_timing_report(args.timing_report)
@@ -295,7 +295,7 @@ def main() -> int:
         ("稳态 retired/iteration", f"{steady_retired:,.3f}"),
         ("稳态 CPI", f"{derived['steady_cpi']:.4f}"),
         ("CoreMark iterations/s", f"{derived['coremark_iterations_per_sec']:.3f}"),
-        ("10000 次稳态时间", f"{derived['benchmark_time_ms']:,.3f} ms"),
+        ("18000 次稳态时间", f"{derived['benchmark_time_ms']:,.3f} ms"),
         (
             f"{source_iterations} 次 CoreMark 计时",
             f"{derived['coremark_counter_time_ms']:,.3f} ms",
@@ -313,7 +313,7 @@ def main() -> int:
         ("稳态 L0 命中率", f"{derived['steady_l0_hit_rate_pct']:.3f}%"),
     ]
     if mode == "full":
-        total = output["actual_10000"]
+        total = output["actual_18000"]
         assert isinstance(total, dict)
         rows.append(("实跑端到端 cycles", fmt_int(float(total["cycles"]))))
         rows.append(
@@ -321,7 +321,7 @@ def main() -> int:
         )
         rows.append(("实跑端到端时间", f"{float(total['end_to_end_ms']):,.3f} ms"))
     else:
-        total = output["estimated_10000"]
+        total = output["estimated_18000"]
         assert isinstance(total, dict)
         rows.append(("外推端到端 cycles", fmt_int(float(total["cycles"]))))
         rows.append(("外推端到端时间", f"{float(total['end_to_end_ms']):,.3f} ms"))
@@ -359,7 +359,7 @@ def main() -> int:
             [
                 "",
                 "> 短测通过三项官方 CRC，但因不足 10 秒不是正式 CoreMark 成绩；",
-                "> 本报告是 16 次短测外推，不宣称为 10000 次实跑或官方 CoreMark 成绩。",
+                "> 本报告是 16 次短测外推，不宣称为 18000 次实跑或官方 CoreMark 成绩。",
             ]
         )
     md.append("")

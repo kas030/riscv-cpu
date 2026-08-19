@@ -1,57 +1,34 @@
 /*
- * coremark_cmd.c —— 官方 EEMBC CoreMark 1.0 的 msh 命令导出
+ * coremark_cmd.c —— 材料版 CoreMark 的 CPU-only 性能自动运行包装
  *
- * 编译参数 -Dmain=coremark_main 把官方 main() 重命名为内部入口；
- * 本文件导出 msh 命令并补齐缺省参数，CLI 语义为：
- *     coremark [seed1] [seed2] [seed3] [iterations]
- * 缺省（裸 coremark）：种子 0,0,0x66，迭代 10000（短测外推约 13.98 s @200 MHz）。
- * 只有显式传入 iterations=0 时才进入官方自动校准。
+ * 正式板卡命令和 Team ID 交互由 handouts 中的 core_portme.c 提供。
+ * 本文件只在 COREMARK_PERF_AUTORUN 构建中绕过串口输入，直接调用同一份
+ * 材料版 coremark_main；迭代次数仍由 ITERATIONS 编译参数唯一确定。
  */
-#include <rtthread.h>
-#include <finsh_config.h>
-#include "finsh_api.h"
-#include "core_portme.h"
-
-int coremark_main(int argc, char **argv);
-
-int coremark(int argc, char **argv)
-{
-    char *run_argv[5];
-
-    if (argc >= 5)
-        return coremark_main(argc, argv);
-
-    run_argv[0] = argv[0];
-    run_argv[1] = argc > 1 ? argv[1] : "0";
-    run_argv[2] = argc > 2 ? argv[2] : "0";
-    run_argv[3] = argc > 3 ? argv[3] : "0x66";
-    run_argv[4] = CM_STRINGIFY(ITERATIONS);
-    return coremark_main(5, run_argv);
-}
-
-MSH_CMD_EXPORT(coremark, run official CoreMark 1.0 benchmark);
-
 #ifdef COREMARK_PERF_AUTORUN
-#define CM_PERF_STRINGIFY_INNER(value) #value
-#define CM_PERF_STRINGIFY(value) CM_PERF_STRINGIFY_INNER(value)
+
+#include <rtthread.h>
+
+int coremark_main(void);
+
+/* Soft-float varargs follow the RV32 psABI stack alignment requirement.  The
+ * BSP heap is only 4-byte aligned, so a dynamically allocated thread stack can
+ * corrupt the material ee_printf %f path even though integer CoreMark is done. */
+static struct rt_thread coremark_perf_thread;
+static rt_uint8_t coremark_perf_stack[8192] __attribute__((aligned(16)));
 
 static void coremark_perf_entry(void *parameter)
 {
-    char *argv[] = {
-        "coremark", "0", "0", "0x66", CM_PERF_STRINGIFY(COREMARK_RUN_ITERATIONS)
-    };
-
     (void)parameter;
-    (void)coremark(5, argv);
+    (void)coremark_main();
 }
 
 void coremark_perf_autorun_init(void)
 {
-    rt_thread_t thread;
-
-    thread = rt_thread_create("cmperf", coremark_perf_entry, RT_NULL,
-                              8192, 11, 20);
-    if (thread != RT_NULL)
-        rt_thread_startup(thread);
+    if (rt_thread_init(&coremark_perf_thread, "cmperf", coremark_perf_entry,
+                       RT_NULL, coremark_perf_stack,
+                       sizeof(coremark_perf_stack), 11, 20) == RT_EOK)
+        rt_thread_startup(&coremark_perf_thread);
 }
+
 #endif

@@ -26,6 +26,13 @@ PYTHON ?= python3
 
 BUILD := build
 SIM_DEMO_BUILD ?= build/sim-demo
+COREMARK_SMOKE_BUILD ?= build/coremark-smoke
+COREMARK_SMOKE_ITERATIONS ?= 24
+COREMARK_ARCHIVE := $(ROOT)/handouts/coremark（已解压版本）.zip
+COREMARK_PREPARE := prepare_coremark_handout.py
+COREMARK_PREPARED := $(BUILD)/coremark-handout
+COREMARK_SRC := $(COREMARK_PREPARED)/src
+COREMARK_STAMP := $(COREMARK_PREPARED)/.prepared
 
 ARCH_FLAGS := -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medany \
 	-msmall-data-limit=0
@@ -54,15 +61,13 @@ STOP_NS ?= 4000000000
 PROGRESS_NS ?= 0
 # 仿真验收开关：1 时向 UART 注入 coremark 命令并自动校验 (tb_cpu_only.sv)
 COREMARK_VERIFY ?= 0
-# 200 MHz 下 10000 次按 16 次短测外推约 13.98 秒，满足官方“正式成绩至少
-# 运行 10 秒”规则，同时保留在赛题 30 秒满分区间内。
-COREMARK_ITERATIONS ?= 10000
+# 材料版正式配置固定执行 18000 次；短测使用独立 BUILD 目录覆盖该值。
+COREMARK_ITERATIONS ?= 18000
 # 性能开发专用：在 RT-Thread 调度器启动后由独立线程直接调用移植入口，
 # 省去 CPU-only 仿真中的逐字节 UART 命令注入；正式固件默认关闭。
 COREMARK_AUTORUN ?= 0
-COREMARK_RUN_ITERATIONS ?= $(COREMARK_ITERATIONS)
 COREMARK_AUTORUN_FLAGS := $(if $(filter 1,$(COREMARK_AUTORUN)),\
-	-DCOREMARK_PERF_AUTORUN=1 -DCOREMARK_RUN_ITERATIONS=$(COREMARK_RUN_ITERATIONS),)
+	-DCOREMARK_PERF_AUTORUN=1,)
 
 # ---- 编译对象：内核 11 个 + libcpu common 4 个 + bsp 4 个 + finsh 3 个
 KSRC := clock cpu idle ipc irq kservice mem object scheduler thread timer
@@ -70,12 +75,18 @@ KOBJ := $(KSRC:%=$(BUILD)/k_%.o)
 LIBOBJ := $(BUILD)/cpuport.o $(BUILD)/context.o
 BSPOBJ := $(BUILD)/board.o $(BUILD)/bme280.o $(BUILD)/main.o $(BUILD)/entry.o
 FINSHOBJ := $(BUILD)/finsh_shell.o $(BUILD)/finsh_cmd.o $(BUILD)/finsh_msh.o
-# ---- 官方 EEMBC CoreMark 1.0：5 个核心源 + 平台移植 + msh 导出
+# ---- handouts CoreMark：5 个核心源 + 材料自带平台/打印代码 + autorun 包装
 COREOBJ := $(BUILD)/cm_list.o $(BUILD)/cm_main.o $(BUILD)/cm_matrix.o \
-           $(BUILD)/cm_state.o $(BUILD)/cm_util.o $(BUILD)/cm_portme.o \
-           $(BUILD)/cm_cmd.o
+	           $(BUILD)/cm_state.o $(BUILD)/cm_util.o $(BUILD)/cm_portme.o \
+	           $(BUILD)/cm_printf.o $(BUILD)/cm_cvt.o $(BUILD)/cm_cmd.o
 OBJS := $(KOBJ) $(LIBOBJ) $(BSPOBJ) $(FINSHOBJ) $(COREOBJ)
-DEPS := $(OBJS:.o=.d)
+ALL_DEPS := $(OBJS:.o=.d)
+CORE_DEPS := $(COREOBJ:.o=.d)
+# 分支升级后可能残留指向已移除 coremark/ 目录的旧依赖缓存；只接纳不含
+# 该路径的 CoreMark .d，避免旧生成物阻断材料源码的首次重建。
+SAFE_CORE_DEPS := $(foreach dep,$(wildcard $(CORE_DEPS)),\
+	$(if $(findstring coremark/,$(file <$(dep))),,$(dep)))
+DEPS := $(filter-out $(CORE_DEPS),$(ALL_DEPS)) $(SAFE_CORE_DEPS)
 
 .PHONY: all run coremark-smoke size clean FORCE
 
@@ -112,20 +123,23 @@ $(BUILD)/finsh_cmd.o: $(FINSH)/cmd.c rtconfig.h | $(BUILD)
 $(BUILD)/finsh_msh.o: $(FINSH)/msh.c rtconfig.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# ---- CoreMark 公共编译参数（各算法的展开策略由上方 CORE_*_OPT 指定；
-#      -Dmain=coremark_main 把 core_main.c 的 main 重命名为内部入口，
-#      coremark_cmd.c 负责 msh 缺省参数和可选的性能自动运行线程。
-#      core_main.c/coremark.h 另含单精度计时与无 libc 输出适配，差异说明见
-#      rt-thread/README.md）
+# ---- CoreMark 公共编译参数。源码由校验脚本直接从 handouts ZIP 生成；
+#      算法文件保持材料原文，脚本只实现材料中预留的计时/UART平台钩子。
+#      MAIN_HAS_NOARGC=1 与材料 core_portme.c 的 coremark_main(void) 调用一致。
 CORE_CFLAGS_COMMON := $(ARCH_FLAGS) -I. -I$(KERNEL)/include -I$(FINSH) \
-	-MMD -MP -Icoremark -Dmain=coremark_main -DPERFORMANCE_RUN=1 \
+	-MMD -MP -I$(COREMARK_SRC) -Dmain=coremark_main -DPERFORMANCE_RUN=1 \
 	-DTOTAL_DATA_SIZE=2000 -DITERATIONS=$(COREMARK_ITERATIONS) \
-	-DHAS_FLOAT=1 -DHARDWARE_FPU_SINGLE=1
+	-DMAIN_HAS_NOARGC=1 -DHAS_FLOAT=1 -DHAS_STDIO=0 -DHAS_PRINTF=0 \
+	-DFLAGS_STR=\"handouts-coremark-rv32im-zicsr-O3\"
 CORE_CFLAGS := $(CORE_CFLAGS_COMMON) $(CORE_OPT)
 CORE_LIST_CFLAGS := $(CORE_CFLAGS_COMMON) $(CORE_LIST_OPT)
 CORE_MATRIX_CFLAGS := $(CORE_CFLAGS_COMMON) $(CORE_MATRIX_OPT)
 CORE_STATE_CFLAGS := $(CORE_CFLAGS_COMMON) $(CORE_STATE_OPT)
 CORE_UTIL_CFLAGS := $(CORE_CFLAGS_COMMON) $(CORE_UTIL_OPT)
+
+# 每个 BUILD 目录都从指定 ZIP 独立生成编译源和 provenance.json。
+$(COREMARK_STAMP): $(COREMARK_ARCHIVE) $(COREMARK_PREPARE) | $(BUILD)
+	$(PYTHON) $(COREMARK_PREPARE) $(COREMARK_ARCHIVE) $(COREMARK_PREPARED)
 
 # COREMARK_ITERATIONS/flags 变化时强制重编全部 CoreMark 对象。
 $(BUILD)/coremark_config.txt: FORCE | $(BUILD)
@@ -140,25 +154,31 @@ $(BUILD)/coremark_autorun_config.txt: FORCE | $(BUILD)
 	@printf '%s\n' '$(COREMARK_AUTORUN_FLAGS)' > $@.tmp \
 		&& (cmp -s $@ $@.tmp || mv $@.tmp $@) && rm -f $@.tmp
 
-$(BUILD)/cm_list.o: coremark/core_list_join.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_LIST_CFLAGS) -c $< -o $@
+$(BUILD)/cm_list.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_LIST_CFLAGS) -c $(COREMARK_SRC)/core_list_join.c -o $@
 
-$(BUILD)/cm_main.o: coremark/core_main.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_CFLAGS) -c $< -o $@
+$(BUILD)/cm_main.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $(COREMARK_SRC)/core_main.c -o $@
 
-$(BUILD)/cm_matrix.o: coremark/core_matrix.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_MATRIX_CFLAGS) -c $< -o $@
+$(BUILD)/cm_matrix.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_MATRIX_CFLAGS) -c $(COREMARK_SRC)/core_matrix.c -o $@
 
-$(BUILD)/cm_state.o: coremark/core_state.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_STATE_CFLAGS) -c $< -o $@
+$(BUILD)/cm_state.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_STATE_CFLAGS) -c $(COREMARK_SRC)/core_state.c -o $@
 
-$(BUILD)/cm_util.o: coremark/core_util.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_UTIL_CFLAGS) -c $< -o $@
+$(BUILD)/cm_util.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_UTIL_CFLAGS) -c $(COREMARK_SRC)/core_util.c -o $@
 
-$(BUILD)/cm_portme.o: coremark/core_portme.c coremark/coremark.h coremark/core_portme.h rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
-	$(CC) $(CORE_CFLAGS) -c $< -o $@
+$(BUILD)/cm_portme.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $(COREMARK_SRC)/core_portme.c -o $@
 
-$(BUILD)/cm_cmd.o: coremark_cmd.c rtconfig.h $(BUILD)/coremark_config.txt $(BUILD)/coremark_autorun_config.txt | $(BUILD)
+$(BUILD)/cm_printf.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $(COREMARK_SRC)/ee_printf.c -o $@
+
+$(BUILD)/cm_cvt.o: $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt | $(BUILD)
+	$(CC) $(CORE_CFLAGS) -c $(COREMARK_SRC)/cvt.c -o $@
+
+$(BUILD)/cm_cmd.o: coremark_cmd.c $(COREMARK_STAMP) rtconfig.h $(BUILD)/coremark_config.txt $(BUILD)/coremark_autorun_config.txt | $(BUILD)
 	$(CC) $(CORE_CFLAGS) $(COREMARK_AUTORUN_FLAGS) -c $< -o $@
 
 # main.c 编译配置变化时强制重编（内容不变则不动时间戳）
@@ -189,20 +209,22 @@ $(BUILD)/rtthread.bram.coe: $(BUILD)/rtthread.bram.bin
 
 run:
 	$(MAKE) all BUILD=$(SIM_DEMO_BUILD) DEMO_FINISH_THREAD=1
-	$(ROOT)/sim_cpu_only/run_verilator.sh \
+	env -u CPATH $(ROOT)/sim_cpu_only/run_verilator.sh \
 		IROM_COE=$(abspath $(SIM_DEMO_BUILD)/rtthread.irom.coe) \
 		BRAM_COE=$(abspath $(SIM_DEMO_BUILD)/rtthread.bram.coe) \
 		PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF EXPECTED_LED=C0DEC0DE \
 		STOP_NS=$(STOP_NS) PROGRESS_NS=$(PROGRESS_NS) TRACE=0 \
 		COREMARK_VERIFY=$(COREMARK_VERIFY)
 
-coremark-smoke: $(BUILD)/rtthread.irom.coe $(BUILD)/rtthread.bram.coe
-	$(ROOT)/sim_cpu_only/run_verilator.sh \
-		IROM_COE=$(abspath $(BUILD)/rtthread.irom.coe) \
-		BRAM_COE=$(abspath $(BUILD)/rtthread.bram.coe) \
+coremark-smoke:
+	$(MAKE) all BUILD=$(COREMARK_SMOKE_BUILD) \
+		COREMARK_ITERATIONS=$(COREMARK_SMOKE_ITERATIONS) COREMARK_AUTORUN=0
+	env -u CPATH $(ROOT)/sim_cpu_only/run_verilator.sh \
+		IROM_COE=$(abspath $(COREMARK_SMOKE_BUILD)/rtthread.irom.coe) \
+		BRAM_COE=$(abspath $(COREMARK_SMOKE_BUILD)/rtthread.bram.coe) \
 		PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF EXPECTED_LED=C0DEC0DE \
 		CPU_FREQ_MHZ=200.0 STOP_NS=350000000 PROGRESS_NS=0 TRACE=0 \
-		COREMARK_VERIFY=1
+		COREMARK_VERIFY=1 COREMARK_ITERATIONS=$(COREMARK_SMOKE_ITERATIONS)
 
 size: $(BUILD)/rtthread.elf
 	@$(SIZE) $<

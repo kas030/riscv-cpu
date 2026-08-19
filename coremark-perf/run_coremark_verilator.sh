@@ -9,8 +9,8 @@ RUNNER="$ROOT_DIR/sim_cpu_only/run_verilator.sh"
 TERMINAL_TEE="$ROOT_DIR/sim_cpu_only/terminal_tee.py"
 ANALYZER="$SCRIPT_DIR/tools/analyze_coremark_run.py"
 PROTECTED_MANIFEST="$SCRIPT_DIR/protected_sources.sha256"
-FIXED_TEST="rt-thread/coremark-2k-performance"
-TARGET_ITERATIONS=10000
+FIXED_TEST="rt-thread/handouts-coremark-2k-performance"
+TARGET_ITERATIONS=18000
 DEFAULT_PROGRESS_NS=100000000
 
 usage() {
@@ -21,7 +21,7 @@ usage() {
         '  ./coremark-perf/run_coremark_verilator.sh stage    [--tag TAG] [NAME=VALUE ...]' \
         '  ./coremark-perf/run_coremark_verilator.sh full     [--tag TAG] [NAME=VALUE ...]' \
         '' \
-        'estimate=一次16次运行，以8/16观察点外推10000次；quick=1次；stage=64次；full=实跑10000次。' \
+        'estimate=一次16次运行，以8/16观察点外推18000次；quick=1次；stage=64次；full=实跑18000次。' \
         'NAME=VALUE 传给 CPU-only Makefile；CROSS 请用环境变量设置。'
 }
 
@@ -61,10 +61,10 @@ case "$mode" in
         ;;
     full)
         iterations=$TARGET_ITERATIONS
-        snapshot_low=5000
+        snapshot_low=9000
         snapshot_high=$TARGET_ITERATIONS
         require_valid=1
-        default_stop_ns=26000000000
+        default_stop_ns=46000000000
         ;;
     *)
         die "未知模式 $mode"
@@ -125,8 +125,7 @@ printf '检查 CoreMark 核心文件保护清单...\n'
 
 printf '构建 RT-Thread/CoreMark 固件（报告目标迭代数=%s）...\n' "$TARGET_ITERATIONS"
 make -C "$BSP_DIR" BUILD="$BUILD_DIR" CROSS="$cross" \
-    COREMARK_ITERATIONS="$TARGET_ITERATIONS" COREMARK_AUTORUN=1 \
-    COREMARK_RUN_ITERATIONS="$iterations" all
+    COREMARK_ITERATIONS="$iterations" COREMARK_AUTORUN=1 all
 
 elf="$BUILD_DIR/rtthread.elf"
 irom="$BUILD_DIR/rtthread.irom.coe"
@@ -155,6 +154,8 @@ mkdir -p "$run_dir/firmware"
 cp -- "$elf" "$run_dir/firmware/rtthread.elf"
 cp -- "$irom" "$run_dir/firmware/rtthread.irom.coe"
 cp -- "$bram" "$run_dir/firmware/rtthread.bram.coe"
+cp -- "$BUILD_DIR/coremark-handout/provenance.json" \
+    "$run_dir/firmware/coremark-provenance.json"
 cp -- "$PROTECTED_MANIFEST" "$run_dir/protected_sources.sha256"
 "${cross}objdump" -d "$elf" > "$run_dir/firmware/rtthread.disasm"
 
@@ -173,8 +174,8 @@ done
 find "$ROOT_DIR/rtl" -type f \( -name '*.v' -o -name '*.sv' \) -print0 |
     LC_ALL=C sort -z |
     xargs -0 sha256sum > "$run_dir/rtl.sha256"
-sha256sum "$BSP_DIR/coremark/core_portme.c" \
-          "$BSP_DIR/coremark/core_portme.h" \
+sha256sum "$ROOT_DIR/handouts/coremark（已解压版本）.zip" \
+          "$BSP_DIR/prepare_coremark_handout.py" \
           "$BSP_DIR/coremark_cmd.c" \
           "$BSP_DIR/main.c" \
           "$BSP_DIR/Makefile" > "$run_dir/port.sha256"
@@ -185,7 +186,7 @@ printf '结果目录：%s\n' "$run_dir"
 printf 'core_bench_list：0x%s\n' "$entry_hex"
 printf '\n=== Verilator: CoreMark iterations=%s ===\n' "$iterations"
 set +e
-"$RUNNER" \
+env -u CPATH "$RUNNER" \
     "IROM_COE=$run_dir/firmware/rtthread.irom.coe" \
     "BRAM_COE=$run_dir/firmware/rtthread.bram.coe" \
     PASS_LED=C0DEC0DE FAIL_LED=DEADBEEF \

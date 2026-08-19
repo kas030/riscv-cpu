@@ -1,8 +1,8 @@
 # RT-Thread Nano 3.1.5 for mycpu（RV32IM）
 
 RT-Thread Nano 3.1.5 在自研 32 位 RISC-V CPU（RV32I + RV32M + Zicsr 陷阱）上的移植，
-含完整内核源码（vendor）、`bsp/mycpu` 板级移植与演示应用。正常板卡镜像用
-物理 LED1 标记 CoreMark 正式计时区间；Verilator CPU-only 的
+含完整内核源码（vendor）、`bsp/mycpu` 板级移植与演示应用。CoreMark 使用
+`handouts/coremark（已解压版本）.zip` 中的材料源码；Verilator CPU-only 的
 `make run` 会单独启用 `0xC0DEC0DE` 完成判据。
 
 ## 目录结构
@@ -111,46 +111,34 @@ SDO 是否固定到 GND/3.3V，并确认已重新生成固件 COE 和 FPGA bitst
   若此处忙等，会饿死 idle 线程——mycpu 的 tick 由 idle hook 轮询 COUNTER
   产生，系统时间将停止，演示线程永不醒来。
 
-## 官方 CoreMark 1.0
+## 材料版 CoreMark
 
-`bsp/mycpu/coremark/` 的上游源文件和 `coremark.md5` 来自 EEMBC 官方
-CoreMark 仓库。按该清单核对，`core_list_join.c`、`core_matrix.c`、
-`core_state.c` 和 `core_util.c` 保持上游内容；`core_main.c` 与 `coremark.h`
-为适配本平台的单精度计时换算和无 libc 结果输出做过修改，因此不会通过原始
-MD5 校验。相关修改位于自动迭代次数估算、计时结果换算和报告输出路径，不改变
-计时区内的 `iterate` 调用或三类工作负载算法。
+唯一输入是仓库跟踪的 `handouts/coremark（已解压版本）.zip`，其 SHA-256 为
+`374136da9368d508acd999712e21e1a0f6c799da8571a33d48f1a26a2610ce05`。
+每次构建都会先校验压缩包、11 个成员的逐文件哈希和成员集合，再在当前
+`BUILD` 下生成 `coremark-handout/upstream/`、`coremark-handout/src/` 和
+`provenance.json`。算法文件、`core_main.c` 和 `coremark.h` 从材料逐字节编译；
+生成脚本只补齐材料预留的平台钩子：`size_t` 标准定义、COUNTER 计时、
+RT-Thread 控制台字符输出、freestanding FinSH 头文件和材料浮点格式化所需的
+本地 `modf`。旧的内置
+`bsp/mycpu/coremark/` 副本已移除，避免构建误用非材料源码。
 
-本平台的计时直接读取 COUNTER 毫秒计数，避免 CoreMark 忙跑期间 idle hook
-不执行而导致 RT-Thread tick 停止。停止计时后，`0x80200070`--`0x80200080`
-的最小化 MMIO 单精度 FPU 仅负责 `ticks / 1000` 和
-`iterations / seconds` 换算；不向 CoreMark 主循环加入浮点指令，也不要求
-CPU 实现 RV32F 指令集。
-
-CoreMark 通过 finsh 命令运行：
+正式固件用材料定义的 performance seeds `0,0,0x66`、总数据量 2000 字节和
+编译期固定的 18000 次迭代。`mycpu` 未实现材料默认使用的 `mcycle`，因此平台
+钩子读取 `0x80200050` 的 1 ms COUNTER；这也避免 CoreMark 忙跑期间 idle hook
+不执行而使 RT-Thread tick 停止。运行方式为：
 
 ```text
 msh >coremark
+Please enter your Team ID and press Enter:
+team id: YOUR_TEAM_ID
 ```
 
-裸命令使用标准性能种子 `0,0,0x66`、总数据量 2000 字节和 10000 次迭代；
-200 MHz 配置下，CoreMark 对象使用 `-O3`、其余固件保持 `-Os` 时，按 16 次短测
-外推约 13.98 秒，满足官方结果至少运行 10 秒的规则。输出应包含
-`Correct operation validated`、三项 CRC `e714 / 1fd7 / 8e3a` 和 CoreMark 分数。
-官方验证种子可另行运行：
-
-```text
-msh >coremark 0x3415 0x3415 0x66 10000
-```
-
-此时三项 CRC 应为 `e3c1 / 0747 / 8d84`。命令行第 4 个参数可覆盖迭代数，
-但少于 10 秒的结果只适合调试，不能作为正式成绩。
-
-CoreMark 进入正式计时段前，LED 寄存器写入 `0x00010000`，只点亮
-物理 LED1；内部停止计时后写入 `0` 熄灭。两次 MMIO 写均位于
-CoreMark 计时区间外，不计入报告成绩；评委可在 LED1 点亮时开始秒表、
-熄灭时停止秒表。裸命令由 msh 包装层补齐为标准性能种子和 10000 次，
-不再误入约 2--3 秒的自动校准；仍可通过第 4 个参数指定其他次数。只有明确把
-第 4 个参数设为 0 时，官方自动校准才会产生多次 LED 脉冲。
+输出应回显 Team ID、`Iterations : 18000`、三项 CRC
+`e714 / 1fd7 / 8e3a` 和 `Correct operation validated`。迭代数和性能 seeds
+均由材料的 `core_portme.c` volatile 变量提供，shell 参数不再覆盖它们。
+`make coremark-smoke` 会在独立构建目录将迭代数改为 24，只用于检查交互、CRC、
+材料自带 `ee_printf` 输出和返回 msh；其少于 10 秒的结果不是正式成绩。
 
 ## 构建与运行
 
@@ -164,7 +152,7 @@ cd bsp/mycpu
 make              # 编译板卡镜像：禁用 3 秒完成线程，生成 irom/bram .coe
 make run          # 全量仿真：仅该目标启用 3 秒完成线程作 PASS 判据
 make run DEMO_RUN_MS=500 STOP_NS=900000000   # 缩短演示与仿真时间
-make coremark-smoke # 24 次短测，检查官方性能种子 CRC 与返回 msh
+make coremark-smoke # 24 次材料版短测，检查 Team ID、性能种子 CRC 与返回 msh
 ```
 
 `coremark-smoke` 故意小于 10 秒，因此会检查官方的最短时间警告；它只证明 RTL
