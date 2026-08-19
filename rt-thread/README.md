@@ -120,14 +120,15 @@ SDO 是否固定到 GND/3.3V，并确认已重新生成固件 COE 和 FPGA bitst
 每次构建都会先校验压缩包、11 个成员的逐文件哈希和成员集合，再在当前
 `BUILD` 下生成 `coremark-handout/upstream/`、`coremark-handout/src/` 和
 `provenance.json`。算法文件、`core_main.c` 和 `coremark.h` 从材料逐字节编译；
-生成脚本只补齐材料预留的平台钩子：`size_t` 标准定义、COUNTER 计时、
+生成脚本只补齐材料预留的平台钩子：`size_t` 标准定义、COUNTER_US 计时、
 RT-Thread 控制台字符输出、freestanding FinSH 头文件和材料浮点格式化所需的
 本地 `modf`。旧的内置
 `bsp/mycpu/coremark/` 副本已移除，避免构建误用非材料源码。
 
 正式固件用材料定义的 performance seeds `0,0,0x66`、总数据量 2000 字节和
 编译期固定的 18000 次迭代。`mycpu` 未实现材料默认使用的 `mcycle`，因此平台
-钩子读取 `0x80200050` 的 1 ms COUNTER；这也避免 CoreMark 忙跑期间 idle hook
+钩子读取 `0x80200054` 的 1 us COUNTER_US；计时器仍由 `0x80200050` 的控制写入
+统一启停。这也避免 CoreMark 忙跑期间 idle hook
 不执行而使 RT-Thread tick 停止。运行方式为：
 
 ```text

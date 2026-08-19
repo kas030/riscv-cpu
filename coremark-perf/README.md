@@ -19,7 +19,7 @@ CRC 校验和返回 shell 的真实路径，同时把开发仿真从约 23 秒�
 
 `COREMARK_PERF` 仿真还会直接捕获 CPU 对 UART DATA MMIO 的写入，并在字节流中
 校验参数、迭代数、三项 CRC、十秒规则和最终 shell 提示符。因为 CoreMark
-timed section 内不输出字符，这不改变被测算法周期。COUNTER 在此模式下由
+timed section 内不输出字符，这不改变被测算法周期。COUNTER_US 在此模式下由
 CPU 周期按当前 `CPU_FREQ_MHZ` 等价分频，避免额外的 50 MHz 时钟事件；普通
 CPU-only 模式仍使用真实 UART/twin/bridge 和独立 COUNTER 时钟。
 
@@ -75,10 +75,9 @@ metric18000 = final16 + (18000 - 16) × 每次增量
 
 `metric18000` 保留启动 RT-Thread、调度 autorun 线程、初始化和结果输出等固定开销。
 报告还会用 `cycles/iteration` 单独计算稳态 18000 次时间与
-`iterations/second`，避免 COUNTER 的 1 ms 量化误差。分析器同时解析 CoreMark
+`iterations/second`。CoreMark 自身使用 1 us COUNTER_US，分析器同时解析其
 自己的 `Total ticks`，将观察点估算的 16 次耗时与它交叉校验；两者超出计时器
-量化和少量边界指令所允许的误差时直接拒绝生成报告。`stage` 的 64 次样本还会
-把 1 ms 计时量化对应的 18000 次外推不确定度降到约 ±0.29 秒。
+量化和少量边界指令所允许的误差时直接拒绝生成报告。
 
 短测会正常打印官方的“运行不足 10 秒”错误，因此不是可发布的 CoreMark 成绩；
 它必须同时满足以下条件才可用于外推：

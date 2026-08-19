@@ -63,7 +63,8 @@
 - KEY：`0x8020_0010`
 - SEG：`0x8020_0020`
 - LED：`0x8020_0040`
-- COUNTER：`0x8020_0050`
+- COUNTER：`0x8020_0050`（毫秒计数/控制）
+- COUNTER_US：`0x8020_0054`（微秒计数，只读）
 - UART_DATA：`0x8020_0060`
 - UART_STATUS：`0x8020_0064`
 - FPU_A/B/CMD/STATUS/RESULT：`0x8020_0070`—`0x8020_0080`
@@ -72,7 +73,7 @@
 - I2C_DATA：`0x8020_008C`
 - I2C_CTRL/STATUS：`0x8020_0090`
 
-COUNTER 写入 `0x8000_0000` 开始计数，写入 `0xFFFF_FFFF` 停止计数。链接脚本、汇编注释或旧测试若与 RTL 不一致，先按 `perip_bridge.sv` 核对实际行为。
+向 COUNTER 写入 `0x8000_0000` 会同时启动毫秒和微秒计数，写入 `0xFFFF_FFFF` 同时停止；COUNTER_US 只读。链接脚本、汇编注释或旧测试若与 RTL 不一致，先按 `perip_bridge.sv` 核对实际行为。
 
 ## 接口与编码约定
 

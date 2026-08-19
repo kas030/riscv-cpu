@@ -26,7 +26,8 @@ module counter(
     input  logic         rst,
 
     input  logic         cnt_enable_cpu,
-    output logic [31:0]  perip_rdata
+    output logic [31:0]  perip_rdata,
+    output logic [31:0]  perip_us_rdata
 );
 
     function automatic logic [31:0] gray_to_bin(input logic [31:0] gray);
@@ -42,8 +43,12 @@ module counter(
     logic [15:0] cnt_1ms;
     logic [31:0] cnt_ms_bin;
     logic [31:0] cnt_ms_gray;
+    logic [5:0] cnt_1us;
+    logic [31:0] cnt_us_bin;
+    logic [31:0] cnt_us_gray;
     logic cnt_enable_cnt_d1, cnt_enable_cnt_d2;
     logic [31:0] cnt_gray_cpu_d1, cnt_gray_cpu_d2;
+    logic [31:0] cnt_us_gray_cpu_d1, cnt_us_gray_cpu_d2;
 
     // CPU->counter CDC: synchronize level control into cnt_clk domain.
     always_ff @(posedge cnt_clk) begin
@@ -80,19 +85,48 @@ module counter(
         end
     end
 
+    // CoreMark 高分辨率读口：50 MHz 外设时钟每 50 拍产生 1 us tick。
+    always_ff @(posedge cnt_clk) begin
+        if (rst) begin
+            cnt_1us <= 0;
+        end else if (cnt_enable_cnt_d2) begin
+            if (cnt_1us == 49) begin
+                cnt_1us <= 0;
+            end else begin
+                cnt_1us <= cnt_1us + 1;
+            end
+        end else begin
+            cnt_1us <= 0;
+        end
+    end
+
+    always_ff @(posedge cnt_clk) begin
+        if (rst) begin
+            cnt_us_bin <= 0;
+        end else if (cnt_enable_cnt_d2 && cnt_1us == 49) begin
+            cnt_us_bin <= cnt_us_bin + 1;
+        end
+    end
+
     assign cnt_ms_gray = cnt_ms_bin ^ (cnt_ms_bin >> 1);
+    assign cnt_us_gray = cnt_us_bin ^ (cnt_us_bin >> 1);
 
     // Counter->CPU CDC: Gray code allows safe multi-bit crossing.
     always_ff @(posedge cpu_clk) begin
         if (rst) begin
             cnt_gray_cpu_d1 <= 32'd0;
             cnt_gray_cpu_d2 <= 32'd0;
+            cnt_us_gray_cpu_d1 <= 32'd0;
+            cnt_us_gray_cpu_d2 <= 32'd0;
         end else begin
             cnt_gray_cpu_d1 <= cnt_ms_gray;
             cnt_gray_cpu_d2 <= cnt_gray_cpu_d1;
+            cnt_us_gray_cpu_d1 <= cnt_us_gray;
+            cnt_us_gray_cpu_d2 <= cnt_us_gray_cpu_d1;
         end
     end
 
     assign perip_rdata = gray_to_bin(cnt_gray_cpu_d2);
+    assign perip_us_rdata = gray_to_bin(cnt_us_gray_cpu_d2);
 
 endmodule

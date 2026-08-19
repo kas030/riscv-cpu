@@ -13,7 +13,7 @@
 
 允许调整编译参数进行编译优化；每轮结果必须记录实际使用的编译参数，比较时明确区分编译参数变化和 RTL 变化。不做 BHT/BTB 容量优化尝试，也不做 L0 容量优化尝试；上述结构保持当前容量，优化工作集中在其他编译、流水线、控制和数据通路方向。
 
-专用性能仿真仅对端口时序做两项等价加速：UART 写直接进入校验字节流，COUNTER 毫秒值由 CPU 周期分频得到。CoreMark timed section 不访问 UART，因此观察点的 CPU 周期差与完整外设模型一致。对 UART 本身或跨时钟桥的修改仍必须使用普通 CPU-only 回归，不能用本模式验收。
+专用性能仿真仅对端口时序做两项等价加速：UART 写直接进入校验字节流，COUNTER_US 微秒值由 CPU 周期分频得到。CoreMark timed section 不访问 UART，因此观察点的 CPU 周期差与完整外设模型一致。对 UART 本身或跨时钟桥的修改仍必须使用普通 CPU-only 回归，不能用本模式验收。
 
 ## 2. 首次基线
 
@@ -65,7 +65,7 @@ coremark-perf/results/baseline-estimate/
 
 第 N 个观察点位于第 N 次迭代的第二次 `core_bench_list` 调用入口。入口按 WB 退休事件识别，避免流水线停顿使 EX valid/PC 保持时重复计数。虽然观察点不是循环末尾，但第 8 与第 16 个同相位观察点之间恰好包含 8 个完整迭代。分析器按差值计算每次迭代增量，再从 16 次运行的最终累计统计增加 17984 个增量。
 
-分析器还把观察点得到的 `cycles/iteration × 运行次数` 与 CoreMark 自身的 `Total ticks` 对照。考虑 COUNTER 的 1 ms 分辨率和 timed section 边界上的少量指令后仍不一致时，报告会失败，防止错误观察点产生看似合理的外推结果。
+分析器还把观察点得到的 `cycles/iteration × 运行次数` 与 CoreMark 自身的 `Total ticks` 对照。考虑 COUNTER_US 的 1 us 分辨率和 timed section 边界上的少量指令后仍不一致时，报告会失败，防止错误观察点产生看似合理的外推结果。
 
 报告中的两个时间含义不同：
 

@@ -208,7 +208,8 @@ L0 是内部性能结构，不提供软件可见的缓存控制或一致性指�
 | `0x80200010` | KEY | 是 | 否 | 低 8 位有效 |
 | `0x80200020` | SEG | 是 | 是 | 数码管写数据回读 |
 | `0x80200040` | LED | 否 | 是 | 32 位 LED 输出 |
-| `0x80200050` | COUNTER | 是 | 是 | 计数值/控制命令 |
+| `0x80200050` | COUNTER | 是 | 是 | 毫秒计数值/控制命令 |
+| `0x80200054` | COUNTER_US | 是 | 否 | 微秒计数值；与 COUNTER 同步启停 |
 | `0x80200060` | UART_DATA | 是 | 是 | 串口数据：写=发送，读=接收并清除 RX_VALID |
 | `0x80200064` | UART_STATUS | 是 | 是 | 串口状态：bit0=TX_BUSY，bit1=RX_VALID，bit2=PASSTHROUGH；写任意值=请求进入透传 |
 | `0x80200070` | FPU_A | 是 | 是 | CoreMark 报告换算用单精度 FPU 操作数 A |
@@ -221,7 +222,7 @@ L0 是内部性能结构，不提供软件可见的缓存控制或一致性指�
 | `0x8020008C` | I2C_DATA | 是 | 是 | I²C 写数据/最近一次读数据 |
 | `0x80200090` | I2C_CTRL/STATUS | 是 | 是 | 写 bit0=START、bit1=READ；读 bit0=BUSY、bit1=DONE、bit2=NACK |
 
-COUNTER 写入 `0x80000000` 开始计数，写入 `0xFFFFFFFF` 停止计数。
+向 COUNTER 写入 `0x80000000` 会同时启动两个计数读口，写入 `0xFFFFFFFF` 同时停止；COUNTER_US 不接受控制写入。
 
 UART 为 9600 8N1，经 `twin_controller` 透传协议接入板级串口：
 RT-Thread 启动时主动写 UART_STATUS 请求透传（串口终端即连即用）；

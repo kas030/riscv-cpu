@@ -70,15 +70,15 @@ def adapt_sources(raw: dict[str, bytes]) -> tuple[dict[str, bytes], list[str]]:
         "}",
         "CORETIMETYPE barebones_clock()\n"
         "{\n"
-        "    /* mycpu 尚未实现 mcycle；板级 COUNTER 提供 1 ms 单调计时。 */\n"
-        "    return (CORETIMETYPE)(*(volatile rt_uint32_t *)0x80200050ul);\n"
+        "    /* mycpu 尚未实现 mcycle；板级 COUNTER_US 提供 1 us 单调计时。 */\n"
+        "    return (CORETIMETYPE)(*(volatile rt_uint32_t *)0x80200054ul);\n"
         "}",
         "core_portme.c",
     )
     port = replace_once(
         port,
         "#define EE_TICKS_PER_SEC  80000000  // 你的 CPU 频率",
-        "#define EE_TICKS_PER_SEC  1000  // mycpu COUNTER ticks per second",
+        "#define EE_TICKS_PER_SEC  1000000  // mycpu COUNTER_US ticks per second",
         "core_portme.c",
     )
     port = replace_once(
@@ -90,7 +90,7 @@ def adapt_sources(raw: dict[str, bytes]) -> tuple[dict[str, bytes], list[str]]:
         "core_portme.c",
     )
     adapted["core_portme.c"] = port.encode("utf-8")
-    adaptations.append("core_portme.c: bind barebones_clock to the 1 ms board COUNTER")
+    adaptations.append("core_portme.c: bind barebones_clock to the 1 us board COUNTER_US")
     adaptations.append("core_portme.c: use the freestanding FinSH export headers")
 
     printf_source = raw["ee_printf.c"].decode("utf-8")

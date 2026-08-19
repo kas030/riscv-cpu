@@ -11,7 +11,7 @@ from pathlib import Path
 
 TARGET_ITERATIONS = 18_000
 FIXED_TEST = "rt-thread/handouts-coremark-2k-performance"
-COREMARK_TICKS_PER_SECOND = 1_000
+COREMARK_TICKS_PER_SECOND = 1_000_000
 INTEGER_METRICS = {
     "cnt_ms": "cnt_ms",
     "cycles": "cycles",
@@ -198,7 +198,7 @@ def main() -> int:
     coremark_counter_time_ms = float(final["coremark_total_ticks"]) * tick_ms
     timer_error_ms = source_steady_time_ms - coremark_counter_time_ms
     timer_error_pct = 100.0 * timer_error_ms / source_steady_time_ms
-    # CoreMark reads a 1 ms free-running counter at each end of the timed section.
+    # CoreMark reads a 1 us free-running counter at each end of the timed section.
     # The difference may differ from the exact elapsed time by less than one tick.
     # Two ticks leave margin for the few instructions outside the repeated body.
     timer_tolerance_ms = max(2.0 * tick_ms, 0.02 * source_steady_time_ms)

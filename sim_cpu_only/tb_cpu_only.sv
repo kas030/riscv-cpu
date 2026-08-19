@@ -10,6 +10,7 @@ module tb_cpu_only;
     localparam SEG_ADDR  = 32'h8020_0020;
     localparam LED_ADDR  = 32'h8020_0040;
     localparam CNT_ADDR  = 32'h8020_0050;
+    localparam CNT_US_ADDR = 32'h8020_0054;
     localparam UART_DATA_ADDR   = 32'h8020_0060;
     localparam UART_STATUS_ADDR = 32'h8020_0064;
     localparam FPU_BASE_ADDR    = 32'h8020_0070;
@@ -35,8 +36,11 @@ module tb_cpu_only;
     logic        seg_written = 1'b0;
     logic        cnt_enable = 1'b0;
     logic [31:0] cnt_ms = 32'd0;
+    logic [31:0] cnt_us = 32'd0;
     logic [15:0] cnt_1ms = 16'd0;
+    logic [5:0]  cnt_1us = 6'd0;
     logic [31:0] cnt_cpu_cycles = 32'd0;
+    logic [9:0]  cnt_us_to_ms = 10'd0;
     logic        cnt_started = 1'b0;
     time         cnt_start_time = 0;
     logic [31:0] irom [0:16383];
@@ -109,8 +113,8 @@ module tb_cpu_only;
     localparam bit COREMARK_REQUIRE_VALID = `SIM_COREMARK_REQUIRE_VALID;
     localparam real           CPU_FREQ_MHZ     = `SIM_CPU_FREQ_MHZ;
     localparam real           CPU_HALF_PERIOD_NS = 500.0 / CPU_FREQ_MHZ;
-    localparam int unsigned   PERF_COUNTER_CYCLES_PER_MS =
-        $rtoi(CPU_FREQ_MHZ * 1000.0);
+    localparam int unsigned   PERF_COUNTER_CYCLES_PER_US =
+        $rtoi(CPU_FREQ_MHZ);
     localparam bit            HAS_EXPECTED_LED = `SIM_HAS_EXPECTED_LED;
     localparam [31:0]         EXPECTED_LED     = `SIM_EXPECTED_LED;
     localparam [31:0]         PASS_LED         = `SIM_PASS_LED;
@@ -317,6 +321,7 @@ module tb_cpu_only;
                 KEY_ADDR: perip_rdata = {24'd0, twin_key};
                 SEG_ADDR: perip_rdata = seg_wdata;
                 CNT_ADDR: perip_rdata = cnt_ms;
+                CNT_US_ADDR: perip_rdata = cnt_us;
 `ifdef COREMARK_PERF
                 /* CoreMark 计时区间不访问 UART。性能模式直接报告透传
                  * 已就绪且 TX 空闲，仅省略与算法无关的位级等待。 */
@@ -459,28 +464,39 @@ module tb_cpu_only;
     end
 
 `ifdef COREMARK_PERF
-    /* COUNTER 仍以毫秒返回被测 CPU 时间；用 CPU 周期等价分频，
+    /* COUNTER_US 以微秒返回被测 CPU 时间；用 CPU 周期等价分频，
      * 避免为与 CoreMark 无关的 50 MHz 时钟产生额外仿真事件。 */
     always_ff @(posedge clk) begin
         if (rst) begin
             cnt_ms <= 32'd0;
+            cnt_us <= 32'd0;
             cnt_cpu_cycles <= 32'd0;
+            cnt_us_to_ms <= 10'd0;
         end else if (cnt_enable) begin
-            if (cnt_cpu_cycles == PERF_COUNTER_CYCLES_PER_MS - 1) begin
+            if (cnt_cpu_cycles == PERF_COUNTER_CYCLES_PER_US - 1) begin
                 cnt_cpu_cycles <= 32'd0;
-                cnt_ms <= cnt_ms + 1;
+                cnt_us <= cnt_us + 1;
+                if (cnt_us_to_ms == 10'd999) begin
+                    cnt_us_to_ms <= 10'd0;
+                    cnt_ms <= cnt_ms + 1;
+                end else begin
+                    cnt_us_to_ms <= cnt_us_to_ms + 1;
+                end
             end else begin
                 cnt_cpu_cycles <= cnt_cpu_cycles + 1;
             end
         end else begin
             cnt_cpu_cycles <= 32'd0;
+            cnt_us_to_ms <= 10'd0;
         end
     end
 `else
     always_ff @(posedge cnt_clk) begin
         if (rst) begin
             cnt_ms <= 32'd0;
+            cnt_us <= 32'd0;
             cnt_1ms <= 16'd0;
+            cnt_1us <= 6'd0;
         end else if (cnt_enable) begin
             if (cnt_1ms == 16'd49999) begin
                 cnt_1ms <= 16'd0;
@@ -488,8 +504,15 @@ module tb_cpu_only;
             end else begin
                 cnt_1ms <= cnt_1ms + 1;
             end
+            if (cnt_1us == 6'd49) begin
+                cnt_1us <= 6'd0;
+                cnt_us <= cnt_us + 1;
+            end else begin
+                cnt_1us <= cnt_1us + 1;
+            end
         end else begin
             cnt_1ms <= 16'd0;
+            cnt_1us <= 6'd0;
         end
     end
 `endif

@@ -55,7 +55,8 @@ module perip_bridge(
     localparam KEY_ADDR  = 32'h8020_0010;  // key[7:0]
     localparam SEG_ADDR  = 32'h8020_0020;  // seg
     localparam LED_ADDR  = 32'h8020_0040;  // led[31:0]
-    localparam CNT_ADDR  = 32'h8020_0050;  // counter
+    localparam CNT_ADDR  = 32'h8020_0050;  // 毫秒计数/控制
+    localparam CNT_US_ADDR = 32'h8020_0054;  // 微秒计数，只读
     localparam CNT_START_CMD = 32'h8000_0000;
     localparam CNT_STOP_CMD  = 32'hFFFF_FFFF;
     localparam UART_DATA_ADDR   = 32'h8020_0060;  // 写=发送，读=接收并清 valid
@@ -69,7 +70,7 @@ module perip_bridge(
     localparam I2C_CTRL_ADDR    = 32'h8020_0090;  // 写 bit0=START bit1=READ；读 bit0=BUSY bit1=DONE bit2=NACK
 
     logic [31:0] LED;
-    logic [31:0] seg_wdata, cnt_rdata, mmio_rdata, bram_rdata;
+    logic [31:0] seg_wdata, cnt_rdata, cnt_us_rdata, mmio_rdata, bram_rdata;
     logic [31:0] uart_rdata;
     logic [31:0] fpu_rdata;
     logic [39:0] seg_output;
@@ -179,7 +180,8 @@ module perip_bridge(
         .cnt_clk            (cnt_clk),
         .rst                (rst),
         .cnt_enable_cpu     (cnt_enable_cfg),
-        .perip_rdata		(cnt_rdata)
+        .perip_rdata        (cnt_rdata),
+        .perip_us_rdata     (cnt_us_rdata)
     );
 
     assign perip_rdata = {32{bram_resp_valid}} & bram_rdata |
@@ -188,6 +190,7 @@ module perip_bridge(
                          {32{~bram_resp_valid && perip_addr == KEY_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == SEG_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == CNT_ADDR}} & cnt_rdata |
+                         {32{~bram_resp_valid && perip_addr == CNT_US_ADDR}} & cnt_us_rdata |
                          {32{~bram_resp_valid && perip_addr == UART_DATA_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && perip_addr == UART_STATUS_ADDR}} & mmio_rdata |
                          {32{~bram_resp_valid && fpu_hit}} & fpu_rdata |
